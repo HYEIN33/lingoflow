@@ -1,0 +1,175 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: words
+    // Document ID: auto-generated
+    // Fields:
+    //   - original: string (required) - The original text.
+    //   - translation: string (required) - The translated text.
+    //   - pronunciation: string (optional) - Phonetic guide.
+    //   - examples: list (optional) - Example sentences.
+    //   - userId: string (required) - The owner's UID.
+    //   - createdAt: timestamp (required) - Creation time.
+    //
+    // Collection: slangs
+    // Document ID: auto-generated
+    // Fields:
+    //   - term: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: slang_meanings
+    // Document ID: auto-generated
+    // Fields:
+    //   - slangId: string (required)
+    //   - meaning: string (required)
+    //   - example: string (required)
+    //   - authorId: string (required)
+    //   - upvotes: number (required)
+    //   - status: string (required) - 'approved' or 'rejected'
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: slang_upvotes
+    // Document ID: {userId}_{meaningId}
+    // Fields:
+    //   - userId: string (required)
+    //   - meaningId: string (required)
+    //   - createdAt: timestamp (required)
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "caizewei11@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidWord(data) {
+      let hasBasicFields = data.original is string && data.original.size() > 0 && data.original.size() < 500 &&
+                           (!('pronunciation' in data) || (data.pronunciation is string && data.pronunciation.size() < 200)) &&
+                           data.userId == request.auth.uid &&
+                           (data.createdAt is timestamp || data.createdAt == request.time);
+      
+      let hasValidUsages = data.usages is list && data.usages.size() > 0 && data.usages.size() <= 10 &&
+                           data.usages.all(u, u is map && 
+                             u.label is string && u.labelZh is string && 
+                             u.meaning is string && u.meaningZh is string && 
+                             u.examples is list && u.examples.size() <= 5 && 
+                             u.examples.all(ex, ex is map && ex.sentence is string && ex.translation is string)
+                           );
+                           
+      let hasValidOptionalFields = (!('styleTag' in data) || data.styleTag in ['authentic', 'academic', 'standard']) &&
+                                   (!('nextReviewDate' in data) || data.nextReviewDate is timestamp || data.nextReviewDate == request.time) &&
+                                   (!('interval' in data) || data.interval is number) &&
+                                   (!('easeFactor' in data) || data.easeFactor is number);
+      
+      return hasBasicFields && hasValidUsages && hasValidOptionalFields;
+    }
+
+    function isValidSlang(data) {
+      return data.term is string && data.term.size() > 0 && data.term.size() < 100 &&
+             (data.createdAt is timestamp || data.createdAt == request.time);
+    }
+
+    function isValidSlangMeaning(data) {
+      return data.slangId is string && data.slangId.size() > 0 &&
+             data.meaning is string && data.meaning.size() > 0 && data.meaning.size() < 1000 &&
+             data.example is string && data.example.size() < 1000 &&
+             data.authorId == request.auth.uid &&
+             data.upvotes is number &&
+             data.status in ['approved', 'rejected', 'pending'] &&
+             (!('voiceName' in data) || data.voiceName in ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr']) &&
+             (!('mediaUrl' in data) || (data.mediaUrl is string && data.mediaUrl.size() < 1000)) &&
+             (!('mediaType' in data) || data.mediaType in ['image', 'video', 'gif']) &&
+             (!('userAudioUrl' in data) || (data.userAudioUrl is string && data.userAudioUrl.size() < 1000)) &&
+             (!('authorName' in data) || data.authorName is string) &&
+             (!('authorTitle' in data) || data.authorTitle is string) &&
+             (!('qualityScore' in data) || data.qualityScore is number) &&
+             (data.createdAt is timestamp || data.createdAt == request.time);
+    }
+
+    function isValidUserProfile(data) {
+      return data.userId == request.auth.uid &&
+             data.isPro is bool &&
+             data.translationCount is number &&
+             data.grammarCount is number &&
+             data.lastResetDate is string &&
+             (!('tabOrder' in data) || data.tabOrder is list) &&
+             (!('lastContributionDate' in data) || data.lastContributionDate is string) &&
+             (!('currentStreak' in data) || data.currentStreak is number) &&
+             (!('hasCompletedOnboarding' in data) || data.hasCompletedOnboarding is bool) &&
+             (!('titleLevel1' in data) || data.titleLevel1 is string) &&
+             (!('titleLevel2' in data) || data.titleLevel2 is string) &&
+             (!('titleLevel3' in data) || data.titleLevel3 is string) &&
+             (!('approvedSlangCount' in data) || data.approvedSlangCount is number) &&
+             (!('hasUploadedMedia' in data) || data.hasUploadedMedia is bool) &&
+             (!('l1PenaltyCount' in data) || data.l1PenaltyCount is number) &&
+             (!('l2PenaltyUntil' in data) || data.l2PenaltyUntil is timestamp) &&
+             (!('l3PenaltyActive' in data) || data.l3PenaltyActive is bool) &&
+             (!('vPenaltyLevel' in data) || data.vPenaltyLevel is number) &&
+             (!('reputationScore' in data) || data.reputationScore is number);
+    }
+
+    function isValidCounterUpdate(docId) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['upvotes']) &&
+             math.abs(request.resource.data.upvotes - resource.data.upvotes) == 1 &&
+             (
+               (request.resource.data.upvotes > resource.data.upvotes &&
+                !exists(/databases/$(database)/documents/slang_upvotes/$(request.auth.uid + '_' + docId)) &&
+                getAfter(/databases/$(database)/documents/slang_upvotes/$(request.auth.uid + '_' + docId)) != null) ||
+               (request.resource.data.upvotes < resource.data.upvotes &&
+                exists(/databases/$(database)/documents/slang_upvotes/$(request.auth.uid + '_' + docId)) &&
+                getAfter(/databases/$(database)/documents/slang_upvotes/$(request.auth.uid + '_' + docId)) == null)
+             );
+    }
+
+    match /test_connection/{uid} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /words/{wordId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && isValidUserProfile(request.resource.data);
+      allow update: if isOwner(userId) && isValidUserProfile(request.resource.data);
+    }
+
+    match /slangs/{slangId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidSlang(request.resource.data);
+    }
+
+    match /slang_meanings/{meaningId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidSlangMeaning(request.resource.data) && request.resource.data.upvotes == 0;
+      allow update: if isAuthenticated() && isValidCounterUpdate(meaningId);
+    }
+
+    match /slang_upvotes/{upvoteId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && 
+                    upvoteId == request.auth.uid + '_' + request.resource.data.meaningId &&
+                    request.resource.data.userId == request.auth.uid &&
+                    request.resource.data.meaningId is string;
+      allow delete: if isAuthenticated() && upvoteId.matches('^' + request.auth.uid + '_.*');
+    }
+  }
+}
