@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User subscription and usage tracking.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "isPro": { "type": "boolean" },
+        "translationCount": { "type": "number" },
+        "grammarCount": { "type": "number" },
+        "lastResetDate": { "type": "string" },
+        "tabOrder": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["userId", "isPro", "translationCount", "grammarCount", "lastResetDate"]
+    },
+    "Word": {
+      "title": "Word",
+      "description": "A word or phrase in the user's vocabulary book.",
+      "type": "object",
+      "properties": {
+        "original": { "type": "string" },
+        "pronunciation": { "type": "string" },
+        "usages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": { "type": "string" },
+              "labelZh": { "type": "string" },
+              "meaning": { "type": "string" },
+              "meaningZh": { "type": "string" },
+              "examples": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sentence": { "type": "string" },
+                    "translation": { "type": "string" }
+                  },
+                  "required": ["sentence", "translation"]
+                }
+              }
+            },
+            "required": ["label", "labelZh", "meaning", "meaningZh", "examples"]
+          }
+        },
+        "userId": { "type": "string" },
+        "styleTag": { "type": "string", "enum": ["authentic", "academic", "standard"] },
+        "nextReviewDate": { "type": "string", "format": "date-time" },
+        "interval": { "type": "number" },
+        "easeFactor": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["original", "usages", "userId", "createdAt"]
+    },
+    "Slang": {
+      "title": "Slang",
+      "description": "A slang or meme term.",
+      "type": "object",
+      "properties": {
+        "term": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["term", "createdAt"]
+    },
+    "SlangMeaning": {
+      "title": "SlangMeaning",
+      "description": "A user-submitted meaning for a slang term.",
+      "type": "object",
+      "properties": {
+        "slangId": { "type": "string" },
+        "meaning": { "type": "string" },
+        "example": { "type": "string" },
+        "authorId": { "type": "string" },
+        "upvotes": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "voiceName": { "type": "string", "enum": ["Puck", "Charon", "Kore", "Fenrir", "Zephyr"] },
+        "mediaUrl": { "type": "string" },
+        "mediaType": { "type": "string", "enum": ["image", "video", "gif"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["slangId", "meaning", "example", "authorId", "upvotes", "status", "createdAt"]
+    },
+    "SlangUpvote": {
+      "title": "SlangUpvote",
+      "description": "Tracks user upvotes on slang meanings.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "meaningId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "meaningId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles and subscription data."
+    },
+    "/words/{wordId}": {
+      "schema": "Word",
+      "description": "Collection of saved words for all users."
+    },
+    "/slangs/{slangId}": {
+      "schema": "Slang",
+      "description": "Collection of slang terms."
+    },
+    "/slang_meanings/{meaningId}": {
+      "schema": "SlangMeaning",
+      "description": "Collection of meanings for slang terms."
+    },
+    "/slang_upvotes/{upvoteId}": {
+      "schema": "SlangUpvote",
+      "description": "Collection of upvotes to prevent multiple votes."
+    }
+  }
+}

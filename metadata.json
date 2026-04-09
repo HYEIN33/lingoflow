@@ -1,0 +1,5 @@
+{
+  "name": "LingoFlow",
+  "description": "A smart English learning assistant that helps you translate words and build your personal vocabulary book.",
+  "requestFramePermissions": ["microphone"]
+}
