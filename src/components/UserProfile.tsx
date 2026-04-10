@@ -221,7 +221,7 @@ export default function UserProfile({
     }
   };
 
-  const unlockedAchievements = userProfile ? ACHIEVEMENTS.filter(a => a.condition(userProfile)) : [];
+  const unlockedAchievements = ACHIEVEMENTS; // All achievements unlocked by default
 
   return (
     <div className="space-y-6">
@@ -362,7 +362,7 @@ export default function UserProfile({
         </h3>
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
           {ACHIEVEMENTS.map((achievement) => {
-            const unlocked = userProfile ? achievement.condition(userProfile) : false;
+            const unlocked = true;
             return (
               <div key={achievement.id} className="flex flex-col items-center gap-1.5 group relative">
                 <AchievementBadge achievement={achievement} unlocked={unlocked} size="md" />
