@@ -315,6 +315,23 @@ export async function validateSlangMeaning(term: string, meaning: string, exampl
   return JSON.parse(response.text);
 }
 
+export async function suggestSlangMeaning(term: string, partialInput: string): Promise<string> {
+  const { model } = getEffectiveConfig();
+  const ai = getGeminiAI();
+
+  const response = await ai.models.generateContent({
+    model: model,
+    contents: `You are helping a user write a definition for the Chinese internet slang term "${term}".
+    The user has started typing: "${partialInput}"
+
+    Complete or expand their input into a full, natural definition (in Chinese).
+    Keep it concise (1-2 sentences), accurate, and in the same tone as the user's input.
+    Only output the suggested definition text, nothing else.`,
+  });
+
+  return response.text.trim();
+}
+
 export async function generateSlangExample(term: string, meaning: string): Promise<string> {
   const { model } = getEffectiveConfig();
   const ai = getGeminiAI();

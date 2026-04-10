@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, X, CreditCard, Smartphone, ShieldCheck, Zap, Loader2 } from 'lucide-react';
+import { Check, X, CreditCard, ShieldCheck, Zap, Loader2 } from 'lucide-react';
 
-export default function PaymentScreen({ 
-  triggerSource = 'default', 
-  onSuccess, 
-  onClose, 
-  currentPlan = 'free' 
-}: { 
-  triggerSource?: string, 
-  onSuccess: () => void, 
-  onClose: () => void, 
-  currentPlan?: 'free' | 'pro' 
+export default function PaymentScreen({
+  triggerSource = 'default',
+  onSuccess,
+  onClose,
+  uiLang = 'zh',
+  currentPlan = 'free'
+}: {
+  triggerSource?: string,
+  onSuccess: () => void,
+  onClose: () => void,
+  uiLang?: 'en' | 'zh',
+  currentPlan?: 'free' | 'pro'
 }) {
   const [isYearly, setIsYearly] = useState(true);
   const [selectedPlan, setSelectedPlan] = useState<'free' | 'pro'>('pro');
@@ -22,11 +24,10 @@ export default function PaymentScreen({
 
   const getTriggerMessage = () => {
     switch (triggerSource) {
-      case 'translation_limit': return '今日翻译次数已用完，升级 Pro 解锁无限畅译';
-      case 'slider': return '语气滑块是 Pro 专属功能，升级以精准控制表达';
-      case 'review_system': return '升级 Pro，解锁基于 SM-2 算法的艾宾浩斯复习系统';
-      case 'leaderboard': return '加入小组排行榜竞争，赢取专属头衔';
-      default: return '升级 Pro，解锁 LingoFlow 全部潜能';
+      case 'translation_limit': return uiLang === 'zh' ? '今日翻译次数已用完，升级 Pro 解锁无限畅译' : 'Daily translation limit reached. Upgrade to Pro for unlimited translations.';
+      case 'slider': return uiLang === 'zh' ? '语气滑块是 Pro 专属功能，升级以精准控制表达' : 'Formality slider is a Pro feature.';
+      case 'review_system': return uiLang === 'zh' ? '升级 Pro，解锁基于 SM-2 算法的艾宾浩斯复习系统' : 'Upgrade to unlock spaced repetition review.';
+      default: return uiLang === 'zh' ? '升级 Pro，解锁 LingoFlow 全部潜能' : 'Upgrade to Pro, unlock LingoFlow\'s full potential.';
     }
   };
 
@@ -39,116 +40,111 @@ export default function PaymentScreen({
   const handlePay = () => {
     if (!paymentMethod) return;
     setIsProcessing(true);
-    // Simulate payment processing
     setTimeout(() => {
       setIsProcessing(false);
       setIsSuccess(true);
-      setTimeout(() => {
-        onSuccess();
-      }, 2000);
+      setTimeout(() => { onSuccess(); }, 2000);
     }, 2000);
   };
 
   if (isSuccess) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
-        <motion.div 
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+        <motion.div
           initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-          className="bg-gray-900 rounded-3xl p-8 max-w-sm w-full text-center border border-teal-500/30 shadow-[0_0_50px_rgba(0,201,167,0.2)]"
+          className="bg-white rounded-3xl p-8 max-w-sm w-full text-center border border-gray-200 shadow-2xl"
         >
-          <motion.div 
+          <motion.div
             initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", bounce: 0.5, delay: 0.2 }}
-            className="w-24 h-24 bg-teal-500/20 rounded-full flex items-center justify-center mx-auto mb-6"
+            className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6"
           >
-            <Check className="w-12 h-12 text-teal-400" />
+            <Check className="w-12 h-12 text-blue-600" />
           </motion.div>
-          <h2 className="text-2xl font-bold text-white mb-2 font-serif">Pro 已激活</h2>
-          <p className="text-gray-400">欢迎来到 LingoFlow 的全新境界</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Pro {uiLang === 'zh' ? '已激活' : 'Activated'}</h2>
+          <p className="text-gray-500">{uiLang === 'zh' ? '欢迎来到 LingoFlow 的全新境界' : 'Welcome to LingoFlow Pro'}</p>
         </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md overflow-y-auto">
-      <motion.div 
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm overflow-y-auto">
+      <motion.div
         initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-        className="bg-[#0f1115] rounded-3xl w-full max-w-4xl relative overflow-hidden border border-white/10 my-8"
+        className="bg-white rounded-3xl w-full max-w-4xl relative overflow-hidden border border-gray-200 shadow-2xl my-8"
       >
-        <button onClick={onClose} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-white bg-white/5 rounded-full z-10 transition-colors">
+        <button onClick={onClose} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 bg-gray-50 rounded-full z-10 transition-colors">
           <X className="w-5 h-5" />
         </button>
 
-        <div className="p-8 text-center border-b border-white/5 bg-gradient-to-b from-teal-900/20 to-transparent">
-          <h2 className="text-3xl font-bold text-white mb-3 font-serif">
-            {getTriggerMessage()}
-          </h2>
-          <p className="text-gray-400">选择最适合您的学习方案</p>
+        {/* Header */}
+        <div className="p-8 text-center border-b border-gray-100 bg-gradient-to-b from-blue-50 to-transparent">
+          <h2 className="text-2xl font-bold text-gray-900 mb-3">{getTriggerMessage()}</h2>
+          <p className="text-gray-500">{uiLang === 'zh' ? '选择最适合您的学习方案' : 'Choose the plan that fits you'}</p>
 
           <div className="flex items-center justify-center gap-4 mt-8">
-            <span className={`text-sm font-bold ${!isYearly ? 'text-white' : 'text-gray-500'}`}>月付</span>
-            <button 
+            <span className={`text-sm font-bold ${!isYearly ? 'text-gray-900' : 'text-gray-400'}`}>{uiLang === 'zh' ? '月付' : 'Monthly'}</span>
+            <button
               onClick={() => setIsYearly(!isYearly)}
-              className="w-14 h-8 bg-white/10 rounded-full p-1 relative transition-colors hover:bg-white/20"
+              className="w-14 h-8 bg-gray-200 rounded-full p-1 relative transition-colors hover:bg-gray-300"
             >
-              <motion.div 
-                animate={{ x: isYearly ? 24 : 0 }}
-                className="w-6 h-6 bg-teal-400 rounded-full shadow-lg"
-              />
+              <motion.div animate={{ x: isYearly ? 24 : 0 }} className="w-6 h-6 bg-blue-600 rounded-full shadow-lg" />
             </button>
-            <span className={`text-sm font-bold flex items-center gap-2 ${isYearly ? 'text-white' : 'text-gray-500'}`}>
-              年付 <span className="bg-coral-500 text-white text-[10px] px-2 py-0.5 rounded-full">省 40%</span>
+            <span className={`text-sm font-bold flex items-center gap-2 ${isYearly ? 'text-gray-900' : 'text-gray-400'}`}>
+              {uiLang === 'zh' ? '年付' : 'Yearly'} <span className="bg-orange-100 text-orange-600 text-[10px] px-2 py-0.5 rounded-full font-black">{uiLang === 'zh' ? '省 40%' : 'Save 40%'}</span>
             </span>
           </div>
         </div>
 
+        {/* Plans */}
         <div className="p-8 grid md:grid-cols-2 gap-6">
           {/* Free Plan */}
-          <div 
+          <div
             onClick={() => setSelectedPlan('free')}
-            className={`rounded-2xl p-6 border transition-all cursor-pointer ${
-              selectedPlan === 'free' ? 'bg-white/10 border-gray-400' : 'bg-white/5 border-white/5 hover:border-white/20'
+            className={`rounded-2xl p-6 border-2 transition-all cursor-pointer ${
+              selectedPlan === 'free' ? 'bg-gray-50 border-gray-300' : 'bg-white border-gray-100 hover:border-gray-200'
             }`}
           >
-            <h3 className="text-xl font-bold text-white mb-2">Free</h3>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Free</h3>
             <div className="flex items-baseline gap-1 mb-6">
-              <span className="text-3xl font-bold text-white">¥0</span>
-              <span className="text-gray-500">/月</span>
+              <span className="text-3xl font-bold text-gray-900">¥0</span>
+              <span className="text-gray-400">/{uiLang === 'zh' ? '月' : 'mo'}</span>
             </div>
-            <ul className="space-y-4 text-sm text-gray-300">
-              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-gray-500" /> 基础 AI 翻译（每日限额）</li>
-              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-gray-500" /> 梗百科浏览</li>
-              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-gray-500" /> 第一段头衔（个人成就）</li>
+            <ul className="space-y-3 text-sm text-gray-600">
+              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-gray-400 shrink-0" /> {uiLang === 'zh' ? '基础 AI 翻译（每日限额）' : 'Basic AI translation (daily limit)'}</li>
+              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-gray-400 shrink-0" /> {uiLang === 'zh' ? '梗百科浏览与贡献' : 'Slang dictionary browsing & contributing'}</li>
+              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-gray-400 shrink-0" /> {uiLang === 'zh' ? '成就勋章系统' : 'Achievement badge system'}</li>
+              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-gray-400 shrink-0" /> {uiLang === 'zh' ? '小组排行榜竞争' : 'Group leaderboard competition'}</li>
+              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-gray-400 shrink-0" /> {uiLang === 'zh' ? 'UI 自定义（导航栏排序）' : 'UI customization (tab order)'}</li>
             </ul>
           </div>
 
           {/* Pro Plan */}
-          <div 
+          <div
             onClick={() => setSelectedPlan('pro')}
-            className={`rounded-2xl p-6 border relative transition-all cursor-pointer ${
-              selectedPlan === 'pro' 
-                ? 'bg-teal-900/20 border-teal-500 shadow-[0_0_30px_rgba(0,201,167,0.15)]' 
-                : 'bg-white/5 border-white/5 hover:border-teal-500/50'
+            className={`rounded-2xl p-6 border-2 relative transition-all cursor-pointer ${
+              selectedPlan === 'pro'
+                ? 'bg-blue-50 border-blue-400 shadow-lg shadow-blue-100'
+                : 'bg-white border-gray-100 hover:border-blue-200'
             }`}
           >
-            <div className="absolute -top-3 -right-3 bg-gradient-to-r from-amber-400 to-amber-500 text-black text-xs font-black px-3 py-1 rounded-full shadow-lg">
-              推荐
+            <div className="absolute -top-3 -right-3 bg-gradient-to-r from-amber-400 to-orange-500 text-white text-xs font-black px-3 py-1 rounded-full shadow-lg">
+              {uiLang === 'zh' ? '推荐' : 'Best'}
             </div>
-            <h3 className="text-xl font-bold text-teal-400 mb-2 flex items-center gap-2">
-              Pro <Zap className="w-5 h-5 fill-teal-400" />
+            <h3 className="text-xl font-bold text-blue-600 mb-2 flex items-center gap-2">
+              Pro <Zap className="w-5 h-5 fill-blue-600" />
             </h3>
             <div className="flex items-baseline gap-1 mb-6">
-              <span className="text-3xl font-bold text-white">¥{isYearly ? '28' : '48'}</span>
-              <span className="text-gray-500">/月</span>
-              {isYearly && <span className="text-xs text-gray-500 ml-2">每年计费 ¥336</span>}
+              <span className="text-3xl font-bold text-gray-900">¥{isYearly ? '28' : '48'}</span>
+              <span className="text-gray-400">/{uiLang === 'zh' ? '月' : 'mo'}</span>
+              {isYearly && <span className="text-xs text-gray-400 ml-2">{uiLang === 'zh' ? '每年计费 ¥336' : 'Billed ¥336/year'}</span>}
             </div>
-            <ul className="space-y-4 text-sm text-gray-200">
-              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-teal-400" /> 无限次 AI 翻译 + 语法检查</li>
-              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-teal-400" /> 语气滑块（正式程度实时调节）</li>
-              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-teal-400" /> 艾宾浩斯复习系统（SM-2 算法）</li>
-              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-teal-400" /> 参与第二段小组头衔竞争</li>
-              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-teal-400" /> UI 自定义权限（导航栏排序保存）</li>
-              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-teal-400" /> 优先 AI 响应速度</li>
+            <ul className="space-y-3 text-sm text-gray-700">
+              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-blue-600 shrink-0" /> {uiLang === 'zh' ? '无限次 AI 翻译 + 语法检查' : 'Unlimited AI translation + grammar'}</li>
+              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-blue-600 shrink-0" /> {uiLang === 'zh' ? '语气滑块（正式程度调节）' : 'Formality slider'}</li>
+              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-blue-600 shrink-0" /> {uiLang === 'zh' ? '艾宾浩斯复习系统（SM-2）' : 'Spaced repetition (SM-2)'}</li>
+              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-blue-600 shrink-0" /> {uiLang === 'zh' ? '优先 AI 响应速度' : 'Priority AI response'}</li>
+              <li className="flex items-center gap-3"><Check className="w-4 h-4 text-blue-600 shrink-0" /> {uiLang === 'zh' ? '全球排行榜参与资格' : 'Global leaderboard access'}</li>
             </ul>
           </div>
         </div>
@@ -156,24 +152,24 @@ export default function PaymentScreen({
         {/* Payment Section */}
         <AnimatePresence>
           {selectedPlan === 'pro' && (
-            <motion.div 
+            <motion.div
               initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
               className="px-8 pb-8 overflow-hidden"
             >
-              <div className="border-t border-white/10 pt-8">
-                <h4 className="text-white font-bold mb-4">选择支付方式</h4>
+              <div className="border-t border-gray-100 pt-8">
+                <h4 className="text-gray-900 font-bold mb-4">{uiLang === 'zh' ? '选择支付方式' : 'Payment method'}</h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                   {[
-                    { id: 'wechat', label: '微信支付', icon: '💬' },
-                    { id: 'alipay', label: '支付宝', icon: '🛡️' },
+                    { id: 'wechat', label: uiLang === 'zh' ? '微信支付' : 'WeChat', icon: '💬' },
+                    { id: 'alipay', label: uiLang === 'zh' ? '支付宝' : 'Alipay', icon: '🛡️' },
                     { id: 'apple', label: 'Apple Pay', icon: '🍎' },
-                    { id: 'card', label: '信用卡', icon: <CreditCard className="w-5 h-5" /> }
+                    { id: 'card', label: uiLang === 'zh' ? '信用卡' : 'Card', icon: <CreditCard className="w-5 h-5" /> }
                   ].map(method => (
                     <button
                       key={method.id}
                       onClick={() => setPaymentMethod(method.id as any)}
-                      className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border transition-all ${
-                        paymentMethod === method.id ? 'bg-white/10 border-white text-white' : 'bg-white/5 border-white/5 text-gray-400 hover:bg-white/10'
+                      className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all ${
+                        paymentMethod === method.id ? 'bg-blue-50 border-blue-400 text-blue-600' : 'bg-gray-50 border-gray-100 text-gray-500 hover:border-gray-200'
                       }`}
                     >
                       <span className="text-2xl">{method.icon}</span>
@@ -183,56 +179,49 @@ export default function PaymentScreen({
                 </div>
 
                 {paymentMethod === 'card' && (
-                  <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-black/30 p-4 rounded-xl border border-white/10 mb-6 space-y-4">
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-6 space-y-4">
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">卡号</label>
-                      <input 
-                        type="text" 
+                      <label className="block text-xs text-gray-500 mb-1">{uiLang === 'zh' ? '卡号' : 'Card number'}</label>
+                      <input
+                        type="text"
                         value={cardNumber}
                         onChange={handleCardInput}
                         placeholder="0000 0000 0000 0000"
                         autoComplete="off"
-                        className="w-full bg-transparent border-b border-gray-700 text-white p-2 focus:outline-none focus:border-teal-500 font-mono"
+                        className="w-full bg-white border border-gray-200 rounded-lg text-gray-900 p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">有效期</label>
-                        <input type="text" placeholder="MM/YY" autoComplete="off" className="w-full bg-transparent border-b border-gray-700 text-white p-2 focus:outline-none focus:border-teal-500 font-mono" />
+                        <label className="block text-xs text-gray-500 mb-1">{uiLang === 'zh' ? '有效期' : 'Expiry'}</label>
+                        <input type="text" placeholder="MM/YY" autoComplete="off" className="w-full bg-white border border-gray-200 rounded-lg text-gray-900 p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono" />
                       </div>
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">CVV</label>
-                        <input type="password" placeholder="123" autoComplete="off" maxLength={4} className="w-full bg-transparent border-b border-gray-700 text-white p-2 focus:outline-none focus:border-teal-500 font-mono" />
+                        <input type="password" placeholder="123" autoComplete="off" maxLength={4} className="w-full bg-white border border-gray-200 rounded-lg text-gray-900 p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono" />
                       </div>
                     </div>
                   </motion.div>
                 )}
 
-                <button 
+                <button
                   disabled={!paymentMethod || isProcessing}
                   onClick={handlePay}
-                  className="w-full bg-teal-500 hover:bg-teal-400 disabled:bg-gray-700 disabled:text-gray-500 text-black font-bold py-4 rounded-xl transition-colors flex items-center justify-center gap-2"
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold py-4 rounded-xl transition-colors flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
                 >
                   {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
-                  {isProcessing ? '处理中...' : `支付 ¥${isYearly ? '336' : '48'}`}
+                  {isProcessing ? (uiLang === 'zh' ? '处理中...' : 'Processing...') : `${uiLang === 'zh' ? '支付' : 'Pay'} ¥${isYearly ? '336' : '48'}`}
                 </button>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Contribute for Pro */}
-        <div className="p-4 text-center bg-white/5 border-t border-white/5">
-          <button className="text-sm text-gray-400 hover:text-teal-400 transition-colors flex items-center justify-center gap-2 mx-auto">
-            没钱？用贡献换 <ChevronRightIcon className="w-4 h-4" />
-          </button>
-          <p className="text-[10px] text-gray-600 mt-1">贡献 1500 积分可兑换永久 Pro</p>
+        {/* Footer */}
+        <div className="p-4 text-center bg-gray-50 border-t border-gray-100">
+          <p className="text-xs text-gray-400">{uiLang === 'zh' ? '贡献 1500 积分可兑换永久 Pro' : 'Earn 1500 points to redeem permanent Pro'}</p>
         </div>
       </motion.div>
     </div>
   );
-}
-
-function ChevronRightIcon(props: any) {
-  return <svg {...props} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>;
 }

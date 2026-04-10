@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, orderBy, limit, serverTimestamp, onSnapshot, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { Search, Plus, ThumbsUp, AlertCircle, Loader2, MessageSquare, Volume2, Image as ImageIcon, Video, Film, X, Mic } from 'lucide-react';
-import { validateSlangMeaning, generateSpeech, generateSlangExample } from '../services/ai';
+import { Search, Plus, ThumbsUp, AlertCircle, Loader2, MessageSquare, Volume2, Image as ImageIcon, Video, Film, X, Mic, Wand2 } from 'lucide-react';
+import { validateSlangMeaning, generateSpeech, generateSlangExample, suggestSlangMeaning } from '../services/ai';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -107,6 +107,40 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
   const [isGeneratingExample, setIsGeneratingExample] = useState(false);
   const [upvotedMeanings, setUpvotedMeanings] = useState<Set<string>>(new Set());
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const [aiSuggestion, setAiSuggestion] = useState('');
+  const [isLoadingSuggestion, setIsLoadingSuggestion] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const fetchSuggestion = useCallback(async (term: string, input: string) => {
+    if (input.length < 3) {
+      setAiSuggestion('');
+      return;
+    }
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setIsLoadingSuggestion(true);
+    try {
+      const suggestion = await suggestSlangMeaning(term, input);
+      if (!controller.signal.aborted) {
+        setAiSuggestion(suggestion);
+      }
+    } catch {
+      if (!controller.signal.aborted) setAiSuggestion('');
+    } finally {
+      if (!controller.signal.aborted) setIsLoadingSuggestion(false);
+    }
+  }, []);
+
+  const handleMeaningChange = (value: string) => {
+    setNewMeaning(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const term = currentSlang ? currentSlang.term : searchTerm.trim().toLowerCase();
+      fetchSuggestion(term, value);
+    }, 800);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -675,11 +709,41 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                 </label>
                 <textarea
                   value={newMeaning}
-                  onChange={(e) => setNewMeaning(e.target.value)}
+                  onChange={(e) => handleMeaningChange(e.target.value)}
                   placeholder={uiLang === 'zh' ? '用通俗易懂的语言解释这个梗...' : 'Explain this slang...'}
                   className="w-full bg-white/50 border border-white/50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500/50 min-h-[100px] resize-none"
                   required
                 />
+                {isLoadingSuggestion && (
+                  <span className="flex items-center gap-1 text-xs text-blue-500 mt-1">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    AI 思考中...
+                  </span>
+                )}
+                <AnimatePresence>
+                  {aiSuggestion && !isLoadingSuggestion && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      className="mt-2 bg-blue-50 border border-blue-200 rounded-xl p-3 cursor-pointer hover:bg-blue-100 transition-colors group"
+                      onClick={() => { setNewMeaning(aiSuggestion); setAiSuggestion(''); }}
+                    >
+                      <div className="flex items-start gap-2">
+                        <Wand2 className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-blue-600 mb-1">
+                            {uiLang === 'zh' ? 'AI 建议' : 'AI Suggestion'}
+                          </p>
+                          <p className="text-sm text-gray-700 leading-relaxed">{aiSuggestion}</p>
+                        </div>
+                        <span className="text-[10px] text-blue-400 group-hover:text-blue-600 shrink-0 mt-0.5">
+                          {uiLang === 'zh' ? '点击采纳' : 'Click to apply'}
+                        </span>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               <div>
