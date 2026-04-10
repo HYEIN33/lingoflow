@@ -2,6 +2,19 @@ import { GoogleGenAI, Type, Modality } from "@google/genai";
 
 export type AIProvider = 'gemini';
 
+// Simple client-side rate limiter
+const rateLimiter = {
+  calls: [] as number[],
+  maxPerMinute: 5,
+  check(): boolean {
+    const now = Date.now();
+    this.calls = this.calls.filter(t => now - t < 60000);
+    if (this.calls.length >= this.maxPerMinute) return false;
+    this.calls.push(now);
+    return true;
+  }
+};
+
 function getGeminiAI() {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -316,6 +329,9 @@ export async function validateSlangMeaning(term: string, meaning: string, exampl
 }
 
 export async function suggestSlangMeaning(term: string, partialInput: string): Promise<string> {
+  if (!rateLimiter.check()) {
+    throw new Error('Rate limit exceeded. Please wait a moment.');
+  }
   const { model } = getEffectiveConfig();
   const ai = getGeminiAI();
 
