@@ -5,6 +5,7 @@ import { Search, Plus, ThumbsUp, AlertCircle, Loader2, MessageSquare, Volume2, I
 import { validateSlangMeaning, generateSpeech, generateSlangExample, suggestSlangMeaning } from '../services/ai';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
+import { SlangGuidelinesPanel } from './SlangGuidelines';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 import { UserProfile } from '../App';
@@ -39,6 +40,17 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
   const [meanings, setMeanings] = useState<SlangMeaning[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showGuidelines, setShowGuidelines] = useState(false);
+  const [recentSlangs, setRecentSlangs] = useState<Slang[]>([]);
+
+  // Feed: load recent slang entries
+  useEffect(() => {
+    const q = query(collection(db, 'slangs'), orderBy('createdAt', 'desc'), limit(10));
+    const unsub = onSnapshot(q, (snap) => {
+      setRecentSlangs(snap.docs.map(d => ({ id: d.id, ...d.data() } as Slang)));
+    });
+    return () => unsub();
+  }, []);
   
   useEffect(() => {
     if (initialSearchTerm) {
@@ -228,9 +240,22 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     setShowAddForm(false);
 
     try {
-      const q = query(collection(db, 'slangs'), where('term', '==', searchTerm.trim().toLowerCase()), limit(1));
-      const snapshot = await getDocs(q);
-      
+      const term = searchTerm.trim().toLowerCase();
+      // Try exact match first
+      let q = query(collection(db, 'slangs'), where('term', '==', term), limit(1));
+      let snapshot = await getDocs(q);
+
+      // Fuzzy: prefix match if exact not found
+      if (snapshot.empty) {
+        q = query(
+          collection(db, 'slangs'),
+          where('term', '>=', term),
+          where('term', '<=', term + '\uf8ff'),
+          limit(5)
+        );
+        snapshot = await getDocs(q);
+      }
+
       if (!snapshot.empty) {
         const slangDoc = snapshot.docs[0];
         const slangData = { id: slangDoc.id, ...slangDoc.data() } as Slang;
@@ -338,7 +363,17 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
       const validation = await validateSlangMeaning(termToUse, newMeaning, newExample);
       
       if (!validation.isValid) {
-        setSubmitError((uiLang === 'zh' ? '内容不符合规范: ' : 'Content rejected: ') + validation.reason);
+        let errorMsg = validation.reason;
+        if (validation.violationLevel === 'L1') {
+          errorMsg += uiLang === 'zh'
+            ? '\n💡 提示：请补充更多细节，至少写清楚这个词的含义和使用场景。'
+            : '\n💡 Hint: Please add more detail — explain the meaning and usage context.';
+        } else if (validation.violationLevel === 'V1') {
+          errorMsg += uiLang === 'zh'
+            ? '\n💡 提示：请确保内容与词条相关。'
+            : '\n💡 Hint: Please ensure content is relevant to the term.';
+        }
+        setSubmitError(errorMsg);
         
         // Handle Penalties
         const userRef = doc(db, 'users', auth.currentUser.uid);
@@ -549,6 +584,46 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
         </button>
       </form>
 
+      {/* Feed: recent entries + guidelines (shown when no search active) */}
+      {!searchTerm && !currentSlang && !showAddForm && (
+        <div className="space-y-4">
+          {/* Guidelines toggle */}
+          <button
+            onClick={() => setShowGuidelines(!showGuidelines)}
+            className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+          >
+            📖 {uiLang === 'zh' ? (showGuidelines ? '收起贡献准则' : '查看贡献准则') : (showGuidelines ? 'Hide Guidelines' : 'View Contribution Guidelines')}
+          </button>
+          <AnimatePresence>
+            {showGuidelines && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                <SlangGuidelinesPanel uiLang={uiLang} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Recent entries feed */}
+          {recentSlangs.length > 0 && (
+            <div>
+              <h3 className="text-sm font-bold text-gray-500 mb-3">
+                {uiLang === 'zh' ? '🔥 最新词条' : '🔥 Recent Entries'}
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {recentSlangs.map((slang) => (
+                  <button
+                    key={slang.id}
+                    onClick={() => setSearchTerm(slang.term)}
+                    className="px-3 py-1.5 bg-white/60 border border-white/60 rounded-xl text-sm font-medium text-gray-700 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 transition-colors"
+                  >
+                    {slang.term}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {searchTerm && !isSearching && !currentSlang && !showAddForm && (
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
@@ -702,7 +777,9 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
               <h3 className="text-lg font-bold text-gray-900">
                 {uiLang === 'zh' ? `解释 "${currentSlang?.term || searchTerm}"` : `Define "${currentSlang?.term || searchTerm}"`}
               </h3>
-              
+
+              <SlangGuidelinesPanel uiLang={uiLang} compact />
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   {uiLang === 'zh' ? '含义' : 'Meaning'}

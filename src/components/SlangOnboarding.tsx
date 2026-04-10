@@ -95,7 +95,17 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
       const validation = await validateSlangMeaning(selectedTerm, meaning, example);
 
       if (!validation.isValid) {
-        setReviewError(validation.reason);
+        let errorMsg = validation.reason;
+        if (validation.violationLevel === 'L1') {
+          errorMsg += uiLang === 'zh'
+            ? '\n💡 提示：请补充更多细节，至少写清楚这个词的含义和使用场景。'
+            : '\n💡 Hint: Please add more detail — explain the meaning and usage context.';
+        } else if (validation.violationLevel === 'V1') {
+          errorMsg += uiLang === 'zh'
+            ? '\n💡 提示：请确保内容与词条相关。'
+            : '\n💡 Hint: Please ensure content is relevant to the term.';
+        }
+        setReviewError(errorMsg);
         return;
       }
 

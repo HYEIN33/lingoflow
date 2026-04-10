@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Settings, Edit2, Camera, X, Bell, LogOut, Check, Loader2, Award, Flame, Star, MessageSquare } from 'lucide-react';
-import { doc, updateDoc, collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import { doc, updateDoc, collection, query, where, orderBy, onSnapshot, getDocs } from 'firebase/firestore';
 import { db, auth, storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { updateProfile } from 'firebase/auth';
@@ -99,8 +99,10 @@ export default function UserProfile({
   const [entries, setEntries] = useState<any[]>([]);
 
   const user = auth.currentUser;
-  const displayName = user?.displayName || (user?.isAnonymous ? 'Anonymous' : 'User');
-  const photoURL = user?.photoURL;
+  const [localDisplayName, setLocalDisplayName] = useState(user?.displayName || (user?.isAnonymous ? 'Anonymous' : 'User'));
+  const [localPhotoURL, setLocalPhotoURL] = useState(user?.photoURL || null);
+  const displayName = localDisplayName;
+  const photoURL = localPhotoURL;
 
   useEffect(() => {
     if (!user) return;
@@ -133,7 +135,7 @@ export default function UserProfile({
       const url = await getDownloadURL(storageRef);
       await updateProfile(user, { photoURL: url });
       await updateDoc(doc(db, 'users', user.uid), { photoURL: url });
-      window.location.reload();
+      setLocalPhotoURL(url);
     } catch (error) {
       console.error('Avatar upload failed:', error);
       setErrorMsg(uiLang === 'zh' ? '头像上传失败，请重试' : 'Avatar upload failed, please try again');
@@ -150,12 +152,30 @@ export default function UserProfile({
       await updateProfile(user, { displayName: editName.trim() });
       await updateDoc(doc(db, 'users', user.uid), { displayName: editName.trim() });
       setIsEditingName(false);
-      window.location.reload();
+      setLocalDisplayName(editName.trim());
     } catch (error) {
       console.error('Name update failed:', error);
       setErrorMsg(uiLang === 'zh' ? '用户名更新失败，请重试' : 'Name update failed, please try again');
     } finally {
       setIsSavingName(false);
+    }
+  };
+
+  const handleExportData = async () => {
+    if (!user) return;
+    try {
+      const q = query(collection(db, 'words'), where('userId', '==', user.uid));
+      const snapshot = await getDocs(q);
+      const words = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      const blob = new Blob([JSON.stringify(words, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `lingoflow-wordbook-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed:', error);
     }
   };
 
@@ -427,6 +447,12 @@ export default function UserProfile({
                       <span className="text-gray-600">{uiLang === 'zh' ? '邮箱' : 'Email'}</span>
                       <span className="text-gray-400 text-xs truncate max-w-[180px]">{user?.email || (user?.isAnonymous ? (uiLang === 'zh' ? '匿名用户' : 'Anonymous') : '-')}</span>
                     </div>
+                    <button
+                      onClick={handleExportData}
+                      className="w-full flex items-center justify-center gap-2 p-3 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl transition-colors text-sm font-bold mt-2"
+                    >
+                      {uiLang === 'zh' ? '导出单词本' : 'Export Wordbook'}
+                    </button>
                   </div>
                 </div>
 
