@@ -1,64 +1,43 @@
-import React, { useState, useEffect, useRef, Component, ReactNode } from 'react';
-import { 
-  Search, 
-  Plus, 
-  BookOpen, 
-  Trash2, 
-  LogOut, 
-  LogIn, 
-  Loader2, 
-  Volume2, 
+import React, { useState, useEffect, Component, ReactNode } from 'react';
+import * as Sentry from '@sentry/react';
+import {
+  Search,
+  Plus,
+  BookOpen,
+  LogOut,
+  LogIn,
+  Loader2,
+  Volume2,
   ChevronRight,
   ChevronDown,
   ChevronUp,
   Languages,
   History,
   Globe,
-  CheckCircle,
-  AlertCircle,
   PenTool,
   Mic,
   MicOff,
-  Ear,
-  Settings,
   MessageSquare,
   Zap,
   Trophy,
   UserCircle
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
-import { 
-  collection, 
-  query, 
-  where, 
-  orderBy, 
-  onSnapshot, 
-  addDoc, 
-  updateDoc,
-  deleteDoc, 
-  doc, 
-  setDoc,
-  getDoc,
-  getDocs,
-  serverTimestamp,
-  Timestamp
-} from 'firebase/firestore';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { auth, db, signIn, logOut } from './firebase';
-import firebaseConfig from '../firebase-applet-config.json';
-import { 
-  translateText, 
-  TranslationResult, 
-  generateSpeech, 
-  checkGrammar, 
-  GrammarCheckResult, 
-  translateSimple, 
-  AIProvider,
-  explainSlang,
-  SlangExplanationResult
+import { doc, updateDoc, Timestamp } from 'firebase/firestore';
+import { db, signIn, logOut } from './firebase';
+import {
+  TranslationResult,
+  checkGrammar,
+  GrammarCheckResult
 } from './services/ai';
 import { cn } from './lib/utils';
 import { Language, translations } from './i18n';
+import { useAuth } from './hooks/useAuth';
+import { useAudio } from './hooks/useAudio';
+import { useSpeechRecognition } from './hooks/useSpeechRecognition';
+import { useTranslation } from './hooks/useTranslation';
+import { useWordbook } from './hooks/useWordbook';
+import { useReview } from './hooks/useReview';
 
 // --- Error Handling ---
 export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean, error: any }> {
@@ -73,6 +52,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError
 
   componentDidCatch(error: any, errorInfo: any) {
     console.error("Uncaught error:", error, errorInfo);
+    Sentry.captureException(error);
   }
 
   render() {
@@ -94,36 +74,6 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError
     }
     return this.props.children;
   }
-}
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: any;
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
 }
 
 // --- Types ---
@@ -177,6 +127,7 @@ import { SlangOnboarding } from './components/SlangOnboarding';
 import Leaderboard from './components/Leaderboard';
 import PaymentScreen from './components/PaymentScreen';
 import UserProfileComponent from './components/UserProfile';
+import { OnboardingChecklist } from './components/OnboardingChecklist';
 import GrammarPage from './pages/GrammarPage';
 import ReviewPage from './pages/ReviewPage';
 import WordbookPage from './pages/WordbookPage';
@@ -188,37 +139,38 @@ export default function App() {
   const [showPayment, setShowPayment] = useState(false);
   const [paymentTrigger, setPaymentTrigger] = useState('default');
 
-  useEffect(() => {
-    console.log('Firebase Config Loaded:', {
-      projectId: firebaseConfig.projectId,
-      firestoreDatabaseId: firebaseConfig.firestoreDatabaseId,
-      authDomain: firebaseConfig.authDomain
-    });
-    console.log('Firestore DB Instance:', db);
-  }, []);
-
-  const [user, setUser] = useState<User | null>(null);
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [isAuthReady, setIsAuthReady] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [inputText, setInputText] = useState('');
-  const [isTranslating, setIsTranslating] = useState(false);
-  const [translationResult, setTranslationResult] = useState<TranslationResult | null>(null);
-  const [slangInsights, setSlangInsights] = useState<SlangExplanationResult[]>([]);
-  const [isFetchingSlang, setIsFetchingSlang] = useState(false);
-  const [selectedUsageIndex, setSelectedUsageIndex] = useState(0);
-  const [selectedWordbookItem, setSelectedWordbookItem] = useState<SavedWord | null>(null);
-  const [savedWords, setSavedWords] = useState<SavedWord[]>([]);
-  const [isSaving, setIsSaving] = useState(false);
+  const [showQrCode, setShowQrCode] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [grammarInput, setGrammarInput] = useState('');
   const [isCheckingGrammar, setIsCheckingGrammar] = useState(false);
   const [grammarResult, setGrammarResult] = useState<GrammarCheckResult | null>(null);
-  const [isListening, setIsListening] = useState(false);
-  const [showDetails, setShowDetails] = useState(false);
-  const [showQrCode, setShowQrCode] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(false);
-  const [formalityLevel, setFormalityLevel] = useState<number>(50);
-  const recognitionRef = useRef<any>(null);
+
+  const [uiLang, setUiLang] = useState<Language>(
+    typeof navigator !== 'undefined' && navigator.language.startsWith('zh') ? 'zh' : 'en'
+  );
+
+  const t = translations[uiLang];
+
+  // --- Custom Hooks ---
+  const { user, userProfile, setUserProfile, isAuthReady } = useAuth();
+  const { speak, stopAllAudio, loadingAudioText } = useAudio();
+
+  const onPaymentNeeded = (trigger: string) => {
+    setPaymentTrigger(trigger);
+    setShowPayment(true);
+  };
+
+  const { savedWords, searchQuery, setSearchQuery, wordbookFilter, setWordbookFilter, filteredWords, selectedWordbookItem, setSelectedWordbookItem, handleDeleteWord } = useWordbook(user);
+
+  const {
+    inputText, setInputText, isTranslating, translationResult, slangInsights, isFetchingSlang,
+    selectedUsageIndex, setSelectedUsageIndex, showDetails, setShowDetails,
+    formalityLevel, setFormalityLevel, isSaving, handleTranslate, handleSaveWord,
+  } = useTranslation({ user, userProfile, setUserProfile, savedWords, uiLang, onPaymentNeeded });
+
+  const { dueWords, reviewIndex, setReviewIndex, showReviewAnswer, setShowReviewAnswer, currentReviewWord, handleReview } = useReview(user, userProfile, savedWords);
+
+  const { isListening, toggleListening } = useSpeechRecognition({ uiLang, activeTab, setInputText, setGrammarInput, stopAllAudio });
 
   useEffect(() => {
     if (activeTab === 'slang' && userProfile && !userProfile.hasCompletedOnboarding) {
@@ -226,296 +178,17 @@ export default function App() {
     }
   }, [activeTab, userProfile]);
 
-  const [uiLang, setUiLang] = useState<Language>(
-    typeof navigator !== 'undefined' && navigator.language.startsWith('zh') ? 'zh' : 'en'
-  );
-  
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const lastRequestIdRef = useRef<number>(0);
-  const [loadingAudioText, setLoadingAudioText] = useState<string | null>(null);
-
-  const t = translations[uiLang];
-
   const handleUpgrade = () => {
     setPaymentTrigger('default');
     setShowPayment(true);
   };
-
-  const [wordbookFilter, setWordbookFilter] = useState<'all' | 'authentic' | 'academic' | 'standard'>('all');
-
-  const filteredWords = savedWords.filter(word => {
-    const matchesSearch = word.original.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      word.usages.some(u => u.meaningZh.includes(searchQuery));
-    const matchesFilter = wordbookFilter === 'all' || word.styleTag === wordbookFilter;
-    return matchesSearch && matchesFilter;
-  });
-
-  const dueWords = savedWords.filter(word => {
-    if (!word.nextReviewDate) return false;
-    const nextDate = word.nextReviewDate.toDate();
-    return nextDate <= new Date();
-  });
-
-  const [reviewIndex, setReviewIndex] = useState(0);
-  const [showReviewAnswer, setShowReviewAnswer] = useState(false);
-
-  const currentReviewWord = dueWords[reviewIndex];
-
-  const stopAllAudio = () => {
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
-    if (currentSourceRef.current) {
-      try {
-        currentSourceRef.current.stop();
-        currentSourceRef.current.disconnect();
-      } catch (e) {
-        // Ignore
-      }
-      currentSourceRef.current = null;
-    }
-  };
-
-  const speak = async (text: string) => {
-    const requestId = ++lastRequestIdRef.current;
-    setLoadingAudioText(text);
-    
-    // Stop everything immediately
-    stopAllAudio();
-
-    try {
-      const base64Audio = await generateSpeech(text);
-      
-      // If a newer request has started, ignore this one
-      if (requestId !== lastRequestIdRef.current) return;
-      
-      if (!base64Audio) {
-        throw new Error('No audio data received');
-      }
-
-      const binary = atob(base64Audio);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
-      
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
-      }
-      
-      const audioContext = audioContextRef.current;
-      if (audioContext.state === 'suspended') {
-        await audioContext.resume();
-      }
-
-      let audioBuffer: AudioBuffer;
-      
-      // Try to decode as MP3 first (OpenAI format)
-      try {
-        audioBuffer = await audioContext.decodeAudioData(bytes.buffer.slice(0));
-      } catch (e) {
-        // Fallback to raw PCM (Gemini format)
-        audioBuffer = audioContext.createBuffer(1, bytes.length / 2, 24000);
-        const channelData = audioBuffer.getChannelData(0);
-        const view = new DataView(bytes.buffer);
-        for (let i = 0; i < channelData.length; i++) {
-          channelData[i] = view.getInt16(i * 2, true) / 32768.0;
-        }
-      }
-      
-      const source = audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioContext.destination);
-      
-      // Double check before starting
-      if (requestId !== lastRequestIdRef.current) {
-        source.disconnect();
-        return;
-      }
-
-      // Stop any other source that might have started in the microtask gap
-      stopAllAudio();
-
-      currentSourceRef.current = source;
-      source.onended = () => {
-        if (currentSourceRef.current === source) {
-          currentSourceRef.current = null;
-        }
-        if (requestId === lastRequestIdRef.current) {
-          setLoadingAudioText(null);
-        }
-      };
-      
-      source.start();
-    } catch (error) {
-      console.error('Speech generation failed:', error);
-      if (requestId === lastRequestIdRef.current) {
-        setLoadingAudioText(null);
-        stopAllAudio();
-        const utterance = new SpeechSynthesisUtterance(text);
-        const hasChinese = /[\u4e00-\u9fa5]/.test(text);
-        utterance.lang = hasChinese ? 'zh-CN' : 'en-US';
-        window.speechSynthesis.speak(utterance);
-      }
-    }
-  };
-
-  // Auto-login in QA test mode
-  useEffect(() => {
-    if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('qa')) {
-      import('firebase/auth').then(({ signInAnonymously }) => {
-        signInAnonymously(auth).catch(console.error);
-      });
-    }
-  }, []);
-
-  // Auth Listener
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
-      setIsAuthReady(true);
-      if (user) {
-        // Create or update user profile
-        const userRef = doc(db, 'users', user.uid);
-        try {
-          const userDoc = await getDoc(userRef);
-          const today = new Date().toISOString().split('T')[0];
-          
-          if (!userDoc.exists()) {
-            const newProfile: UserProfile = {
-              userId: user.uid,
-              isPro: false,
-              translationCount: 0,
-              grammarCount: 0,
-              lastResetDate: today,
-              tabOrder: ['slang', 'translate', 'grammar', 'history', 'review'],
-              approvedSlangCount: 0,
-              currentStreak: 0,
-              reputationScore: 100,
-              l1PenaltyCount: 0,
-              hasCompletedOnboarding: false,
-              createdAt: serverTimestamp()
-            };
-            await setDoc(userRef, newProfile);
-            setUserProfile(newProfile);
-          } else {
-            const data = userDoc.data() as UserProfile;
-            let updates: any = {};
-            
-            // Ensure required fields exist for older profiles
-            if (data.isPro === undefined) updates.isPro = false;
-            if (data.translationCount === undefined) updates.translationCount = 0;
-            if (data.grammarCount === undefined) updates.grammarCount = 0;
-            if (data.lastResetDate === undefined) updates.lastResetDate = today;
-            
-            // Reset daily limits
-            if (data.lastResetDate !== today && data.lastResetDate !== undefined) {
-              updates.translationCount = 0;
-              updates.grammarCount = 0;
-              updates.lastResetDate = today;
-            }
-            
-            // Handle streak logic
-            if (data.lastContributionDate) {
-              const lastDate = new Date(data.lastContributionDate);
-              const currentDate = new Date();
-              const diffTime = Math.abs(currentDate.getTime() - lastDate.getTime());
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-              
-              if (diffDays > 1) {
-                // Streak broken
-                updates.currentStreak = 0;
-              }
-            }
-
-            if (Object.keys(updates).length > 0) {
-              await updateDoc(userRef, updates);
-              setUserProfile({ ...data, ...updates });
-            } else {
-              setUserProfile(data);
-            }
-          }
-        } catch (error) {
-          console.error('Failed to sync user profile:', error);
-        }
-
-        // Test connection
-        import('firebase/firestore').then(({ getDocFromServer, doc }) => {
-          getDocFromServer(doc(db, '_connection_test_', 'ping')).catch(error => {
-            if (error.message?.includes('client is offline')) {
-              console.error("Firestore connection failed: client is offline. Check firebase-applet-config.json");
-            }
-          });
-        });
-      } else {
-        setUserProfile(null);
-      }
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // Firestore Listener for Saved Words
-  useEffect(() => {
-    if (!user) {
-      setSavedWords([]);
-      return;
-    }
-
-    const path = 'words';
-    console.log('Attaching onSnapshot listener for path:', path, 'userId:', user.uid);
-    
-    // Remove orderBy from query to avoid composite index requirement
-    const q = query(
-      collection(db, path),
-      where('userId', '==', user.uid)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      console.log('onSnapshot received update. Document count:', snapshot.size, 'Empty:', snapshot.empty);
-      
-      if (snapshot.empty) {
-        console.log('No documents found for user:', user.uid);
-        setSavedWords([]);
-        return;
-      }
-
-      const words = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          ...data
-        };
-      }) as SavedWord[];
-      
-      // Sort in-memory instead of in the query
-      const sortedWords = words.sort((a, b) => {
-        const getTime = (t: any) => {
-          if (!t) return 0;
-          if (typeof t.toMillis === 'function') return t.toMillis();
-          if (t instanceof Date) return t.getTime();
-          if (t.seconds) return t.seconds * 1000;
-          if (typeof t === 'number') return t;
-          return 0;
-        };
-        return getTime(b.createdAt) - getTime(a.createdAt);
-      });
-      
-      setSavedWords(sortedWords);
-    }, (error) => {
-      console.error('onSnapshot error:', error);
-      handleFirestoreError(error, OperationType.LIST, path);
-    });
-
-    return () => unsubscribe();
-  }, [user]);
 
   const handleCheckGrammar = async (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!grammarInput.trim() || isCheckingGrammar) return;
 
     if (userProfile && !userProfile.isPro && userProfile.grammarCount >= 10) {
-      setPaymentTrigger('translation_limit'); // Reusing translation limit trigger for now
+      setPaymentTrigger('translation_limit');
       setShowPayment(true);
       return;
     }
@@ -538,210 +211,6 @@ export default function App() {
       alert(message);
     } finally {
       setIsCheckingGrammar(false);
-    }
-  };
-
-  const toggleListening = async () => {
-    console.log('toggleListening called, current state:', { isListening, activeTab });
-    if (isListening) {
-      recognitionRef.current?.stop();
-      setIsListening(false);
-      return;
-    }
-
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert('Speech recognition is not supported in this browser.');
-      return;
-    }
-
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      alert(uiLang === 'zh' ? '您的浏览器不支持麦克风访问。' : 'Your browser does not support microphone access.');
-      return;
-    }
-
-    try {
-      // Explicitly request microphone access to trigger the browser prompt
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch (err: any) {
-      console.error('Microphone access denied:', err);
-      if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        alert(uiLang === 'zh' ? '未找到麦克风设备，请检查您的设备连接。' : 'No microphone found. Please check your device connection.');
-      } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        alert(uiLang === 'zh' ? '请在浏览器设置中允许麦克风访问。' : 'Please allow microphone access in your browser settings.');
-      } else {
-        alert(uiLang === 'zh' ? '无法访问麦克风：' + err.message : 'Could not access microphone: ' + err.message);
-      }
-      return;
-    }
-
-    stopAllAudio();
-
-    const recognition = new SpeechRecognition();
-    recognition.continuous = false;
-    recognition.interimResults = false;
-    recognition.lang = uiLang === 'zh' ? 'zh-CN' : 'en-US';
-
-    recognition.onstart = () => setIsListening(true);
-    recognition.onend = () => {
-      setIsListening(false);
-    };
-    recognition.onerror = (event: any) => {
-      console.error('Speech recognition error:', event.error);
-      if (event.error === 'not-allowed') {
-        alert(uiLang === 'zh' ? '请允许麦克风访问。' : 'Please allow microphone access.');
-      } else if (event.error === 'network') {
-        alert(uiLang === 'zh' ? '网络连接错误。' : 'Network connection error.');
-      }
-      setIsListening(false);
-    };
-
-    recognition.onresult = async (event: any) => {
-      const transcript = event.results[event.results.length - 1][0].transcript;
-      if (activeTab === 'translate') {
-        setInputText(prev => prev + (prev ? ' ' : '') + transcript);
-      } else if (activeTab === 'grammar') {
-        setGrammarInput(prev => prev + (prev ? ' ' : '') + transcript);
-      }
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-  };
-
-  const handleTranslate = async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (!inputText.trim() || isTranslating) return;
-
-    if (userProfile && !userProfile.isPro && userProfile.translationCount >= 10) {
-      setPaymentTrigger('translation_limit');
-      setShowPayment(true);
-      return;
-    }
-
-    setIsTranslating(true);
-    setShowDetails(false);
-    setSlangInsights([]);
-    try {
-      const result = await translateText(inputText, userProfile?.isPro ? formalityLevel : undefined);
-      setTranslationResult(result);
-      setSelectedUsageIndex(0);
-      
-      // Fetch slang insights if terms are found
-      if (result.slangTerms && result.slangTerms.length > 0) {
-        setIsFetchingSlang(true);
-        try {
-          const insights = await Promise.all(
-            result.slangTerms.slice(0, 3).map(term => explainSlang(term))
-          );
-          setSlangInsights(insights);
-        } catch (err) {
-          console.error("Error fetching slang insights:", err);
-        } finally {
-          setIsFetchingSlang(false);
-        }
-      }
-
-      if (userProfile && !userProfile.isPro) {
-        const userRef = doc(db, 'users', userProfile.userId);
-        await updateDoc(userRef, {
-          translationCount: userProfile.translationCount + 1
-        });
-        setUserProfile({ ...userProfile, translationCount: userProfile.translationCount + 1 });
-      }
-    } catch (error: any) {
-      console.error(error);
-      const message = error.message || t.translationFailed;
-      alert(message);
-    } finally {
-      setIsTranslating(false);
-    }
-  };
-
-  const handleSaveWord = async (styleTag: 'authentic' | 'academic' | 'standard' = 'standard') => {
-    if (!user || !translationResult || isSaving) return;
-
-    if (userProfile && !userProfile.isPro && savedWords.length >= 50) {
-      alert(uiLang === 'zh' ? '免费用户限存50个单词，请升级Pro。' : 'Free users are limited to 50 saved words. Please upgrade to Pro.');
-      return;
-    }
-
-    setIsSaving(true);
-    const path = 'words';
-    try {
-      const wordData: any = {
-        original: translationResult.original,
-        usages: translationResult.usages,
-        userId: user.uid,
-        styleTag,
-        createdAt: Timestamp.now()
-      };
-
-      // Spaced Repetition fields for Pro users
-      if (userProfile?.isPro) {
-        wordData.nextReviewDate = Timestamp.now();
-        wordData.interval = 0;
-        wordData.easeFactor = 2.5;
-      }
-      
-      const docRef = await addDoc(collection(db, 'words'), wordData);
-      
-      alert(uiLang === 'zh' ? '已成功保存到单词本' : 'Successfully saved to wordbook');
-      setTranslationResult(null);
-      setInputText('');
-      setShowDetails(false);
-    } catch (error: any) {
-      console.error('Save word failed:', error);
-      handleFirestoreError(error, OperationType.CREATE, path);
-      alert(uiLang === 'zh' ? `保存失败: ${error.message || '未知错误'}` : `Failed to save: ${error.message || 'Unknown error'}`);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleDeleteWord = async (id: string) => {
-    if (!user) return;
-    const path = `words/${id}`;
-    try {
-      await deleteDoc(doc(db, 'words', id));
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, path);
-    }
-  };
-
-  const handleReview = async (wordId: string, quality: number) => {
-    if (!user || !userProfile?.isPro) return;
-    
-    const word = savedWords.find(w => w.id === wordId);
-    if (!word) return;
-
-    // SM-2 Algorithm
-    let { interval, easeFactor } = word;
-    if (interval === undefined) interval = 0;
-    if (easeFactor === undefined) easeFactor = 2.5;
-
-    if (quality >= 3) {
-      if (interval === 0) interval = 1;
-      else if (interval === 1) interval = 6;
-      else interval = Math.round(interval * easeFactor);
-      easeFactor = easeFactor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02));
-    } else {
-      interval = 1;
-      easeFactor = Math.max(1.3, easeFactor - 0.2);
-    }
-
-    const nextReviewDate = new Date();
-    nextReviewDate.setDate(nextReviewDate.getDate() + interval);
-
-    try {
-      const wordRef = doc(db, 'words', wordId);
-      await updateDoc(wordRef, {
-        interval,
-        easeFactor,
-        nextReviewDate: Timestamp.fromDate(nextReviewDate)
-      });
-    } catch (error) {
-      console.error('Failed to update review:', error);
     }
   };
 
@@ -1369,6 +838,19 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
             >
+              {userProfile && !userProfile.hasCompletedOnboarding && (userProfile.approvedSlangCount || 0) < 3 && (
+                <OnboardingChecklist
+                  uiLang={uiLang}
+                  onDismiss={() => {
+                    // Optional: mark onboarding as completed when dismissed
+                    if (user) {
+                      const userRef = doc(db, 'users', user.uid);
+                      updateDoc(userRef, { hasCompletedOnboarding: true }).catch(console.error);
+                      setUserProfile(prev => prev ? { ...prev, hasCompletedOnboarding: true } : prev);
+                    }
+                  }}
+                />
+              )}
               <SlangDictionary uiLang={uiLang} initialSearchTerm={searchQuery} />
             </motion.div>
           ) : activeTab === 'leaderboard' ? (
