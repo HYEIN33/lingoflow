@@ -230,6 +230,24 @@ export default function UserProfile({
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
+  // Badge equip
+  const [equippedBadge, setEquippedBadge] = useState(userProfile?.equippedBadge || '');
+  const [showBadgePicker, setShowBadgePicker] = useState(false);
+
+  const handleEquipBadge = async (badgeId: string) => {
+    if (!user) return;
+    const newBadge = equippedBadge === badgeId ? '' : badgeId; // toggle off if same
+    setEquippedBadge(newBadge);
+    setShowBadgePicker(false);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { equippedBadge: newBadge });
+    } catch (e) {
+      console.error('Failed to equip badge:', e);
+    }
+  };
+
+  const equippedAchievement = ACHIEVEMENTS.find(a => a.id === equippedBadge);
+
   // Real data
   const [entries, setEntries] = useState<any[]>([]);
 
@@ -382,7 +400,14 @@ export default function UserProfile({
                 </div>
               ) : (
                 <>
-                  <h2 className="text-xl font-bold text-gray-900 truncate">{displayName}</h2>
+                  <h2 className="text-xl font-bold text-gray-900 truncate flex items-center gap-2">
+                    {displayName}
+                    {equippedAchievement && (
+                      <span className="shrink-0" title={uiLang === 'zh' ? equippedAchievement.name : equippedAchievement.nameEn}>
+                        <AchievementBadge achievement={equippedAchievement} unlocked={true} size="sm" />
+                      </span>
+                    )}
+                  </h2>
                   {isOwnProfile && (
                     <button
                       onClick={() => { setEditName(displayName); setIsEditingName(true); }}
@@ -453,20 +478,33 @@ export default function UserProfile({
           {uiLang === 'zh' ? '成就勋章' : 'Achievements'}
           <span className="text-xs font-normal text-gray-400">{unlockedAchievements.length}/{ACHIEVEMENTS.length}</span>
         </h3>
+        <p className="text-[10px] text-gray-400 mb-3">{uiLang === 'zh' ? '点击勋章佩戴 / 取消佩戴' : 'Click a badge to equip / unequip'}</p>
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
           {ACHIEVEMENTS.map((achievement) => {
             const unlocked = true;
+            const isEquipped = equippedBadge === achievement.id;
             return (
-              <div key={achievement.id} className="flex flex-col items-center gap-1.5 group relative">
+              <button
+                key={achievement.id}
+                onClick={() => unlocked && handleEquipBadge(achievement.id)}
+                className={`flex flex-col items-center gap-1.5 group relative rounded-2xl p-2 transition-all ${
+                  isEquipped ? 'bg-blue-50 ring-2 ring-blue-400 shadow-sm' : 'hover:bg-gray-50'
+                } ${!unlocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+              >
                 <AchievementBadge achievement={achievement} unlocked={unlocked} size="md" />
-                <span className={`text-[10px] font-medium text-center leading-tight ${unlocked ? 'text-gray-700' : 'text-gray-400'}`}>
+                <span className={`text-[10px] font-medium text-center leading-tight ${isEquipped ? 'text-blue-600 font-bold' : unlocked ? 'text-gray-700' : 'text-gray-400'}`}>
                   {uiLang === 'zh' ? achievement.name : achievement.nameEn}
                 </span>
+                {isEquipped && (
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                    <Check className="w-2.5 h-2.5 text-white" />
+                  </span>
+                )}
                 {/* Tooltip */}
                 <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-28 bg-gray-800 text-white text-[10px] text-center p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-                  {unlocked ? (uiLang === 'zh' ? '已解锁' : 'Unlocked') : achievement.requirement}
+                  {isEquipped ? (uiLang === 'zh' ? '已佩戴 · 点击取消' : 'Equipped · Click to remove') : unlocked ? (uiLang === 'zh' ? '点击佩戴' : 'Click to equip') : achievement.requirement}
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
