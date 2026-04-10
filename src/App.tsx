@@ -178,6 +178,7 @@ import UserProfileComponent from './components/UserProfile';
 export default function App() {
 
   const [activeTab, setActiveTab] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile'>('slang');
+  // Slang is the primary USP, always default tab
   const [showPayment, setShowPayment] = useState(false);
   const [paymentTrigger, setPaymentTrigger] = useState('default');
 
@@ -354,6 +355,15 @@ export default function App() {
     }
   };
 
+  // Auto-login in QA test mode
+  useEffect(() => {
+    if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('qa')) {
+      import('firebase/auth').then(({ signInAnonymously }) => {
+        signInAnonymously(auth).catch(console.error);
+      });
+    }
+  }, []);
+
   // Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -373,7 +383,7 @@ export default function App() {
               translationCount: 0,
               grammarCount: 0,
               lastResetDate: today,
-              tabOrder: ['translate', 'history', 'grammar', 'slang'],
+              tabOrder: ['slang', 'translate', 'grammar', 'history', 'review'],
               approvedSlangCount: 0,
               currentStreak: 0,
               reputationScore: 100,
@@ -729,103 +739,6 @@ export default function App() {
     }
   };
 
-  const testFirestoreConnection = async () => {
-    if (!user) return;
-    try {
-      const { setDoc, doc, serverTimestamp } = await import('firebase/firestore');
-      const testRef = doc(db, 'test_connection', user.uid);
-      await setDoc(testRef, {
-        lastTested: serverTimestamp(),
-        userId: user.uid,
-        email: user.email
-      });
-      alert('Firestore Write Success! Connection is working.');
-    } catch (error: any) {
-      console.error('Firestore Write Failed:', error);
-      alert(`Firestore Write Failed: ${error.message}`);
-    }
-  };
-
-  const checkRulesEnforcement = async () => {
-    if (!user) return;
-    try {
-      // Attempt to write a document without userId - should fail if rules are strict
-      const docRef = await addDoc(collection(db, 'words'), {
-        test: 'rules_check',
-        createdAt: Timestamp.now()
-      });
-      console.log('Rules Check Success ID:', docRef.id);
-      alert('Rules Check: Write succeeded without userId. Rules are RELAXED.');
-    } catch (error) {
-      console.error('Rules Check Error:', error);
-      alert('Rules Check: Write failed. Rules are ENFORCED. Error: ' + (error instanceof Error ? error.message : String(error)));
-    }
-  };
-
-  const checkAllWords = async () => {
-    if (!user) return;
-    try {
-      const q = query(collection(db, 'words'));
-      const snapshot = await getDocs(q);
-      console.log('All Words Snapshot:', snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
-      alert(`Found ${snapshot.size} total words in the collection. Check F12 -> Console.`);
-    } catch (error) {
-      console.error('Error checking all words:', error);
-      alert('Error checking all words: ' + (error instanceof Error ? error.message : String(error)));
-    }
-  };
-
-  const checkAuthState = () => {
-    if (!user) {
-      alert('User not logged in');
-      return;
-    }
-    console.log('User Object:', user);
-    console.log('User UID:', user.uid);
-    console.log('User Email:', user.email);
-    console.log('User Email Verified:', user.emailVerified);
-    console.log('User Anonymous:', user.isAnonymous);
-    alert('User auth state logged to console. Check F12 -> Console');
-  };
-
-  const checkFirestoreInstance = () => {
-    console.log('Firestore DB Instance:', db);
-    console.log('Firebase Config:', firebaseConfig);
-    alert('Firestore instance details logged to console. Check F12 -> Console');
-  };
-
-  const checkAuthToken = async () => {
-    if (!user) {
-      alert('User not logged in');
-      return;
-    }
-    try {
-      const token = await user.getIdToken(true);
-      console.log('Auth Token:', token);
-      alert('Auth token logged to console. Check F12 -> Console');
-    } catch (error) {
-      console.error('Error getting auth token:', error);
-      alert('Error getting auth token: ' + (error instanceof Error ? error.message : String(error)));
-    }
-  };
-
-  const fetchWordsManually = async () => {
-    if (!user) return;
-    const path = 'words';
-    try {
-      const { getDocs, collection, query, where } = await import('firebase/firestore');
-      const q = query(collection(db, path), where('userId', '==', user.uid));
-      const snapshot = await getDocs(q);
-      console.log('Manual fetch result count:', snapshot.size);
-      const words = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as SavedWord[];
-      setSavedWords(words.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0)));
-      alert(`Fetched ${snapshot.size} words`);
-    } catch (error) {
-      console.error('Manual fetch failed:', error);
-      alert('Fetch failed: ' + (error as any).message);
-    }
-  };
-
   const handleTabOrderChange = async (newOrder: string[]) => {
     if (!user || !userProfile) return;
     setUserProfile({ ...userProfile, tabOrder: newOrder });
@@ -837,7 +750,7 @@ export default function App() {
     }
   };
 
-  const tabs = (userProfile?.tabOrder || ['slang', 'translate', 'history', 'review', 'grammar']).map(id => {
+  const tabs = (userProfile?.tabOrder || ['slang', 'translate', 'grammar', 'history', 'review']).map(id => {
     switch(id) {
       case 'translate': return { id, label: t.translateTab, icon: Search };
       case 'history': return { id, label: t.wordbookTab, icon: History, count: savedWords.length };
@@ -904,8 +817,9 @@ export default function App() {
             )}
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
-            <button 
+            <button
               onClick={() => setActiveTab('leaderboard')}
+              aria-label={uiLang === 'zh' ? '排行榜' : 'Leaderboard'}
               className={cn(
                 "p-1.5 sm:p-2 rounded-full transition-colors",
                 activeTab === 'leaderboard' ? "bg-amber-100 text-amber-600" : "hover:bg-gray-50 text-gray-400 hover:text-amber-500"
@@ -914,8 +828,9 @@ export default function App() {
             >
               <Trophy className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab('profile')}
+              aria-label={uiLang === 'zh' ? '我的' : 'Profile'}
               className={cn(
                 "p-1.5 sm:p-2 rounded-full transition-colors",
                 activeTab === 'profile' ? "bg-blue-100 text-blue-600" : "hover:bg-gray-50 text-gray-400 hover:text-blue-500"
@@ -949,8 +864,9 @@ export default function App() {
               <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span className="hidden xs:inline">{uiLang === 'zh' ? '手机端' : 'Mobile'}</span>
             </button>
-            <button 
+            <button
               onClick={logOut}
+              aria-label={t.signOut}
               className="p-1.5 sm:p-2 hover:bg-gray-50 rounded-full transition-colors text-gray-400 hover:text-red-500"
               title={t.signOut}
             >
@@ -964,7 +880,7 @@ export default function App() {
         {/* Tabs */}
         <Reorder.Group 
           axis="x" 
-          values={userProfile?.tabOrder || ['slang', 'translate', 'history', 'review', 'grammar']} 
+          values={userProfile?.tabOrder || ['slang', 'translate', 'grammar', 'history', 'review']}
           onReorder={handleTabOrderChange}
           className="flex bg-white/30 backdrop-blur-sm border border-white/50 p-1 rounded-2xl mb-6 sm:mb-8 overflow-x-auto no-scrollbar shadow-inner"
         >
@@ -1851,65 +1767,9 @@ export default function App() {
                 <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">
                   <BookOpen className="w-12 h-12 text-gray-200 mx-auto mb-4" />
                   <p className="text-gray-400 font-medium">{t.emptyWordbook}</p>
-                  <button 
-                    onClick={fetchWordsManually}
-                    className="mt-4 text-sm text-blue-600 hover:underline"
-                  >
-                    {uiLang === 'zh' ? '手动刷新' : 'Manual Refresh'}
-                  </button>
-                  <button 
-                    onClick={testFirestoreConnection}
-                    className="mt-2 text-xs text-gray-400 hover:underline block mx-auto"
-                  >
-                    {uiLang === 'zh' ? '测试数据库连接' : 'Test Connection'}
-                  </button>
-                  <div className="mt-8 pt-8 border-t border-gray-100 text-[10px] text-gray-300 font-mono">
-                    <p>UID: {user?.uid}</p>
-                    <p>Email: {user?.email}</p>
-                    <p>Words: {savedWords.length}</p>
-                    <button 
-                      onClick={checkRulesEnforcement}
-                      className="mt-2 text-[10px] text-red-400 hover:underline block"
-                    >
-                      {uiLang === 'zh' ? '检查规则强制' : 'Check Rules Enforcement'}
-                    </button>
-                    <button 
-                      onClick={checkAllWords}
-                      className="mt-2 text-[10px] text-yellow-300 hover:underline block"
-                    >
-                      {uiLang === 'zh' ? '检查所有单词' : 'Check All Words'}
-                    </button>
-                    <button 
-                      onClick={checkAuthState}
-                      className="mt-2 text-[10px] text-purple-300 hover:underline block"
-                    >
-                      {uiLang === 'zh' ? '检查认证状态' : 'Check Auth State'}
-                    </button>
-                    <button 
-                      onClick={checkFirestoreInstance}
-                      className="mt-2 text-[10px] text-green-300 hover:underline block"
-                    >
-                      {uiLang === 'zh' ? '检查数据库实例' : 'Check DB Instance'}
-                    </button>
-                    <button 
-                      onClick={checkAuthToken}
-                      className="mt-2 text-[10px] text-blue-300 hover:underline block"
-                    >
-                      {uiLang === 'zh' ? '检查认证令牌' : 'Check Auth Token'}
-                    </button>
-                    <button 
-                      onClick={() => auth.signOut()}
-                      className="mt-1 text-[10px] text-red-300 hover:underline block"
-                    >
-                      {uiLang === 'zh' ? '退出登录' : 'Sign Out'}
-                    </button>
-                    <button 
-                      onClick={() => { localStorage.clear(); window.location.reload(); }}
-                      className="mt-1 text-[10px] text-orange-300 hover:underline block"
-                    >
-                      {uiLang === 'zh' ? '清除本地缓存' : 'Clear Local Cache'}
-                    </button>
-                  </div>
+                  <p className="text-gray-300 text-sm mt-2">
+                    {uiLang === 'zh' ? '翻译单词后点击保存，就会出现在这里' : 'Translate a word and save it to see it here'}
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-6">
@@ -2030,7 +1890,7 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
             >
-              <Leaderboard currentUserId={user.uid} />
+              <Leaderboard currentUserId={user.uid} uiLang={uiLang} />
             </motion.div>
           ) : activeTab === 'profile' ? (
             <motion.div
@@ -2039,13 +1899,16 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
             >
-              <UserProfileComponent 
-                uid={user.uid} 
+              <UserProfileComponent
+                uid={user.uid}
+                userProfile={userProfile}
+                uiLang={uiLang}
                 onOpenPayment={(source) => {
                   setPaymentTrigger(source);
                   setShowPayment(true);
                 }}
                 onOpenOnboarding={() => setShowOnboarding(true)}
+                onLogout={logOut}
               />
             </motion.div>
           ) : null}
@@ -2054,9 +1917,10 @@ export default function App() {
         {/* Payment Modal */}
         <AnimatePresence>
           {showPayment && (
-            <PaymentScreen 
+            <PaymentScreen
               triggerSource={paymentTrigger}
               currentPlan={userProfile?.isPro ? 'pro' : 'free'}
+              uiLang={uiLang}
               onClose={() => setShowPayment(false)}
               onSuccess={() => {
                 setShowPayment(false);
