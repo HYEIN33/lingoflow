@@ -164,6 +164,9 @@ export interface UserProfile {
   l3PenaltyActive?: boolean;
   vPenaltyLevel?: number; // 1, 2, 3
   
+  // Badge
+  equippedBadge?: string; // achievement id, e.g. 'legend'
+
   // Onboarding
   hasCompletedOnboarding?: boolean;
   createdAt?: any;
