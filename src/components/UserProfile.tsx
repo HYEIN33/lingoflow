@@ -7,14 +7,14 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { updateProfile } from 'firebase/auth';
 import { UserProfile as UserProfileType } from '../App';
 
-// Achievement Badge System — metallic gold medal design
+// Achievement Badge System — premium metallic medals with shimmer animation
 const ACHIEVEMENTS = [
-  { id: 'apprentice', name: '梗学徒', nameEn: 'Slang Apprentice', symbol: 'I', tier: 'bronze' as const, requirement: '提交首个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 1 },
-  { id: 'observer', name: '文化观察员', nameEn: 'Culture Observer', symbol: 'II', tier: 'bronze' as const, requirement: '累计 5 个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 5 },
-  { id: 'streak7', name: '周打卡达人', nameEn: '7-Day Streak', symbol: '7', tier: 'silver' as const, requirement: '连续贡献 7 天', condition: (p: UserProfileType) => (p.currentStreak || 0) >= 7 },
-  { id: 'multimedia', name: '多模态先锋', nameEn: 'Multimedia Pioneer', symbol: 'M', tier: 'silver' as const, requirement: '上传多媒体词条', condition: (p: UserProfileType) => !!p.hasUploadedMedia },
-  { id: 'expert', name: '梗百科编辑', nameEn: 'Slang Editor', symbol: 'E', tier: 'gold' as const, requirement: '累计 20 个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 20 },
-  { id: 'legend', name: '梗神', nameEn: 'Slang Legend', symbol: '★', tier: 'gold' as const, requirement: '累计 100 个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 100 },
+  { id: 'apprentice', name: '梗学徒', nameEn: 'Apprentice', symbol: '初', tier: 'bronze' as const, requirement: '提交首个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 1 },
+  { id: 'observer', name: '文化观察员', nameEn: 'Observer', symbol: '观', tier: 'bronze' as const, requirement: '累计 5 个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 5 },
+  { id: 'streak7', name: '周打卡达人', nameEn: 'Streak', symbol: '连', tier: 'silver' as const, requirement: '连续贡献 7 天', condition: (p: UserProfileType) => (p.currentStreak || 0) >= 7 },
+  { id: 'multimedia', name: '多模态先锋', nameEn: 'Pioneer', symbol: '媒', tier: 'silver' as const, requirement: '上传多媒体词条', condition: (p: UserProfileType) => !!p.hasUploadedMedia },
+  { id: 'expert', name: '梗百科编辑', nameEn: 'Editor', symbol: '编', tier: 'gold' as const, requirement: '累计 20 个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 20 },
+  { id: 'legend', name: '梗神', nameEn: 'Legend', symbol: '神', tier: 'gold' as const, requirement: '累计 100 个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 100 },
 ];
 
 const TIER_STYLES = {
@@ -22,67 +22,157 @@ const TIER_STYLES = {
     rim: ['#8B5E3C', '#C49A6C', '#E8C9A0', '#A07850'],
     face: ['#6B4226', '#A07850', '#D4A76A', '#F5DEB3', '#B8860B', '#8B5E3C'],
     text: '#5C3A1E',
+    glow: false,
   },
   silver: {
-    rim: ['#6B7280', '#9CA3AF', '#D1D5DB', '#6B7280'],
-    face: ['#4B5563', '#9CA3AF', '#D1D5DB', '#F3F4F6', '#9CA3AF', '#6B7280'],
-    text: '#374151',
+    rim: ['#5A6270', '#A0ABB8', '#D8DEE6', '#7A8494'],
+    face: ['#4B5563', '#8896A8', '#C8D2DE', '#F0F4F8', '#A0ABB8', '#6B7688'],
+    text: '#2D3748',
+    glow: false,
   },
   gold: {
-    rim: ['#92700C', '#C5981A', '#F5D442', '#B8960F'],
-    face: ['#6B5208', '#A07C10', '#E8C820', '#FFF7B0', '#C49E14', '#7A6008'],
-    text: '#5C4A08',
+    rim: ['#7A5F00', '#B8941A', '#FFD700', '#C9A30E'],
+    face: ['#5C4600', '#9A7D10', '#DFBA18', '#FFF2A0', '#D4AB12', '#7A5F00'],
+    text: '#4A3800',
+    glow: true,
   },
 };
+
+// CSS keyframes for gold shimmer (injected once)
+const shimmerCSS = `
+@keyframes badge-shimmer {
+  0% { transform: translateX(-150%) skewX(-15deg); }
+  100% { transform: translateX(250%) skewX(-15deg); }
+}
+@keyframes badge-pulse-glow {
+  0%, 100% { filter: drop-shadow(0 0 3px rgba(255,215,0,0.3)); }
+  50% { filter: drop-shadow(0 0 8px rgba(255,215,0,0.6)); }
+}
+@keyframes badge-rotate-ring {
+  from { transform-origin: 28px 28px; transform: rotate(0deg); }
+  to { transform-origin: 28px 28px; transform: rotate(360deg); }
+}
+`;
+
+let shimmerInjected = false;
+function injectShimmerCSS() {
+  if (shimmerInjected || typeof document === 'undefined') return;
+  const style = document.createElement('style');
+  style.textContent = shimmerCSS;
+  document.head.appendChild(style);
+  shimmerInjected = true;
+}
 
 export function AchievementBadge({ achievement, unlocked, size = 'md' }: { achievement: typeof ACHIEVEMENTS[0], unlocked: boolean, size?: 'sm' | 'md' | 'lg' }) {
   const s = size === 'sm' ? 40 : size === 'lg' ? 72 : 56;
   const style = TIER_STYLES[achievement.tier];
-  const id = `badge-${achievement.id}-${s}`;
+  const id = `badge-${achievement.id}-${s}-${Math.random().toString(36).slice(2, 6)}`;
+  const isGold = style.glow;
+
+  if (isGold) injectShimmerCSS();
 
   if (!unlocked) {
     return (
       <svg width={s} height={s} viewBox="0 0 56 56" fill="none">
         <circle cx="28" cy="28" r="24" fill="#E5E7EB" />
         <circle cx="28" cy="28" r="20" fill="#F3F4F6" stroke="#D1D5DB" strokeWidth="1" />
-        <text x="28" y="33" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#D1D5DB" fontFamily="serif">{achievement.symbol}</text>
-        <line x1="16" y1="16" x2="40" y2="40" stroke="#D1D5DB" strokeWidth="1.5" />
+        <text x="28" y="34" textAnchor="middle" fontSize="14" fontWeight="bold" fill="#D1D5DB" fontFamily="'PingFang SC', 'Noto Sans SC', serif">{achievement.symbol}</text>
+        <line x1="16" y1="16" x2="40" y2="40" stroke="#D1D5DB" strokeWidth="1.5" strokeLinecap="round" />
       </svg>
     );
   }
 
   return (
-    <svg width={s} height={s} viewBox="0 0 56 56" fill="none">
+    <svg
+      width={s} height={s} viewBox="0 0 56 56" fill="none"
+      style={isGold ? { animation: 'badge-pulse-glow 3s ease-in-out infinite' } : undefined}
+    >
       <defs>
-        <radialGradient id={`${id}-rim`} cx="30%" cy="25%" r="80%">
+        <radialGradient id={`${id}-rim`} cx="30%" cy="22%" r="80%">
           {style.rim.map((c, i) => <stop key={i} offset={`${(i / (style.rim.length - 1)) * 100}%`} stopColor={c} />)}
         </radialGradient>
-        <radialGradient id={`${id}-face`} cx="30%" cy="25%" r="80%">
+        <radialGradient id={`${id}-face`} cx="28%" cy="20%" r="85%">
           {style.face.map((c, i) => <stop key={i} offset={`${(i / (style.face.length - 1)) * 100}%`} stopColor={c} />)}
         </radialGradient>
         <linearGradient id={`${id}-shine`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="white" stopOpacity="0.6" />
-          <stop offset="50%" stopColor="white" stopOpacity="0" />
-          <stop offset="100%" stopColor="white" stopOpacity="0.1" />
+          <stop offset="0%" stopColor="white" stopOpacity="0.5" />
+          <stop offset="40%" stopColor="white" stopOpacity="0" />
+          <stop offset="100%" stopColor="white" stopOpacity="0.15" />
         </linearGradient>
+        {/* Sweep shimmer for gold tier */}
+        {isGold && (
+          <linearGradient id={`${id}-sweep`} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="white" stopOpacity="0" />
+            <stop offset="40%" stopColor="white" stopOpacity="0.7" />
+            <stop offset="60%" stopColor="white" stopOpacity="0.7" />
+            <stop offset="100%" stopColor="white" stopOpacity="0" />
+          </linearGradient>
+        )}
+        <clipPath id={`${id}-clip`}><circle cx="28" cy="28" r="21" /></clipPath>
       </defs>
+
+      {/* Drop shadow base */}
+      <circle cx="28" cy="29" r="25" fill="black" fillOpacity="0.08" />
+
       {/* Outer rim */}
       <circle cx="28" cy="28" r="26" fill={`url(#${id}-rim)`} />
-      {/* Rim detail ring */}
-      <circle cx="28" cy="28" r="23" stroke={style.rim[2]} strokeWidth="0.5" fill="none" strokeOpacity="0.6" />
+
+      {/* Decorative notch ring */}
+      <circle cx="28" cy="28" r="24" stroke={style.rim[2]} strokeWidth="0.4" fill="none" strokeOpacity="0.5" strokeDasharray="3 2" />
+
+      {/* Rotating dashed ring for gold */}
+      {isGold && (
+        <circle
+          cx="28" cy="28" r="22.5"
+          stroke="#FFF" strokeWidth="0.4" strokeOpacity="0.4" strokeDasharray="4 6" fill="none"
+          style={{ animation: 'badge-rotate-ring 12s linear infinite' }}
+        />
+      )}
+
       {/* Face */}
-      <circle cx="28" cy="28" r="21" fill={`url(#${id}-face)`} stroke={style.rim[0]} strokeWidth="0.5" strokeOpacity="0.4" />
-      {/* Inner circle */}
-      <circle cx="28" cy="28" r="14" fill="none" stroke={style.rim[2]} strokeWidth="0.5" strokeOpacity="0.5" />
-      {/* Highlight */}
-      <ellipse cx="22" cy="18" rx="10" ry="5" fill="white" opacity="0.35" transform="rotate(-20 22 18)" />
-      <ellipse cx="19" cy="16" rx="4" ry="2" fill="white" opacity="0.5" transform="rotate(-20 19 16)" />
-      {/* Symbol */}
-      <text x="28" y="34" textAnchor="middle" fontSize="16" fontWeight="bold" fill={style.text} fontFamily="'Georgia', serif" style={{ textShadow: '0 1px 1px rgba(255,255,255,0.4)' }}>
+      <circle cx="28" cy="28" r="21" fill={`url(#${id}-face)`} stroke={style.rim[0]} strokeWidth="0.5" strokeOpacity="0.3" />
+
+      {/* Inner decorative ring */}
+      <circle cx="28" cy="28" r="15" fill="none" stroke={style.rim[2]} strokeWidth="0.4" strokeOpacity="0.4" />
+
+      {/* Star rays for gold */}
+      {isGold && (
+        <g opacity="0.15">
+          {[...Array(8)].map((_, i) => (
+            <line key={i} x1="28" y1="28" x2="28" y2="8" stroke="#FFF" strokeWidth="0.8" transform={`rotate(${i * 45} 28 28)`} />
+          ))}
+        </g>
+      )}
+
+      {/* Highlights */}
+      <ellipse cx="21" cy="17" rx="11" ry="5.5" fill="white" opacity="0.3" transform="rotate(-25 21 17)" />
+      <ellipse cx="18" cy="15" rx="4" ry="1.8" fill="white" opacity="0.55" transform="rotate(-25 18 15)" />
+
+      {/* Chinese character symbol */}
+      <text
+        x="28" y="34"
+        textAnchor="middle"
+        fontSize="15"
+        fontWeight="900"
+        fill={style.text}
+        fontFamily="'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', serif"
+        style={{ textShadow: '0 1px 2px rgba(255,255,255,0.5)' }}
+      >
         {achievement.symbol}
       </text>
-      {/* Shine overlay */}
+
+      {/* Static shine overlay */}
       <circle cx="28" cy="28" r="21" fill={`url(#${id}-shine)`} />
+
+      {/* Animated sweep shimmer for gold tier */}
+      {isGold && (
+        <rect
+          x="-20" y="7" width="18" height="42"
+          fill={`url(#${id}-sweep)`}
+          clipPath={`url(#${id}-clip)`}
+          style={{ animation: 'badge-shimmer 3s ease-in-out infinite', mixBlendMode: 'overlay' as any }}
+        />
+      )}
     </svg>
   );
 }
