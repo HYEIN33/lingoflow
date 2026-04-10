@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, orderBy, limit, serverTimestamp, onSnapshot, getDoc } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { Search, Plus, ThumbsUp, AlertCircle, Loader2, MessageSquare, Volume2, Image as ImageIcon, Video, Film, X, Mic, Wand2 } from 'lucide-react';
+import { Search, Plus, ThumbsUp, AlertCircle, Loader2, MessageSquare, Volume2, Image as ImageIcon, Video, Film, X, Mic, Wand2, Flag, Share2, Send, ChevronDown } from 'lucide-react';
 import { validateSlangMeaning, generateSpeech, generateSlangExample, suggestSlangMeaning } from '../services/ai';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -9,6 +9,8 @@ import { SlangGuidelinesPanel } from './SlangGuidelines';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 import { UserProfile } from '../App';
+import { DailyChallenge } from './DailyChallenge';
+import { markOnboardingStep } from './OnboardingChecklist';
 
 interface Slang {
   id: string;
@@ -33,6 +35,128 @@ interface SlangMeaning {
   userAudioUrl?: string;
   createdAt: any;
 }
+
+interface SlangComment {
+  id: string;
+  slangId: string;
+  meaningId: string;
+  authorId: string;
+  authorName: string;
+  text: string;
+  createdAt: any;
+}
+
+function relativeTime(date: Date, lang: 'en' | 'zh'): string {
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHr = Math.floor(diffMs / 3600000);
+  const diffDay = Math.floor(diffMs / 86400000);
+  if (diffMin < 1) return lang === 'zh' ? '刚刚' : 'just now';
+  if (diffMin < 60) return lang === 'zh' ? `${diffMin}分钟前` : `${diffMin}m ago`;
+  if (diffHr < 24) return lang === 'zh' ? `${diffHr}小时前` : `${diffHr}h ago`;
+  return lang === 'zh' ? `${diffDay}天前` : `${diffDay}d ago`;
+}
+
+function CommentSection({ slangId, meaningId, uiLang }: { slangId: string; meaningId: string; uiLang: 'en' | 'zh' }) {
+  const [comments, setComments] = useState<SlangComment[]>([]);
+  const [commentText, setCommentText] = useState('');
+  const [showAll, setShowAll] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, 'slang_comments'),
+      where('meaningId', '==', meaningId),
+      orderBy('createdAt', 'desc')
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setComments(snap.docs.map(d => ({ id: d.id, ...d.data() } as SlangComment)));
+    });
+    return () => unsub();
+  }, [meaningId]);
+
+  const handleSubmitComment = async () => {
+    if (!commentText.trim() || !auth.currentUser) return;
+    setIsSubmitting(true);
+    try {
+      await addDoc(collection(db, 'slang_comments'), {
+        slangId,
+        meaningId,
+        authorId: auth.currentUser.uid,
+        authorName: auth.currentUser.displayName || 'Anonymous',
+        text: commentText.trim(),
+        createdAt: serverTimestamp(),
+      });
+      setCommentText('');
+    } catch (err) {
+      console.error('Error submitting comment:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const visibleComments = showAll ? comments : comments.slice(0, 5);
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-100">
+      <p className="text-xs font-medium text-gray-500 mb-2">
+        {uiLang === 'zh' ? `评论 (${comments.length})` : `Comments (${comments.length})`}
+      </p>
+      {visibleComments.map((c) => (
+        <div key={c.id} className="flex gap-2 mb-2">
+          <div className="w-5 h-5 bg-gray-100 rounded-full flex items-center justify-center text-[10px] font-bold text-gray-500 shrink-0 mt-0.5">
+            {c.authorName.charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-gray-700">{c.authorName}</span>
+              <span className="text-[10px] text-gray-400">
+                {c.createdAt?.toDate ? relativeTime(c.createdAt.toDate(), uiLang) : ''}
+              </span>
+            </div>
+            <p className="text-xs text-gray-600 leading-relaxed">{c.text}</p>
+          </div>
+        </div>
+      ))}
+      {comments.length > 5 && !showAll && (
+        <button
+          onClick={() => setShowAll(true)}
+          className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-0.5 mb-2"
+        >
+          <ChevronDown className="w-3 h-3" />
+          {uiLang === 'zh' ? `查看更多 (${comments.length - 5})` : `Show more (${comments.length - 5})`}
+        </button>
+      )}
+      {auth.currentUser && (
+        <div className="flex gap-2 mt-1">
+          <input
+            type="text"
+            value={commentText}
+            onChange={(e) => setCommentText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSubmitComment(); }}
+            placeholder={uiLang === 'zh' ? '写评论...' : 'Add a comment...'}
+            className="flex-1 text-xs bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-blue-500/50"
+          />
+          <button
+            onClick={handleSubmitComment}
+            disabled={!commentText.trim() || isSubmitting}
+            className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors"
+          >
+            <Send className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const REPORT_REASONS = [
+  { value: 'spam', labelZh: '垃圾信息', labelEn: 'Spam' },
+  { value: 'offensive', labelZh: '攻击性内容', labelEn: 'Offensive' },
+  { value: 'inaccurate', labelZh: '不准确', labelEn: 'Inaccurate' },
+  { value: 'other', labelZh: '其他', labelEn: 'Other' },
+];
 
 export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 'zh', initialSearchTerm?: string }) {
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
@@ -121,6 +245,9 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const [aiSuggestion, setAiSuggestion] = useState('');
   const [isLoadingSuggestion, setIsLoadingSuggestion] = useState(false);
+  const [reportingMeaningId, setReportingMeaningId] = useState<string | null>(null);
+  const [reportReason, setReportReason] = useState('spam');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -230,6 +357,45 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     }
   };
 
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 2500);
+  };
+
+  const handleReport = async (meaningId: string) => {
+    if (!auth.currentUser) return;
+    try {
+      await addDoc(collection(db, 'slang_reports'), {
+        meaningId,
+        reporterId: auth.currentUser.uid,
+        reason: reportReason,
+        createdAt: serverTimestamp(),
+      });
+      showToast(uiLang === 'zh' ? '举报已提交，感谢反馈' : 'Report submitted, thank you');
+    } catch (err) {
+      console.error('Error submitting report:', err);
+    }
+    setReportingMeaningId(null);
+    setReportReason('spam');
+  };
+
+  const handleShare = async (term: string, meaning: string) => {
+    const text = `【梗百科】${term}: ${meaning} — via LingoFlow`;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast(uiLang === 'zh' ? '已复制到剪贴板' : 'Copied to clipboard');
+    } catch {
+      // Fallback
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      showToast(uiLang === 'zh' ? '已复制到剪贴板' : 'Copied to clipboard');
+    }
+  };
+
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!searchTerm.trim()) return;
@@ -238,6 +404,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     setCurrentSlang(null);
     setMeanings([]);
     setShowAddForm(false);
+    markOnboardingStep('search_slang');
 
     try {
       const term = searchTerm.trim().toLowerCase();
@@ -524,6 +691,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
       setMediaPreview(null);
       setAudioFile(null);
       setShowAddForm(false);
+      markOnboardingStep('contribute_entry');
       
       // Re-trigger search to attach listener if it was a new slang
       if (!currentSlang) {
@@ -566,6 +734,23 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
 
   return (
     <div className="space-y-6">
+      {/* Toast notification */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-lg"
+          >
+            {toastMessage}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Daily Challenge */}
+      <DailyChallenge uiLang={uiLang} />
+
       <form onSubmit={handleSearch} className="relative">
         <input
           type="text"
@@ -722,19 +907,78 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                   </p>
                 </div>
                 <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => handleUpvote(meaning.id, meaning.upvotes)}
-                    disabled={upvotedMeanings.has(meaning.id)}
-                    className={cn(
-                      "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
-                      upvotedMeanings.has(meaning.id)
-                        ? "bg-blue-100 text-blue-700"
-                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                    )}
-                  >
-                    <ThumbsUp className={cn("w-4 h-4", upvotedMeanings.has(meaning.id) && "fill-current")} />
-                    {meaning.upvotes}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleUpvote(meaning.id, meaning.upvotes)}
+                      disabled={upvotedMeanings.has(meaning.id)}
+                      className={cn(
+                        "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                        upvotedMeanings.has(meaning.id)
+                          ? "bg-blue-100 text-blue-700"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      )}
+                    >
+                      <ThumbsUp className={cn("w-4 h-4", upvotedMeanings.has(meaning.id) && "fill-current")} />
+                      {meaning.upvotes}
+                    </button>
+                    {/* Report/Flag button */}
+                    <div className="relative">
+                      <button
+                        onClick={() => setReportingMeaningId(reportingMeaningId === meaning.id ? null : meaning.id)}
+                        className="p-1.5 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50"
+                        title={uiLang === 'zh' ? '举报' : 'Report'}
+                      >
+                        <Flag className="w-4 h-4" />
+                      </button>
+                      <AnimatePresence>
+                        {reportingMeaningId === meaning.id && (
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            className="absolute left-0 bottom-full mb-1 bg-white border border-gray-200 rounded-xl p-3 shadow-lg z-10 min-w-[180px]"
+                          >
+                            <p className="text-xs font-medium text-gray-700 mb-2">
+                              {uiLang === 'zh' ? '举报原因' : 'Report reason'}
+                            </p>
+                            <select
+                              value={reportReason}
+                              onChange={(e) => setReportReason(e.target.value)}
+                              className="w-full text-xs border border-gray-200 rounded-lg p-1.5 mb-2 outline-none focus:ring-1 focus:ring-red-500/50"
+                            >
+                              {REPORT_REASONS.map(r => (
+                                <option key={r.value} value={r.value}>
+                                  {uiLang === 'zh' ? r.labelZh : r.labelEn}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="flex gap-1.5">
+                              <button
+                                onClick={() => setReportingMeaningId(null)}
+                                className="flex-1 text-xs px-2 py-1 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
+                              >
+                                {uiLang === 'zh' ? '取消' : 'Cancel'}
+                              </button>
+                              <button
+                                onClick={() => handleReport(meaning.id)}
+                                className="flex-1 text-xs px-2 py-1 rounded-lg bg-red-500 text-white hover:bg-red-600"
+                              >
+                                {uiLang === 'zh' ? '提交' : 'Submit'}
+                              </button>
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                    {/* Share button */}
+                    <button
+                      onClick={() => handleShare(currentSlang!.term, meaning.meaning)}
+                      className="p-1.5 text-gray-400 hover:text-green-600 transition-colors rounded-lg hover:bg-green-50"
+                      title={uiLang === 'zh' ? '分享' : 'Share'}
+                    >
+                      <Share2 className="w-4 h-4" />
+                    </button>
+                  </div>
                   <button
                     onClick={() => handlePlayAudio(meaning)}
                     disabled={playingAudioId === meaning.id}
@@ -753,9 +997,13 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                     )}
                   </button>
                 </div>
+                {/* Comment Section */}
+                {currentSlang && (
+                  <CommentSection slangId={currentSlang.id} meaningId={meaning.id} uiLang={uiLang} />
+                )}
               </motion.div>
             ))}
-            
+
             {meanings.length === 0 && !showAddForm && (
               <p className="text-center text-gray-500 py-8">
                 {uiLang === 'zh' ? '暂无解释，快来添加吧！' : 'No meanings yet, add one!'}
