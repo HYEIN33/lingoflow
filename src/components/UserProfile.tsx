@@ -7,7 +7,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { updateProfile } from 'firebase/auth';
 import { UserProfile as UserProfileType } from '../App';
 
-// Achievement Badge System — premium metallic medals with shimmer animation
+// Achievement Badge System — CSS-based premium medals
 const ACHIEVEMENTS = [
   { id: 'apprentice', name: '梗学徒', nameEn: 'Apprentice', symbol: '初', tier: 'bronze' as const, requirement: '提交首个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 1 },
   { id: 'observer', name: '文化观察员', nameEn: 'Observer', symbol: '观', tier: 'bronze' as const, requirement: '累计 5 个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 5 },
@@ -17,163 +17,105 @@ const ACHIEVEMENTS = [
   { id: 'legend', name: '梗神', nameEn: 'Legend', symbol: '神', tier: 'gold' as const, requirement: '累计 100 个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 100 },
 ];
 
-const TIER_STYLES = {
+const TIER_CSS: Record<string, { outer: string; inner: string; text: string; ring: string; glow: string; shimmer: boolean }> = {
   bronze: {
-    rim: ['#8B5E3C', '#C49A6C', '#E8C9A0', '#A07850'],
-    face: ['#6B4226', '#A07850', '#D4A76A', '#F5DEB3', '#B8860B', '#8B5E3C'],
-    text: '#5C3A1E',
-    glow: false,
+    outer: 'bg-gradient-to-br from-amber-700 via-amber-600 to-yellow-800',
+    inner: 'bg-gradient-to-br from-amber-500 via-yellow-600 to-amber-700',
+    text: 'text-amber-900',
+    ring: 'border-amber-400/40',
+    glow: '',
+    shimmer: false,
   },
   silver: {
-    rim: ['#5A6270', '#A0ABB8', '#D8DEE6', '#7A8494'],
-    face: ['#4B5563', '#8896A8', '#C8D2DE', '#F0F4F8', '#A0ABB8', '#6B7688'],
-    text: '#2D3748',
-    glow: false,
+    outer: 'bg-gradient-to-br from-slate-400 via-gray-300 to-slate-500',
+    inner: 'bg-gradient-to-br from-gray-200 via-white to-gray-300',
+    text: 'text-slate-700',
+    ring: 'border-white/50',
+    glow: '',
+    shimmer: false,
   },
   gold: {
-    rim: ['#7A5F00', '#B8941A', '#FFD700', '#C9A30E'],
-    face: ['#5C4600', '#9A7D10', '#DFBA18', '#FFF2A0', '#D4AB12', '#7A5F00'],
-    text: '#4A3800',
-    glow: true,
+    outer: 'bg-gradient-to-br from-yellow-500 via-amber-400 to-yellow-600',
+    inner: 'bg-gradient-to-br from-yellow-300 via-amber-200 to-yellow-400',
+    text: 'text-amber-800',
+    ring: 'border-yellow-300/60',
+    glow: 'shadow-[0_0_12px_rgba(251,191,36,0.5),0_0_24px_rgba(251,191,36,0.2)]',
+    shimmer: true,
   },
 };
 
-// CSS keyframes for gold shimmer (injected once)
-const shimmerCSS = `
-@keyframes badge-shimmer {
-  0% { transform: translateX(-150%) skewX(-15deg); }
-  100% { transform: translateX(250%) skewX(-15deg); }
-}
-@keyframes badge-pulse-glow {
-  0%, 100% { filter: drop-shadow(0 0 3px rgba(255,215,0,0.3)); }
-  50% { filter: drop-shadow(0 0 8px rgba(255,215,0,0.6)); }
-}
-@keyframes badge-rotate-ring {
-  from { transform-origin: 28px 28px; transform: rotate(0deg); }
-  to { transform-origin: 28px 28px; transform: rotate(360deg); }
-}
-`;
-
-let shimmerInjected = false;
-function injectShimmerCSS() {
-  if (shimmerInjected || typeof document === 'undefined') return;
-  const style = document.createElement('style');
-  style.textContent = shimmerCSS;
-  document.head.appendChild(style);
-  shimmerInjected = true;
-}
-
 export function AchievementBadge({ achievement, unlocked, size = 'md' }: { achievement: typeof ACHIEVEMENTS[0], unlocked: boolean, size?: 'sm' | 'md' | 'lg' }) {
-  const s = size === 'sm' ? 40 : size === 'lg' ? 72 : 56;
-  const style = TIER_STYLES[achievement.tier];
-  const id = `badge-${achievement.id}-${s}-${Math.random().toString(36).slice(2, 6)}`;
-  const isGold = style.glow;
-
-  if (isGold) injectShimmerCSS();
+  const s = size === 'sm' ? 'w-11 h-11 text-sm' : size === 'lg' ? 'w-[72px] h-[72px] text-2xl' : 'w-14 h-14 text-lg';
+  const tierCSS = TIER_CSS[achievement.tier];
 
   if (!unlocked) {
     return (
-      <svg width={s} height={s} viewBox="0 0 56 56" fill="none">
-        <circle cx="28" cy="28" r="24" fill="#E5E7EB" />
-        <circle cx="28" cy="28" r="20" fill="#F3F4F6" stroke="#D1D5DB" strokeWidth="1" />
-        <text x="28" y="34" textAnchor="middle" fontSize="14" fontWeight="bold" fill="#D1D5DB" fontFamily="'PingFang SC', 'Noto Sans SC', serif">{achievement.symbol}</text>
-        <line x1="16" y1="16" x2="40" y2="40" stroke="#D1D5DB" strokeWidth="1.5" strokeLinecap="round" />
-      </svg>
+      <div className={`${s} rounded-full bg-gray-100 border-2 border-gray-200 flex items-center justify-center relative overflow-hidden`}>
+        <span className="font-bold text-gray-300 font-serif select-none">{achievement.symbol}</span>
+        <div className="absolute inset-0 bg-gray-200/50 flex items-center justify-center">
+          <div className="w-[1px] h-full bg-gray-300 rotate-45" />
+        </div>
+      </div>
     );
   }
 
   return (
-    <svg
-      width={s} height={s} viewBox="0 0 56 56" fill="none"
-      style={isGold ? { animation: 'badge-pulse-glow 3s ease-in-out infinite' } : undefined}
-    >
-      <defs>
-        <radialGradient id={`${id}-rim`} cx="30%" cy="22%" r="80%">
-          {style.rim.map((c, i) => <stop key={i} offset={`${(i / (style.rim.length - 1)) * 100}%`} stopColor={c} />)}
-        </radialGradient>
-        <radialGradient id={`${id}-face`} cx="28%" cy="20%" r="85%">
-          {style.face.map((c, i) => <stop key={i} offset={`${(i / (style.face.length - 1)) * 100}%`} stopColor={c} />)}
-        </radialGradient>
-        <linearGradient id={`${id}-shine`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="white" stopOpacity="0.5" />
-          <stop offset="40%" stopColor="white" stopOpacity="0" />
-          <stop offset="100%" stopColor="white" stopOpacity="0.15" />
-        </linearGradient>
-        {/* Sweep shimmer for gold tier */}
-        {isGold && (
-          <linearGradient id={`${id}-sweep`} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="white" stopOpacity="0" />
-            <stop offset="40%" stopColor="white" stopOpacity="0.7" />
-            <stop offset="60%" stopColor="white" stopOpacity="0.7" />
-            <stop offset="100%" stopColor="white" stopOpacity="0" />
-          </linearGradient>
-        )}
-        <clipPath id={`${id}-clip`}><circle cx="28" cy="28" r="21" /></clipPath>
-      </defs>
-
-      {/* Drop shadow base */}
-      <circle cx="28" cy="29" r="25" fill="black" fillOpacity="0.08" />
-
-      {/* Outer rim */}
-      <circle cx="28" cy="28" r="26" fill={`url(#${id}-rim)`} />
-
-      {/* Decorative notch ring */}
-      <circle cx="28" cy="28" r="24" stroke={style.rim[2]} strokeWidth="0.4" fill="none" strokeOpacity="0.5" strokeDasharray="3 2" />
-
-      {/* Rotating dashed ring for gold */}
-      {isGold && (
-        <circle
-          cx="28" cy="28" r="22.5"
-          stroke="#FFF" strokeWidth="0.4" strokeOpacity="0.4" strokeDasharray="4 6" fill="none"
-          style={{ animation: 'badge-rotate-ring 12s linear infinite' }}
-        />
+    <div className={`${s} rounded-full relative group`}>
+      {/* Ambient glow for gold */}
+      {tierCSS.shimmer && (
+        <div className="absolute -inset-1 rounded-full bg-gradient-to-br from-yellow-400 to-amber-500 opacity-40 blur-md animate-pulse" />
       )}
 
-      {/* Face */}
-      <circle cx="28" cy="28" r="21" fill={`url(#${id}-face)`} stroke={style.rim[0]} strokeWidth="0.5" strokeOpacity="0.3" />
+      {/* Outer rim with depth */}
+      <div className={`absolute inset-0 rounded-full ${tierCSS.outer} shadow-lg`} />
 
-      {/* Inner decorative ring */}
-      <circle cx="28" cy="28" r="15" fill="none" stroke={style.rim[2]} strokeWidth="0.4" strokeOpacity="0.4" />
+      {/* Rim bevel (light edge top, dark edge bottom) */}
+      <div className="absolute inset-0 rounded-full" style={{
+        background: 'linear-gradient(160deg, rgba(255,255,255,0.4) 0%, transparent 40%, rgba(0,0,0,0.15) 100%)'
+      }} />
 
-      {/* Star rays for gold */}
-      {isGold && (
-        <g opacity="0.15">
-          {[...Array(8)].map((_, i) => (
-            <line key={i} x1="28" y1="28" x2="28" y2="8" stroke="#FFF" strokeWidth="0.8" transform={`rotate(${i * 45} 28 28)`} />
-          ))}
-        </g>
+      {/* Inner face */}
+      <div className={`absolute inset-[3px] rounded-full ${tierCSS.inner} border ${tierCSS.ring}`} />
+
+      {/* Inner bevel */}
+      <div className="absolute inset-[3px] rounded-full" style={{
+        background: 'linear-gradient(160deg, rgba(255,255,255,0.5) 0%, transparent 35%, rgba(0,0,0,0.1) 100%)'
+      }} />
+
+      {/* Decorative inner ring */}
+      <div className={`absolute inset-[7px] rounded-full border ${tierCSS.ring}`} />
+
+      {/* Sweep shimmer for gold/silver */}
+      {tierCSS.shimmer && (
+        <div className="absolute inset-[3px] rounded-full overflow-hidden">
+          <div
+            className="absolute -inset-full"
+            style={{
+              background: 'linear-gradient(105deg, transparent 40%, rgba(255,255,255,0.6) 45%, rgba(255,255,255,0.8) 50%, rgba(255,255,255,0.6) 55%, transparent 60%)',
+              animation: 'badge-sweep 3s ease-in-out infinite',
+            }}
+          />
+        </div>
       )}
 
-      {/* Highlights */}
-      <ellipse cx="21" cy="17" rx="11" ry="5.5" fill="white" opacity="0.3" transform="rotate(-25 21 17)" />
-      <ellipse cx="18" cy="15" rx="4" ry="1.8" fill="white" opacity="0.55" transform="rotate(-25 18 15)" />
+      {/* Specular highlight dot */}
+      <div className="absolute top-[6px] left-[8px] w-[6px] h-[4px] rounded-full bg-white/60 blur-[1px] rotate-[-20deg]" />
 
-      {/* Chinese character symbol */}
-      <text
-        x="28" y="34"
-        textAnchor="middle"
-        fontSize="15"
-        fontWeight="900"
-        fill={style.text}
-        fontFamily="'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', serif"
-        style={{ textShadow: '0 1px 2px rgba(255,255,255,0.5)' }}
-      >
-        {achievement.symbol}
-      </text>
+      {/* Character */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className={`font-black font-serif select-none ${tierCSS.text} drop-shadow-[0_1px_1px_rgba(255,255,255,0.5)]`} style={{ fontFamily: "'PingFang SC', 'Noto Sans SC', serif" }}>
+          {achievement.symbol}
+        </span>
+      </div>
 
-      {/* Static shine overlay */}
-      <circle cx="28" cy="28" r="21" fill={`url(#${id}-shine)`} />
-
-      {/* Animated sweep shimmer for gold tier */}
-      {isGold && (
-        <rect
-          x="-20" y="7" width="18" height="42"
-          fill={`url(#${id}-sweep)`}
-          clipPath={`url(#${id}-clip)`}
-          style={{ animation: 'badge-shimmer 3s ease-in-out infinite', mixBlendMode: 'overlay' as any }}
-        />
-      )}
-    </svg>
+      {/* Hover lift */}
+      <style>{`
+        @keyframes badge-sweep {
+          0% { transform: translateX(-100%); }
+          50%, 100% { transform: translateX(100%); }
+        }
+      `}</style>
+    </div>
   );
 }
 
