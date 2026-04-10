@@ -403,7 +403,7 @@ export default function UserProfile({
                   <h2 className="text-xl font-bold text-gray-900 truncate flex items-center gap-2">
                     {displayName}
                     {equippedAchievement && (
-                      <span className="shrink-0" title={uiLang === 'zh' ? equippedAchievement.name : equippedAchievement.nameEn}>
+                      <span className="shrink-0 scale-50 origin-left -ml-1" title={uiLang === 'zh' ? equippedAchievement.name : equippedAchievement.nameEn}>
                         <AchievementBadge achievement={equippedAchievement} unlocked={true} size="sm" />
                       </span>
                     )}
