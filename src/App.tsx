@@ -127,7 +127,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 }
 
 // --- Types ---
-interface SavedWord extends TranslationResult {
+export interface SavedWord extends TranslationResult {
   id: string;
   userId: string;
   styleTag?: 'authentic' | 'academic' | 'standard';
@@ -177,6 +177,9 @@ import { SlangOnboarding } from './components/SlangOnboarding';
 import Leaderboard from './components/Leaderboard';
 import PaymentScreen from './components/PaymentScreen';
 import UserProfileComponent from './components/UserProfile';
+import GrammarPage from './pages/GrammarPage';
+import ReviewPage from './pages/ReviewPage';
+import WordbookPage from './pages/WordbookPage';
 
 export default function App() {
 
@@ -1310,572 +1313,54 @@ export default function App() {
                 )}
             </motion.div>
           ) : activeTab === 'grammar' ? (
-            <motion.div 
-              key="grammar"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="space-y-6"
-            >
-              {/* Grammar Input */}
-              <form onSubmit={handleCheckGrammar} className="relative group">
-                <textarea 
-                  value={grammarInput}
-                  onChange={(e) => setGrammarInput(e.target.value)}
-                  placeholder={t.grammarPlaceholder}
-                  rows={4}
-                  className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-28 sm:pr-32 text-lg shadow-xl shadow-gray-200/50 outline-none transition-all placeholder:text-gray-300 resize-none"
-                />
-                <div className="absolute right-2 sm:right-4 bottom-4 flex items-center gap-1 sm:gap-2 z-20">
-                  <button 
-                    type="button"
-                    onClick={toggleListening}
-                    className={cn(
-                      "p-3 sm:p-4 rounded-2xl transition-all hover:scale-105 active:scale-95 shadow-lg cursor-pointer",
-                      isListening ? "bg-red-500 text-white shadow-red-200" : "bg-gray-100 text-gray-500 shadow-gray-100"
-                    )}
-                  >
-                    {isListening ? <MicOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Mic className="w-5 h-5 sm:w-6 sm:h-6" />}
-                  </button>
-                  <button 
-                    type="submit"
-                    disabled={isCheckingGrammar || !grammarInput.trim()}
-                    className="bg-blue-600 text-white p-3 sm:p-4 rounded-2xl disabled:opacity-50 transition-all hover:scale-105 active:scale-95 shadow-lg shadow-blue-200"
-                  >
-                    {isCheckingGrammar ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" /> : <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />}
-                  </button>
-                </div>
-              </form>
-
-              {/* Grammar Result */}
-              {grammarResult && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100"
-                >
-                  <div className="flex items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
-                    {grammarResult.hasErrors ? (
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 bg-amber-50 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0">
-                        <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6 text-amber-500" />
-                      </div>
-                    ) : (
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-50 rounded-xl sm:rounded-2xl flex items-center justify-center shrink-0">
-                        <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6 text-green-500" />
-                      </div>
-                    )}
-                    <div>
-                      <h3 className="text-lg sm:text-xl font-bold text-gray-900">
-                        {grammarResult.hasErrors ? t.grammarIssues : t.grammarCorrect}
-                      </h3>
-                      <p className="text-gray-500 text-xs sm:text-sm line-clamp-1">{grammarResult.original}</p>
-                    </div>
-                  </div>
-
-                  {grammarResult.hasErrors && (
-                    <div className="space-y-8">
-                      <div>
-                        <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
-                          {t.correctedVersion}
-                        </h4>
-                        <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
-                          <p className="text-blue-900 text-lg font-bold leading-relaxed">
-                            {grammarResult.corrected}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div>
-                        <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
-                          {t.explanation}
-                        </h4>
-                        <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 space-y-4">
-                          <p className="text-gray-700 leading-relaxed">
-                            {grammarResult.explanation}
-                          </p>
-                          <div className="border-t border-gray-200 pt-4">
-                            <p className="text-gray-600 leading-relaxed italic">
-                              {grammarResult.explanationZh}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      {grammarResult.edits && grammarResult.edits.length > 0 && (
-                        <div>
-                          <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
-                            {uiLang === 'zh' ? '具体修改 (Specific Edits)' : 'Specific Edits'}
-                          </h4>
-                          <div className="space-y-3">
-                            {grammarResult.edits.map((edit, idx) => (
-                              <div key={idx} className="bg-white border border-gray-100 p-4 rounded-xl shadow-sm">
-                                <div className="flex items-center gap-3 mb-2">
-                                  <span className="line-through text-red-500 font-medium">{edit.originalText}</span>
-                                  <ChevronRight className="w-4 h-4 text-gray-400" />
-                                  <span className="text-green-600 font-bold">{edit.correctedText}</span>
-                                </div>
-                                <p className="text-sm text-gray-500">{edit.explanation}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {grammarResult.styleFeedback && (
-                    <div className="mt-8 space-y-8">
-                      <div>
-                        <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
-                          {uiLang === 'zh' ? '风格检测 (Style Feedback)' : 'Style Feedback'}
-                        </h4>
-                        <div className="bg-purple-50 p-6 rounded-2xl border border-purple-100 space-y-4">
-                          <p className="text-purple-900 leading-relaxed">
-                            {grammarResult.styleFeedback}
-                          </p>
-                          {grammarResult.academicSuggestion && (
-                            <div className="border-t border-purple-200 pt-4">
-                              <p className="text-xs text-purple-500 font-bold mb-2 uppercase tracking-wider">{uiLang === 'zh' ? '学术/正式建议:' : 'Academic/Formal Suggestion:'}</p>
-                              <p className="text-purple-800 text-lg font-medium leading-relaxed italic">
-                                {grammarResult.academicSuggestion}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </motion.div>
-              )}
+            <motion.div key="grammar" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}>
+              <GrammarPage
+                grammarInput={grammarInput}
+                setGrammarInput={setGrammarInput}
+                isCheckingGrammar={isCheckingGrammar}
+                grammarResult={grammarResult}
+                isListening={isListening}
+                uiLang={uiLang}
+                onCheckGrammar={handleCheckGrammar}
+                onToggleListening={toggleListening}
+              />
             </motion.div>
           ) : activeTab === 'review' ? (
-            <motion.div
-              key="review"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-6"
-            >
-              {!userProfile?.isPro && !userProfile?.hasCompletedOnboarding ? (
-                <div className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center space-y-6 max-w-md mx-auto mt-12">
-                  <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto">
-                    <BookOpen className="w-10 h-10 text-blue-500" />
-                  </div>
-                  <h3 className="text-2xl font-black text-gray-900">
-                    {uiLang === 'zh' ? '艾宾浩斯复习系统' : 'Spaced Repetition'}
-                  </h3>
-                  <p className="text-gray-500">
-                    {uiLang === 'zh' 
-                      ? '基于 SM-2 算法的智能复习系统，帮助你将短期记忆转化为长期记忆。' 
-                      : 'Smart review system based on SM-2 algorithm to help you convert short-term memory into long-term memory.'}
-                  </p>
-                  <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4">
-                    <p className="text-amber-800 font-bold mb-2">
-                      {uiLang === 'zh' ? '完成首次梗百科贡献，解锁 7 天试用' : 'Complete your first Slang Dictionary contribution to unlock a 7-day trial'}
-                    </p>
-                    <button
-                      onClick={() => setShowOnboarding(true)}
-                      className="w-full bg-amber-500 text-white py-3 rounded-xl font-bold hover:bg-amber-600 transition-colors shadow-lg shadow-amber-200"
-                    >
-                      {uiLang === 'zh' ? '去贡献词条' : 'Contribute Now'}
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="flex items-center justify-between mb-2">
-                    <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">{uiLang === 'zh' ? '复习' : 'Review'}</h2>
-                    <span className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
-                      {dueWords.length} {uiLang === 'zh' ? '个待复习' : 'due'}
-                    </span>
-                  </div>
-
-                  {currentReviewWord ? (
-                    <div className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center space-y-8">
-                      <div className="space-y-2">
-                        <h3 className="text-4xl font-black text-gray-900 tracking-tight">{currentReviewWord.original}</h3>
-                        {currentReviewWord.styleTag && currentReviewWord.styleTag !== 'standard' && (
-                          <span className={cn(
-                            "inline-block px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest",
-                            currentReviewWord.styleTag === 'authentic' ? "bg-blue-100 text-blue-600" : "bg-purple-100 text-purple-600"
-                          )}>
-                        {currentReviewWord.styleTag === 'authentic' ? t.styleAuthentic : t.styleAcademic}
-                      </span>
-                    )}
-                  </div>
-
-                  <AnimatePresence mode="wait">
-                    {showReviewAnswer ? (
-                      <motion.div
-                        key="answer"
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="space-y-6 pt-6 border-t border-gray-100"
-                      >
-                        <div className="space-y-4">
-                          {currentReviewWord.usages.map((usage: any, idx: number) => (
-                            <div key={idx} className="text-left bg-gray-50 rounded-2xl p-4">
-                              <p className="font-bold text-blue-600 mb-1">{usage.meaningZh}</p>
-                              <p className="text-sm text-gray-600 italic">"{usage.example}"</p>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div className="grid grid-cols-4 gap-2">
-                          {[
-                            { q: 1, label: uiLang === 'zh' ? '忘记' : 'Forgot', color: 'bg-red-500' },
-                            { q: 3, label: uiLang === 'zh' ? '模糊' : 'Hard', color: 'bg-orange-500' },
-                            { q: 4, label: uiLang === 'zh' ? '记得' : 'Good', color: 'bg-green-500' },
-                            { q: 5, label: uiLang === 'zh' ? '秒杀' : 'Easy', color: 'bg-blue-500' }
-                          ].map((btn) => (
-                            <button
-                              key={btn.q}
-                              onClick={() => {
-                                handleReview(currentReviewWord.id, btn.q);
-                                setShowReviewAnswer(false);
-                                if (reviewIndex < dueWords.length - 1) {
-                                  setReviewIndex(reviewIndex + 1);
-                                } else {
-                                  setReviewIndex(0);
-                                }
-                              }}
-                              className={cn(
-                                "py-3 rounded-xl text-white text-[10px] font-black uppercase tracking-wider shadow-lg transition-transform active:scale-95",
-                                btn.color
-                              )}
-                            >
-                              {btn.label}
-                            </button>
-                          ))}
-                        </div>
-                      </motion.div>
-                    ) : (
-                      <motion.div key="question" className="py-12">
-                        <button
-                          onClick={() => setShowReviewAnswer(true)}
-                          className="bg-gray-900 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-gray-800 transition-all shadow-xl shadow-gray-200"
-                        >
-                          {uiLang === 'zh' ? '查看答案' : 'Show Answer'}
-                        </button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              ) : (
-                <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">
-                  <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-bold text-gray-900 mb-2">{uiLang === 'zh' ? '太棒了！' : 'Well done!'}</h3>
-                  <p className="text-gray-400">{uiLang === 'zh' ? '目前没有需要复习的单词。' : 'No words due for review right now.'}</p>
-                </div>
-              )}
-              </>
-              )}
+            <motion.div key="review" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <ReviewPage
+                userProfile={userProfile}
+                uiLang={uiLang}
+                dueWords={dueWords}
+                currentReviewWord={currentReviewWord}
+                reviewIndex={reviewIndex}
+                showReviewAnswer={showReviewAnswer}
+                setShowReviewAnswer={setShowReviewAnswer}
+                onReview={handleReview}
+                onSetReviewIndex={setReviewIndex}
+                onOpenOnboarding={() => setShowOnboarding(true)}
+                onOpenPayment={(source) => { setPaymentTrigger(source); setShowPayment(true); }}
+              />
             </motion.div>
           ) : activeTab === 'history' ? (
-            <motion.div 
-              key="history"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-4"
-            >
-              {selectedWordbookItem ? (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="space-y-6"
-                >
-                  <button 
-                    onClick={() => {
-                      setSelectedWordbookItem(null);
-                      setSelectedUsageIndex(0);
-                    }}
-                    className="flex items-center gap-2 text-blue-600 font-bold hover:text-blue-700 transition-colors mb-4"
-                  >
-                    <ChevronRight className="w-5 h-5 rotate-180" />
-                    {uiLang === 'zh' ? '返回列表' : 'Back to List'}
-                  </button>
-
-                  <div className="bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100">
-                    <div className="flex flex-col sm:flex-row justify-between items-start gap-6 sm:gap-0 mb-6 sm:mb-8">
-                      <div className="w-full sm:w-auto">
-                        <div className="flex items-center gap-4 mb-2">
-                          <div className="flex flex-col">
-                            <h2 className="text-3xl sm:text-4xl font-black text-gray-900 tracking-tight break-words">
-                              {selectedWordbookItem.original}
-                            </h2>
-                            <p className="text-lg sm:text-xl font-bold text-blue-600 mt-1">
-                              {selectedWordbookItem.usages[selectedUsageIndex].meaningZh}
-                            </p>
-                          </div>
-                          <button 
-                            onClick={() => speak(selectedWordbookItem.original)}
-                            disabled={loadingAudioText === selectedWordbookItem.original}
-                            className="p-2 text-blue-500 hover:bg-blue-50 rounded-full transition-colors self-start mt-2 disabled:opacity-50"
-                          >
-                            {loadingAudioText === selectedWordbookItem.original ? (
-                              <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" />
-                            ) : (
-                              <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" />
-                            )}
-                          </button>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          {selectedWordbookItem.pronunciation && (
-                            <span className="text-blue-600 font-mono font-medium bg-blue-50 px-3 py-1 rounded-lg text-xs sm:text-sm">
-                              {selectedWordbookItem.pronunciation}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => handleDeleteWord(selectedWordbookItem.id).then(() => setSelectedWordbookItem(null))}
-                        className="w-full sm:w-auto p-3 sm:p-4 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition-all flex items-center justify-center border border-gray-100 sm:border-transparent"
-                      >
-                        <Trash2 className="w-5 h-5 sm:w-6 sm:h-6" />
-                        <span className="sm:hidden ml-2 font-bold">{t.delete}</span>
-                      </button>
-                    </div>
-
-                    {/* Frequency Tabs */}
-                    <div className="mb-8">
-                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
-                        {uiLang === 'zh' ? '使用频率' : 'Usage Frequency'}
-                      </h3>
-                      <div className="flex flex-wrap gap-2">
-                        {selectedWordbookItem.usages.map((usage, idx) => (
-                          <button
-                            key={idx}
-                            onClick={() => {
-                              setSelectedUsageIndex(idx);
-                              setShowDetails(false);
-                            }}
-                            className={cn(
-                              "px-4 py-2 rounded-xl text-sm font-bold transition-all border-2",
-                              selectedUsageIndex === idx 
-                                ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-100 scale-105" 
-                                : "bg-white border-gray-100 text-gray-400 hover:border-blue-200 hover:text-blue-400"
-                            )}
-                          >
-                            {uiLang === 'zh' ? usage.labelZh : usage.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="space-y-8">
-                      <motion.div 
-                        key={selectedUsageIndex}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="space-y-8"
-                      >
-                        <div>
-                          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
-                            {uiLang === 'zh' ? '释义' : 'Meaning'}
-                          </h3>
-                          <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 space-y-3">
-                            <p className="text-blue-600 text-lg font-medium leading-relaxed">
-                              {selectedWordbookItem.usages[selectedUsageIndex].meaningZh}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Details Toggle */}
-                        <button
-                          onClick={() => setShowDetails(!showDetails)}
-                          className="flex items-center gap-2 text-blue-600 font-bold text-sm hover:text-blue-700 transition-colors"
-                        >
-                          {showDetails ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                          {showDetails ? t.hideDetails : t.showDetails}
-                        </button>
-
-                        <AnimatePresence>
-                          {showDetails && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="overflow-hidden"
-                            >
-                              <div className="pt-6 space-y-6 border-t border-gray-100">
-                                {selectedWordbookItem.usages[selectedUsageIndex].synonyms && selectedWordbookItem.usages[selectedUsageIndex].synonyms.length > 0 && (
-                                  <div>
-                                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
-                                      {t.synonyms}
-                                    </h3>
-                                    <div className="flex flex-wrap gap-2">
-                                      {selectedWordbookItem.usages[selectedUsageIndex].synonyms.map((syn, i) => (
-                                        <span key={i} className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-sm font-medium">
-                                          {syn}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {selectedWordbookItem.usages[selectedUsageIndex].alternatives && selectedWordbookItem.usages[selectedUsageIndex].alternatives.length > 0 && (
-                                  <div>
-                                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
-                                      {t.alternatives}
-                                    </h3>
-                                    <div className="flex flex-wrap gap-2">
-                                      {selectedWordbookItem.usages[selectedUsageIndex].alternatives.map((alt, i) => (
-                                        <span key={i} className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-sm font-medium">
-                                          {alt}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-
-                        <div>
-                          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
-                            {t.examples}
-                          </h3>
-                          <div className="space-y-4">
-                            {selectedWordbookItem.usages[selectedUsageIndex].examples.map((ex, i) => (
-                              <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 space-y-3 group/ex hover:border-blue-200 transition-colors">
-                                <div className="flex items-start justify-between gap-4">
-                                  <div className="flex gap-4">
-                                    <span className="text-blue-200 font-black text-xl italic">{String(i + 1).padStart(2, '0')}</span>
-                                    <p className="text-gray-800 font-medium leading-relaxed text-lg">{ex.sentence}</p>
-                                  </div>
-                                  <button 
-                                    onClick={() => speak(ex.sentence)}
-                                    disabled={loadingAudioText === ex.sentence}
-                                    className="p-2 text-gray-300 hover:text-blue-500 transition-colors shrink-0 disabled:opacity-50"
-                                  >
-                                    {loadingAudioText === ex.sentence ? (
-                                      <Loader2 className="w-5 h-5 animate-spin" />
-                                    ) : (
-                                      <Volume2 className="w-5 h-5" />
-                                    )}
-                                  </button>
-                                </div>
-                                <p className="text-gray-500 pl-12 border-l-2 border-blue-50 italic">{ex.translation}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </motion.div>
-                    </div>
-                  </div>
-                </motion.div>
-              ) : savedWords.length === 0 ? (
-                <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">
-                  <BookOpen className="w-12 h-12 text-gray-200 mx-auto mb-4" />
-                  <p className="text-gray-400 font-medium">{t.emptyWordbook}</p>
-                  <p className="text-gray-300 text-sm mt-2">
-                    {uiLang === 'zh' ? '翻译单词后点击保存，就会出现在这里' : 'Translate a word and save it to see it here'}
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
-                    <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">{t.wordbook}</h2>
-                    <div className="relative w-full sm:w-64">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                      <input 
-                        type="text"
-                        placeholder={t.search}
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none transition-all"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Style Filter */}
-                  <div className="flex flex-wrap gap-2 mb-4">
-                    {[
-                      { id: 'all', label: uiLang === 'zh' ? '全部' : 'All' },
-                      { id: 'authentic', label: uiLang === 'zh' ? '地道' : 'Authentic' },
-                      { id: 'academic', label: uiLang === 'zh' ? '学术' : 'Academic' },
-                      { id: 'standard', label: uiLang === 'zh' ? '标准' : 'Standard' }
-                    ].map((filter) => (
-                      <button
-                        key={filter.id}
-                        onClick={() => setWordbookFilter(filter.id as any)}
-                        className={cn(
-                          "px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
-                          wordbookFilter === filter.id 
-                            ? "bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-100" 
-                            : "bg-white border-gray-100 text-gray-400 hover:border-blue-200 hover:text-blue-400"
-                        )}
-                      >
-                        {filter.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {filteredWords.map((word) => (
-                      <motion.div 
-                        layout
-                        key={word.id}
-                        onClick={() => setSelectedWordbookItem(word)}
-                        className="bg-white p-5 sm:p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between group hover:shadow-md hover:border-blue-200 transition-all cursor-pointer gap-4"
-                      >
-                        <div className="flex-1">
-                          <div className="flex items-center gap-4">
-                            <div className="flex flex-col">
-                              <div className="flex items-center gap-2">
-                                <h3 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight break-words">{word.original}</h3>
-                                {word.styleTag && word.styleTag !== 'standard' && (
-                                  <span className={cn(
-                                    "px-1.5 py-0.5 rounded text-[10px] font-bold uppercase",
-                                    word.styleTag === 'authentic' ? "bg-blue-100 text-blue-600" : "bg-purple-100 text-purple-600"
-                                  )}>
-                                    {word.styleTag === 'authentic' ? t.styleAuthentic : t.styleAcademic}
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span className="text-xs sm:text-sm font-medium text-blue-600">{word.usages[0].meaningZh}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between sm:justify-end gap-2 pt-3 sm:pt-0 border-t sm:border-t-0 border-gray-50">
-                          <div className="flex items-center gap-2">
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                speak(word.original);
-                              }}
-                              disabled={loadingAudioText === word.original}
-                              className="p-2 text-gray-300 hover:text-blue-500 transition-colors shrink-0 disabled:opacity-50"
-                            >
-                              {loadingAudioText === word.original ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <Volume2 className="w-4 h-4" />
-                              )}
-                            </button>
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteWord(word.id);
-                              }}
-                              className="p-2 text-gray-300 hover:text-red-500 transition-colors shrink-0"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                          <span className="text-[10px] text-gray-300 sm:hidden">
-                            {word.createdAt?.toDate().toLocaleDateString()}
-                          </span>
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                </div>
-              )}
+            <motion.div key="history" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <WordbookPage
+                savedWords={savedWords}
+                filteredWords={filteredWords}
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
+                wordbookFilter={wordbookFilter}
+                setWordbookFilter={setWordbookFilter}
+                selectedWordbookItem={selectedWordbookItem}
+                setSelectedWordbookItem={setSelectedWordbookItem}
+                selectedUsageIndex={selectedUsageIndex}
+                setSelectedUsageIndex={setSelectedUsageIndex}
+                showDetails={showDetails}
+                setShowDetails={setShowDetails}
+                loadingAudioText={loadingAudioText}
+                uiLang={uiLang}
+                onSpeak={speak}
+                onDeleteWord={handleDeleteWord}
+              />
             </motion.div>
           ) : activeTab === 'slang' ? (
             <motion.div
