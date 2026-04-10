@@ -7,41 +7,83 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { updateProfile } from 'firebase/auth';
 import { UserProfile as UserProfileType } from '../App';
 
-// Achievement Badge System
+// Achievement Badge System — metallic gold medal design
 const ACHIEVEMENTS = [
-  { id: 'apprentice', name: '梗学徒', nameEn: 'Slang Apprentice', icon: '📝', color: 'blue', requirement: '提交首个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 1 },
-  { id: 'observer', name: '文化观察员', nameEn: 'Culture Observer', icon: '👁️', color: 'indigo', requirement: '累计 5 个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 5 },
-  { id: 'streak7', name: '周打卡达人', nameEn: '7-Day Streak', icon: '🔥', color: 'orange', requirement: '连续贡献 7 天', condition: (p: UserProfileType) => (p.currentStreak || 0) >= 7 },
-  { id: 'multimedia', name: '多模态先锋', nameEn: 'Multimedia Pioneer', icon: '🎬', color: 'purple', requirement: '上传多媒体词条', condition: (p: UserProfileType) => !!p.hasUploadedMedia },
-  { id: 'expert', name: '梗百科编辑', nameEn: 'Slang Editor', icon: '✏️', color: 'emerald', requirement: '累计 20 个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 20 },
-  { id: 'legend', name: '梗神', nameEn: 'Slang Legend', icon: '⚡', color: 'amber', requirement: '累计 100 个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 100 },
+  { id: 'apprentice', name: '梗学徒', nameEn: 'Slang Apprentice', symbol: 'I', tier: 'bronze' as const, requirement: '提交首个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 1 },
+  { id: 'observer', name: '文化观察员', nameEn: 'Culture Observer', symbol: 'II', tier: 'bronze' as const, requirement: '累计 5 个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 5 },
+  { id: 'streak7', name: '周打卡达人', nameEn: '7-Day Streak', symbol: '7', tier: 'silver' as const, requirement: '连续贡献 7 天', condition: (p: UserProfileType) => (p.currentStreak || 0) >= 7 },
+  { id: 'multimedia', name: '多模态先锋', nameEn: 'Multimedia Pioneer', symbol: 'M', tier: 'silver' as const, requirement: '上传多媒体词条', condition: (p: UserProfileType) => !!p.hasUploadedMedia },
+  { id: 'expert', name: '梗百科编辑', nameEn: 'Slang Editor', symbol: 'E', tier: 'gold' as const, requirement: '累计 20 个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 20 },
+  { id: 'legend', name: '梗神', nameEn: 'Slang Legend', symbol: '★', tier: 'gold' as const, requirement: '累计 100 个词条', condition: (p: UserProfileType) => (p.approvedSlangCount || 0) >= 100 },
 ];
 
-const BADGE_COLORS: Record<string, string> = {
-  blue: 'from-blue-400 to-blue-600',
-  indigo: 'from-indigo-400 to-indigo-600',
-  orange: 'from-orange-400 to-orange-600',
-  purple: 'from-purple-400 to-purple-600',
-  emerald: 'from-emerald-400 to-emerald-600',
-  amber: 'from-amber-400 to-amber-600',
+const TIER_STYLES = {
+  bronze: {
+    rim: ['#8B5E3C', '#C49A6C', '#E8C9A0', '#A07850'],
+    face: ['#6B4226', '#A07850', '#D4A76A', '#F5DEB3', '#B8860B', '#8B5E3C'],
+    text: '#5C3A1E',
+  },
+  silver: {
+    rim: ['#6B7280', '#9CA3AF', '#D1D5DB', '#6B7280'],
+    face: ['#4B5563', '#9CA3AF', '#D1D5DB', '#F3F4F6', '#9CA3AF', '#6B7280'],
+    text: '#374151',
+  },
+  gold: {
+    rim: ['#92700C', '#C5981A', '#F5D442', '#B8960F'],
+    face: ['#6B5208', '#A07C10', '#E8C820', '#FFF7B0', '#C49E14', '#7A6008'],
+    text: '#5C4A08',
+  },
 };
 
-
 export function AchievementBadge({ achievement, unlocked, size = 'md' }: { achievement: typeof ACHIEVEMENTS[0], unlocked: boolean, size?: 'sm' | 'md' | 'lg' }) {
-  const sizeClasses = size === 'sm' ? 'w-12 h-12 text-lg' : size === 'lg' ? 'w-20 h-20 text-3xl' : 'w-16 h-16 text-2xl';
+  const s = size === 'sm' ? 40 : size === 'lg' ? 72 : 56;
+  const style = TIER_STYLES[achievement.tier];
+  const id = `badge-${achievement.id}-${s}`;
 
   if (!unlocked) {
     return (
-      <div className={`${sizeClasses} rounded-2xl bg-gray-100 border border-gray-200 flex items-center justify-center opacity-40 grayscale`}>
-        <span>{achievement.icon}</span>
-      </div>
+      <svg width={s} height={s} viewBox="0 0 56 56" fill="none">
+        <circle cx="28" cy="28" r="24" fill="#E5E7EB" />
+        <circle cx="28" cy="28" r="20" fill="#F3F4F6" stroke="#D1D5DB" strokeWidth="1" />
+        <text x="28" y="33" textAnchor="middle" fontSize="16" fontWeight="bold" fill="#D1D5DB" fontFamily="serif">{achievement.symbol}</text>
+        <line x1="16" y1="16" x2="40" y2="40" stroke="#D1D5DB" strokeWidth="1.5" />
+      </svg>
     );
   }
 
   return (
-    <div className={`${sizeClasses} rounded-2xl bg-gradient-to-br ${BADGE_COLORS[achievement.color]} flex items-center justify-center shadow-lg`}>
-      <span className="drop-shadow-md">{achievement.icon}</span>
-    </div>
+    <svg width={s} height={s} viewBox="0 0 56 56" fill="none">
+      <defs>
+        <radialGradient id={`${id}-rim`} cx="30%" cy="25%" r="80%">
+          {style.rim.map((c, i) => <stop key={i} offset={`${(i / (style.rim.length - 1)) * 100}%`} stopColor={c} />)}
+        </radialGradient>
+        <radialGradient id={`${id}-face`} cx="30%" cy="25%" r="80%">
+          {style.face.map((c, i) => <stop key={i} offset={`${(i / (style.face.length - 1)) * 100}%`} stopColor={c} />)}
+        </radialGradient>
+        <linearGradient id={`${id}-shine`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="white" stopOpacity="0.6" />
+          <stop offset="50%" stopColor="white" stopOpacity="0" />
+          <stop offset="100%" stopColor="white" stopOpacity="0.1" />
+        </linearGradient>
+      </defs>
+      {/* Outer rim */}
+      <circle cx="28" cy="28" r="26" fill={`url(#${id}-rim)`} />
+      {/* Rim detail ring */}
+      <circle cx="28" cy="28" r="23" stroke={style.rim[2]} strokeWidth="0.5" fill="none" strokeOpacity="0.6" />
+      {/* Face */}
+      <circle cx="28" cy="28" r="21" fill={`url(#${id}-face)`} stroke={style.rim[0]} strokeWidth="0.5" strokeOpacity="0.4" />
+      {/* Inner circle */}
+      <circle cx="28" cy="28" r="14" fill="none" stroke={style.rim[2]} strokeWidth="0.5" strokeOpacity="0.5" />
+      {/* Highlight */}
+      <ellipse cx="22" cy="18" rx="10" ry="5" fill="white" opacity="0.35" transform="rotate(-20 22 18)" />
+      <ellipse cx="19" cy="16" rx="4" ry="2" fill="white" opacity="0.5" transform="rotate(-20 19 16)" />
+      {/* Symbol */}
+      <text x="28" y="34" textAnchor="middle" fontSize="16" fontWeight="bold" fill={style.text} fontFamily="'Georgia', serif" style={{ textShadow: '0 1px 1px rgba(255,255,255,0.4)' }}>
+        {achievement.symbol}
+      </text>
+      {/* Shine overlay */}
+      <circle cx="28" cy="28" r="21" fill={`url(#${id}-shine)`} />
+    </svg>
   );
 }
 
