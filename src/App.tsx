@@ -777,15 +777,15 @@ export default function App() {
                   >
                     {/* Dual Column Translation */}
                     {(translationResult.authenticTranslation || translationResult.academicTranslation) && (
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                      <div className={cn("grid grid-cols-1 gap-4", !isSentence && "lg:grid-cols-2")}>
                         {/* Authentic Column */}
                         {translationResult.authenticTranslation && (
-                          <div className="bg-blue-50/50 rounded-2xl p-6 border border-blue-100 relative overflow-hidden">
+                          <div className="bg-blue-50/50 rounded-2xl p-4 sm:p-6 border border-blue-100 relative overflow-hidden">
                             <h3 className="text-xs font-black text-blue-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                               <Zap className="w-3 h-3 fill-current" />
                               {uiLang === 'zh' ? '地道表达 (Authentic)' : 'Authentic Expression'}
                             </h3>
-                            <p className="text-gray-900 text-lg font-medium leading-relaxed break-words pr-8">
+                            <p className={cn("text-gray-900 font-medium leading-relaxed break-words pr-8", isSentence ? "text-sm sm:text-base" : "text-lg")}>
                               {translationResult.authenticTranslation}
                             </p>
                             <button 
@@ -808,12 +808,12 @@ export default function App() {
 
                         {/* Academic Column */}
                         {translationResult.academicTranslation && (
-                          <div className="bg-gray-50 rounded-2xl p-6 border border-gray-200 relative overflow-hidden">
+                          <div className="bg-gray-50 rounded-2xl p-4 sm:p-6 border border-gray-200 relative overflow-hidden">
                             <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                               <BookOpen className="w-3 h-3" />
                               {uiLang === 'zh' ? '学术表达 (Academic)' : 'Academic Expression'}
                             </h3>
-                            <p className="text-gray-900 text-lg font-medium leading-relaxed break-words pr-8">
+                            <p className={cn("text-gray-900 font-medium leading-relaxed break-words pr-8", isSentence ? "text-sm sm:text-base" : "text-lg")}>
                               {translationResult.academicTranslation}
                             </p>
                             <button 

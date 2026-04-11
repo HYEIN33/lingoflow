@@ -239,11 +239,17 @@ export async function translateText(text: string, formalityLevel?: number): Prom
     formalityPrompt = `\nThe user has requested a specific formality level of ${formalityLevel} (1 = very casual/slang, 100 = highly academic/formal). Please ensure the 'authenticTranslation' reflects this exact formality level.`;
   }
 
-  const contents = `Analyze the following text between Chinese and English.
+  // Detect language direction
+  const hasChinese = /[\u4e00-\u9fa5]/.test(text);
+  const langDirection = hasChinese
+    ? 'The input is Chinese. Translate it to English. The authenticTranslation and academicTranslation MUST be in English.'
+    : 'The input is English. Translate it to Chinese. The authenticTranslation and academicTranslation MUST be in Chinese (中文).';
 
-    1. Provide an 'Authentic Translation' (地道表达) that sounds natural to native speakers.
-    2. Provide an 'Academic Translation' (学术表达) that is formal and suitable for academic or professional contexts.
-    3. If the 'Authentic Translation' or the original text contains any slang or idioms, list them in 'slangTerms'.
+  const contents = `You are a professional translator. ${langDirection}
+
+    1. Provide an 'Authentic Translation' (地道表达) that sounds natural to native speakers of the TARGET language.
+    2. Provide an 'Academic Translation' (学术表达) that is formal and suitable for academic or professional contexts in the TARGET language.
+    3. If the original text contains any slang or idioms, list them in 'slangTerms'.
     4. Provide multiple usage definitions categorized by frequency (e.g., "Primary", "Secondary", "Slang/Informal").
 
     For each usage:
