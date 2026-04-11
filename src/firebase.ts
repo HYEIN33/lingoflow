@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, signOut } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, signOut, signInWithPhoneNumber, RecaptchaVerifier, ConfirmationResult } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getAnalytics, logEvent as firebaseLogEvent } from 'firebase/analytics';
@@ -39,3 +39,23 @@ export const signIn = () => {
   });
 };
 export const logOut = () => signOut(auth);
+
+// Phone auth
+let recaptchaVerifier: RecaptchaVerifier | null = null;
+
+export function getRecaptchaVerifier(containerId: string): RecaptchaVerifier {
+  if (recaptchaVerifier) {
+    recaptchaVerifier.clear();
+  }
+  recaptchaVerifier = new RecaptchaVerifier(auth, containerId, { size: 'invisible' });
+  return recaptchaVerifier;
+}
+
+export async function sendPhoneCode(phoneNumber: string, containerId: string): Promise<ConfirmationResult> {
+  const verifier = getRecaptchaVerifier(containerId);
+  const result = await signInWithPhoneNumber(auth, phoneNumber, verifier);
+  logEvent('phone_code_sent');
+  return result;
+}
+
+export type { ConfirmationResult };

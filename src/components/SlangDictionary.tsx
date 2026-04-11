@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, orderBy, limit, serverTimestamp, onSnapshot, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, orderBy, limit, serverTimestamp, onSnapshot, getDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { Search, Plus, ThumbsUp, AlertCircle, Loader2, MessageSquare, Volume2, Image as ImageIcon, Video, Film, X, Mic, Wand2, Flag, Share2, Send, ChevronDown } from 'lucide-react';
 import { validateSlangMeaning, generateSpeech, generateSlangExample, suggestSlangMeaning } from '../services/ai';
@@ -166,6 +166,8 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
   const [showAddForm, setShowAddForm] = useState(false);
   const [showGuidelines, setShowGuidelines] = useState(false);
   const [recentSlangs, setRecentSlangs] = useState<Slang[]>([]);
+  const [trendingTerms, setTrendingTerms] = useState<{ term: string; count: number }[]>([]);
+  const [trendingRefresh, setTrendingRefresh] = useState(0);
 
   // Feed: load recent slang entries
   useEffect(() => {
@@ -175,6 +177,49 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     });
     return () => unsub();
   }, []);
+
+  // Track search in Firestore for global trending
+  const trackSearch = useCallback(async (term: string) => {
+    if (!auth.currentUser) return;
+    try {
+      await addDoc(collection(db, 'slang_searches'), {
+        term: term.toLowerCase(),
+        userId: auth.currentUser.uid,
+        createdAt: serverTimestamp(),
+      });
+      setTrendingRefresh(n => n + 1);
+    } catch (e) {
+      // Silent fail
+    }
+  }, []);
+
+  // Global trending: aggregate all users' searches from last 7 days
+  useEffect(() => {
+    const loadTrending = async () => {
+      try {
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        const q = query(
+          collection(db, 'slang_searches'),
+          where('createdAt', '>=', Timestamp.fromDate(weekAgo))
+        );
+        const snap = await getDocs(q);
+        const counts: Record<string, number> = {};
+        snap.forEach(d => {
+          const term = d.data().term;
+          counts[term] = (counts[term] || 0) + 1;
+        });
+        const sorted = Object.entries(counts)
+          .map(([term, count]) => ({ term, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10);
+        setTrendingTerms(sorted);
+      } catch (e) {
+        console.error('Failed to load trending:', e);
+      }
+    };
+    loadTrending();
+  }, [trendingRefresh]);
   
   useEffect(() => {
     if (initialSearchTerm) {
@@ -380,7 +425,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
   };
 
   const handleShare = async (term: string, meaning: string) => {
-    const text = `【梗百科】${term}: ${meaning} — via LingoFlow`;
+    const text = `【梗百科】${term}: ${meaning} — via MemeFlow`;
     try {
       await navigator.clipboard.writeText(text);
       showToast(uiLang === 'zh' ? '已复制到剪贴板' : 'Copied to clipboard');
@@ -396,10 +441,10 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     }
   };
 
-  const handleSearch = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!searchTerm.trim()) return;
+  const doSearch = useCallback(async (termToSearch: string) => {
+    if (!termToSearch.trim()) return;
 
+    setSearchTerm(termToSearch);
     setIsSearching(true);
     setCurrentSlang(null);
     setMeanings([]);
@@ -407,7 +452,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     markOnboardingStep('search_slang');
 
     try {
-      const term = searchTerm.trim().toLowerCase();
+      const term = termToSearch.trim().toLowerCase();
       // Try exact match first
       let q = query(collection(db, 'slangs'), where('term', '==', term), limit(1));
       let snapshot = await getDocs(q);
@@ -427,6 +472,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
         const slangDoc = snapshot.docs[0];
         const slangData = { id: slangDoc.id, ...slangDoc.data() } as Slang;
         setCurrentSlang(slangData);
+        trackSearch(slangData.term);
         
         // Fetch meanings
         const meaningsQ = query(
@@ -460,6 +506,11 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     } finally {
       setIsSearching(false);
     }
+  }, [trackSearch]);
+
+  const handleSearch = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    doSearch(searchTerm);
   };
 
   const handleSubmitMeaning = async (e: React.FormEvent) => {
@@ -695,7 +746,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
       
       // Re-trigger search to attach listener if it was a new slang
       if (!currentSlang) {
-        handleSearch();
+        doSearch(searchTerm);
       }
     } catch (error) {
       console.error("Error submitting meaning:", error);
@@ -760,7 +811,16 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
           className="w-full bg-white/40 backdrop-blur-md border border-white/50 rounded-2xl py-4 pl-12 pr-4 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all shadow-sm"
         />
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-        <button 
+        {searchTerm && (
+          <button
+            type="button"
+            onClick={() => { setSearchTerm(''); setCurrentSlang(null); setMeanings([]); setShowAddForm(false); }}
+            className="absolute right-24 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+        <button
           type="submit"
           disabled={isSearching || !searchTerm.trim()}
           className="absolute right-2 top-1/2 -translate-y-1/2 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
@@ -768,6 +828,36 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
           {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : (uiLang === 'zh' ? '搜索' : 'Search')}
         </button>
       </form>
+
+      {/* Weekly trending — always visible */}
+      {!currentSlang && !showAddForm && trendingTerms.length > 0 && (
+        <div className="bg-white/70 rounded-2xl p-4 border border-white/60 shadow-sm">
+          <h3 className="text-sm font-bold text-gray-500 mb-3">
+            {uiLang === 'zh' ? '📊 本周搜索榜' : '📊 Trending This Week'}
+          </h3>
+          <div className="space-y-1.5">
+            {trendingTerms.map((item, idx) => (
+              <button
+                key={item.term}
+                onClick={() => doSearch(item.term)}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-blue-50 transition-colors text-left"
+              >
+                <span className={cn(
+                  "w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black",
+                  idx === 0 ? "bg-red-100 text-red-600" :
+                  idx === 1 ? "bg-orange-100 text-orange-600" :
+                  idx === 2 ? "bg-yellow-100 text-yellow-600" :
+                  "bg-gray-100 text-gray-500"
+                )}>
+                  {idx + 1}
+                </span>
+                <span className="flex-1 text-sm font-semibold text-gray-800">{item.term}</span>
+                <span className="text-xs text-gray-400">{item.count} {uiLang === 'zh' ? '次' : 'searches'}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Feed: recent entries + guidelines (shown when no search active) */}
       {!searchTerm && !currentSlang && !showAddForm && (
@@ -797,7 +887,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                 {recentSlangs.map((slang) => (
                   <button
                     key={slang.id}
-                    onClick={() => setSearchTerm(slang.term)}
+                    onClick={() => doSearch(slang.term)}
                     className="px-3 py-1.5 bg-white/60 border border-white/60 rounded-xl text-sm font-medium text-gray-700 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 transition-colors"
                   >
                     {slang.term}

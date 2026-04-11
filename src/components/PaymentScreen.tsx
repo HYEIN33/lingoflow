@@ -27,7 +27,7 @@ export default function PaymentScreen({
       case 'translation_limit': return uiLang === 'zh' ? '今日翻译次数已用完，升级 Pro 解锁无限畅译' : 'Daily translation limit reached. Upgrade to Pro for unlimited translations.';
       case 'slider': return uiLang === 'zh' ? '语气滑块是 Pro 专属功能，升级以精准控制表达' : 'Formality slider is a Pro feature.';
       case 'review_system': return uiLang === 'zh' ? '升级 Pro，解锁基于 SM-2 算法的艾宾浩斯复习系统' : 'Upgrade to unlock spaced repetition review.';
-      default: return uiLang === 'zh' ? '升级 Pro，解锁 LingoFlow 全部潜能' : 'Upgrade to Pro, unlock LingoFlow\'s full potential.';
+      default: return uiLang === 'zh' ? '升级 Pro，解锁 MemeFlow 全部潜能' : 'Upgrade to Pro, unlock MemeFlow\'s full potential.';
     }
   };
 
@@ -61,7 +61,7 @@ export default function PaymentScreen({
             <Check className="w-12 h-12 text-blue-600" />
           </motion.div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Pro {uiLang === 'zh' ? '已激活' : 'Activated'}</h2>
-          <p className="text-gray-500">{uiLang === 'zh' ? '欢迎来到 LingoFlow 的全新境界' : 'Welcome to LingoFlow Pro'}</p>
+          <p className="text-gray-500">{uiLang === 'zh' ? '欢迎来到 MemeFlow 的全新境界' : 'Welcome to MemeFlow Pro'}</p>
         </motion.div>
       </div>
     );

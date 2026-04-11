@@ -287,7 +287,7 @@ export default function TranslatePage(props: TranslatePageProps) {
                 <div className="bg-white/20 p-2 rounded-xl backdrop-blur-md">
                   <MessageSquare className="w-5 h-5 text-white" />
                 </div>
-                <h3 className="font-black uppercase tracking-widest text-sm">{uiLang === 'zh' ? 'LingoFlow 梗百科' : 'LingoFlow Insights'}</h3>
+                <h3 className="font-black uppercase tracking-widest text-sm">{uiLang === 'zh' ? 'MemeFlow 梗百科' : 'MemeFlow Insights'}</h3>
               </div>
               <p className="text-blue-100 text-sm leading-relaxed mb-4">
                 {uiLang === 'zh' ? '我们不仅翻译文字，更通过 AI 深度解析其背后的互联网文化与俚语背景。' : "We don't just translate words; we decode the internet culture and slang context behind them."}

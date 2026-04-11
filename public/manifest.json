@@ -1,6 +1,6 @@
 {
-  "name": "LingoFlow",
-  "short_name": "LingoFlow",
+  "name": "MemeFlow",
+  "short_name": "MemeFlow",
   "description": "AI-powered language learning with Chinese internet slang dictionary",
   "start_url": "/",
   "display": "standalone",

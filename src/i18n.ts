@@ -2,7 +2,7 @@ export type Language = 'en' | 'zh';
 
 export const translations = {
   en: {
-    appName: 'LingoFlow',
+    appName: 'MemeFlow',
     tagline: 'Your personal AI language assistant. Translate, learn, and build your vocabulary.',
     signIn: 'Sign in with Google',
     signOut: 'Sign Out',
@@ -56,7 +56,7 @@ export const translations = {
     styleStandard: 'Standard',
   },
   zh: {
-    appName: 'LingoFlow',
+    appName: 'MemeFlow',
     tagline: '您的个人 AI 语言助手。翻译、学习并建立您的词汇本。',
     signIn: '使用 Google 登录',
     signOut: '退出登录',

@@ -20,11 +20,12 @@ import {
   MessageSquare,
   Zap,
   Trophy,
-  UserCircle
+  UserCircle,
+  Phone
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
-import { db, signIn, logOut } from './firebase';
+import { db, signIn, logOut, sendPhoneCode, ConfirmationResult } from './firebase';
 import {
   TranslationResult,
   checkGrammar,
@@ -132,6 +133,142 @@ import GrammarPage from './pages/GrammarPage';
 import ReviewPage from './pages/ReviewPage';
 import WordbookPage from './pages/WordbookPage';
 
+function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
+  const [mode, setMode] = useState<'main' | 'phone'>('main');
+  const [phoneNumber, setPhoneNumber] = useState('+86 ');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [confirmResult, setConfirmResult] = useState<ConfirmationResult | null>(null);
+  const [phoneError, setPhoneError] = useState('');
+  const [phoneSending, setPhoneSending] = useState(false);
+
+  const handleSendCode = async () => {
+    setPhoneError('');
+    setPhoneSending(true);
+    try {
+      const cleaned = phoneNumber.replace(/\s/g, '');
+      if (cleaned.length < 8) {
+        setPhoneError(uiLang === 'zh' ? '请输入有效的手机号' : 'Please enter a valid phone number');
+        setPhoneSending(false);
+        return;
+      }
+      const result = await sendPhoneCode(cleaned, 'recaptcha-container');
+      setConfirmResult(result);
+    } catch (e: any) {
+      setPhoneError(e.message || 'Failed to send code');
+    }
+    setPhoneSending(false);
+  };
+
+  const handleVerifyCode = async () => {
+    if (!confirmResult) return;
+    setPhoneError('');
+    setPhoneSending(true);
+    try {
+      await confirmResult.confirm(verificationCode);
+    } catch (e: any) {
+      setPhoneError(uiLang === 'zh' ? '验证码错误，请重试' : 'Invalid code, please try again');
+    }
+    setPhoneSending(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#F8F9FA] flex flex-col items-center justify-center p-6 text-center">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-md w-full bg-white rounded-3xl shadow-xl p-10 border border-gray-100"
+      >
+        <div className="w-20 h-20 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-8">
+          <Languages className="w-10 h-10 text-blue-600" />
+        </div>
+        <h1 className="text-4xl font-bold text-gray-900 mb-4 tracking-tight">{t.appName}</h1>
+        <p className="text-gray-500 mb-10 text-lg leading-relaxed">{t.tagline}</p>
+
+        {mode === 'main' ? (
+          <div className="space-y-3">
+            <button
+              onClick={signIn}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-200"
+            >
+              <LogIn className="w-5 h-5" />
+              {uiLang === 'zh' ? 'Google 账号登录' : 'Sign in with Google'}
+            </button>
+            <button
+              onClick={() => setMode('phone')}
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-green-200"
+            >
+              <Phone className="w-5 h-5" />
+              {uiLang === 'zh' ? '手机号登录' : 'Sign in with Phone'}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4 text-left">
+            <button onClick={() => { setMode('main'); setConfirmResult(null); setPhoneError(''); }} className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+              ← {uiLang === 'zh' ? '返回' : 'Back'}
+            </button>
+
+            {!confirmResult ? (
+              <>
+                <label className="block text-sm font-bold text-gray-700 mb-1">
+                  {uiLang === 'zh' ? '手机号码' : 'Phone Number'}
+                </label>
+                <input
+                  type="tel"
+                  value={phoneNumber}
+                  onChange={(e) => setPhoneNumber(e.target.value)}
+                  placeholder="+86 13800138000"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-lg"
+                />
+                <p className="text-xs text-gray-400">
+                  {uiLang === 'zh' ? '请输入完整手机号（含国际区号）' : 'Include country code (e.g. +86)'}
+                </p>
+                <button
+                  onClick={handleSendCode}
+                  disabled={phoneSending}
+                  className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
+                >
+                  {phoneSending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  {uiLang === 'zh' ? '发送验证码' : 'Send Code'}
+                </button>
+              </>
+            ) : (
+              <>
+                <label className="block text-sm font-bold text-gray-700 mb-1">
+                  {uiLang === 'zh' ? '输入验证码' : 'Enter Verification Code'}
+                </label>
+                <input
+                  type="text"
+                  value={verificationCode}
+                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="123456"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-lg tracking-widest text-center"
+                  maxLength={6}
+                />
+                <button
+                  onClick={handleVerifyCode}
+                  disabled={phoneSending || verificationCode.length < 6}
+                  className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
+                >
+                  {phoneSending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  {uiLang === 'zh' ? '验证并登录' : 'Verify & Sign In'}
+                </button>
+                <button onClick={() => { setConfirmResult(null); setVerificationCode(''); }} className="w-full text-sm text-gray-500 hover:text-gray-700 py-2">
+                  {uiLang === 'zh' ? '重新发送' : 'Resend Code'}
+                </button>
+              </>
+            )}
+
+            {phoneError && (
+              <p className="text-sm text-red-500 bg-red-50 rounded-xl px-4 py-2">{phoneError}</p>
+            )}
+          </div>
+        )}
+      </motion.div>
+      <div id="recaptcha-container"></div>
+    </div>
+  );
+}
+
 export default function App() {
 
   const [activeTab, setActiveTab] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile'>('slang');
@@ -225,7 +362,10 @@ export default function App() {
     }
   };
 
-  const tabs = (userProfile?.tabOrder || ['slang', 'translate', 'grammar', 'history', 'review']).map(id => {
+  const defaultTabs = ['slang', 'translate', 'grammar', 'history', 'review'];
+  const rawOrder = userProfile?.tabOrder || defaultTabs;
+  const fullOrder = [...rawOrder, ...defaultTabs.filter(t => !rawOrder.includes(t))];
+  const tabs = fullOrder.map(id => {
     switch(id) {
       case 'translate': return { id, label: t.translateTab, icon: Search };
       case 'history': return { id, label: t.wordbookTab, icon: History, count: savedWords.length };
@@ -245,30 +385,7 @@ export default function App() {
   }
 
   if (!user) {
-    return (
-      <div className="min-h-screen bg-[#F8F9FA] flex flex-col items-center justify-center p-6 text-center">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-md w-full bg-white rounded-3xl shadow-xl p-10 border border-gray-100"
-        >
-          <div className="w-20 h-20 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-8">
-            <Languages className="w-10 h-10 text-blue-600" />
-          </div>
-          <h1 className="text-4xl font-bold text-gray-900 mb-4 tracking-tight">{t.appName}</h1>
-          <p className="text-gray-500 mb-10 text-lg leading-relaxed">
-            {t.tagline}
-          </p>
-          <button 
-            onClick={signIn}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-200"
-          >
-            <LogIn className="w-5 h-5" />
-            {t.signIn}
-          </button>
-        </motion.div>
-      </div>
-    );
+    return <LoginPage uiLang={uiLang} t={t} />;
   }
 
   return (
@@ -355,7 +472,7 @@ export default function App() {
         {/* Tabs */}
         <Reorder.Group 
           axis="x" 
-          values={userProfile?.tabOrder || ['slang', 'translate', 'grammar', 'history', 'review']}
+          values={fullOrder}
           onReorder={handleTabOrderChange}
           className="flex bg-white/30 backdrop-blur-sm border border-white/50 p-1 rounded-2xl mb-6 sm:mb-8 overflow-x-auto no-scrollbar shadow-inner"
         >
@@ -711,7 +828,7 @@ export default function App() {
                             <MessageSquare className="w-5 h-5 text-white" />
                           </div>
                           <h3 className="font-black uppercase tracking-widest text-sm">
-                            {uiLang === 'zh' ? 'LingoFlow 梗百科' : 'LingoFlow Insights'}
+                            {uiLang === 'zh' ? 'MemeFlow 梗百科' : 'MemeFlow Insights'}
                           </h3>
                         </div>
                         <p className="text-blue-100 text-sm leading-relaxed mb-4">
