@@ -160,7 +160,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                 {uiLang === 'zh' ? '使用频率' : 'Usage Frequency'}
               </h3>
               <div className="flex flex-wrap gap-2">
-                {selectedWordbookItem.usages.map((usage, idx) => (
+                {(selectedWordbookItem.usages || []).map((usage, idx) => (
                   <button
                     key={idx}
                     onClick={() => {

@@ -883,7 +883,7 @@ export default function App() {
                       {uiLang === 'zh' ? '使用频率' : 'Usage Frequency'}
                     </h3>
                     <div className="flex flex-wrap gap-2">
-                      {translationResult.usages.map((usage, idx) => (
+                      {(translationResult.usages || []).map((usage, idx) => (
                         <button
                           key={idx}
                           onClick={() => {

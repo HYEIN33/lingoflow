@@ -240,7 +240,7 @@ export default function TranslatePage(props: TranslatePageProps) {
             <div className="mb-8">
               <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">{uiLang === 'zh' ? '使用频率' : 'Usage Frequency'}</h3>
               <div className="flex flex-wrap gap-2">
-                {translationResult.usages.map((usage, idx) => (
+                {(translationResult.usages || []).map((usage, idx) => (
                   <button
                     key={idx}
                     onClick={() => { setSelectedUsageIndex(idx); setShowDetails(false); }}
