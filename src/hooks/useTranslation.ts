@@ -42,7 +42,7 @@ export function useTranslation({
   const handleTranslate = async (e?: React.FormEvent, overrideText?: string) => {
     e?.preventDefault();
     const textToTranslate = overrideText || inputText;
-    if (!textToTranslate.trim() || isTranslating) return;
+    if (!textToTranslate.trim()) return;
 
     if (userProfile && !userProfile.isPro && userProfile.translationCount >= 10) {
       onPaymentNeeded('translation_limit');
@@ -50,7 +50,9 @@ export function useTranslation({
     }
 
     setIsTranslating(true);
+    setTranslationResult(null);
     setShowDetails(false);
+    setSelectedUsageIndex(0);
     setSlangInsights([]);
     markOnboardingStep('translate_word');
     try {
