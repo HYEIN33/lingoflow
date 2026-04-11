@@ -84,7 +84,16 @@ export function useTranslation({
       }
     } catch (error: any) {
       console.error(error);
-      const message = error.message || (uiLang === 'zh' ? '翻译失败，请重试。' : 'Translation failed. Please try again.');
+      const raw = error.message || '';
+      // Show friendly message, never raw JSON/API errors
+      let message: string;
+      if (raw.includes('location') || raw.includes('PRECONDITION')) {
+        message = uiLang === 'zh' ? '翻译服务在当前地区不可用，请使用 VPN 或稍后重试' : 'Translation service unavailable in your region';
+      } else if (raw.includes('不可用') || raw.includes('繁忙')) {
+        message = raw; // Already friendly
+      } else {
+        message = uiLang === 'zh' ? '翻译失败，请重试' : 'Translation failed. Please try again.';
+      }
       alert(message);
     } finally {
       setIsTranslating(false);

@@ -894,9 +894,14 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
       if (!currentSlang) {
         doSearch(searchTerm);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error submitting meaning:", error);
-      setSubmitError(uiLang === 'zh' ? '提交失败，请重试' : 'Failed to submit, please try again');
+      const msg = error?.message || '';
+      if (msg.includes('不可用') || msg.includes('繁忙') || msg.includes('location')) {
+        setSubmitError(uiLang === 'zh' ? 'AI 审核服务暂时不可用，请稍后重试' : 'AI review service temporarily unavailable');
+      } else {
+        setSubmitError(uiLang === 'zh' ? '提交失败，请重试' : 'Failed to submit, please try again');
+      }
     } finally {
       setIsSubmitting(false);
       setIsUploading(false);

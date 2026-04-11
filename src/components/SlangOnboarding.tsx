@@ -172,9 +172,14 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
         });
       }, 3000);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error during review:", error);
-      setReviewError(uiLang === 'zh' ? '提交失败，请重试' : 'Submission failed, please try again');
+      const msg = error?.message || '';
+      if (msg.includes('不可用') || msg.includes('繁忙') || msg.includes('location')) {
+        setReviewError(uiLang === 'zh' ? 'AI 审核服务暂时不可用，请稍后重试' : 'AI review service temporarily unavailable');
+      } else {
+        setReviewError(uiLang === 'zh' ? '提交失败，请重试' : 'Submission failed, please try again');
+      }
     }
   };
 

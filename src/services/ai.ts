@@ -95,15 +95,34 @@ async function geminiGenerate(opts: {
       });
       return response.text;
     } catch (e: any) {
-      const status = e?.status || e?.message?.match(/(\d{3})/)?.[1];
+      const msg = e?.message || String(e);
+      const status = e?.status || msg.match(/(\d{3})/)?.[1];
+
+      // Location restriction or FAILED_PRECONDITION — try proxy fallback
+      if (msg.includes('location is not supported') || msg.includes('FAILED_PRECONDITION') || status == 400) {
+        console.warn(`Direct API blocked (${msg.substring(0, 80)}), trying proxy...`);
+        try {
+          const result = await callGeminiProxy(models[i], opts.contents, opts.config);
+          return result.text;
+        } catch (proxyErr: any) {
+          // Proxy also failed — throw user-friendly error
+          throw new Error('翻译服务暂时不可用，请稍后重试');
+        }
+      }
+
       if ((status == 503 || status == 429) && i < models.length - 1) {
         console.warn(`${models[i]} unavailable (${status}), falling back to ${models[i + 1]}`);
         continue;
       }
-      throw e;
+
+      // Friendly error messages
+      if (status == 503 || status == 429) {
+        throw new Error('AI 服务繁忙，请稍后重试');
+      }
+      throw new Error('翻译失败，请检查网络后重试');
     }
   }
-  throw new Error('All models unavailable');
+  throw new Error('AI 服务暂时不可用，请稍后重试');
 }
 
 export interface Example {
