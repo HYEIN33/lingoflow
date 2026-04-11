@@ -29,7 +29,8 @@ import {
   TranslationResult,
   checkGrammar,
   GrammarCheckResult,
-  extractTextFromImage
+  extractTextFromImage,
+  translateSimple
 } from './services/ai';
 import { cn } from './lib/utils';
 import { Language, translations } from './i18n';
@@ -356,7 +357,7 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
 
 export default function App() {
 
-  const [activeTab, setActiveTab] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile'>('slang');
+  const [activeTab, setActiveTab] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile' | 'ai'>('slang');
   // Slang is the primary USP, always default tab
   const [showPayment, setShowPayment] = useState(false);
   const [paymentTrigger, setPaymentTrigger] = useState('default');
@@ -396,6 +397,11 @@ export default function App() {
   );
 
   const t = translations[uiLang];
+
+  // AI Chat state
+  const [aiMessages, setAiMessages] = useState<{ role: 'user' | 'ai'; text: string }[]>([]);
+  const [aiInput, setAiInput] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
 
   // --- Custom Hooks ---
   const { user, userProfile, setUserProfile, isAuthReady } = useAuth();
@@ -472,7 +478,7 @@ export default function App() {
     }
   };
 
-  const defaultTabs = ['slang', 'translate', 'grammar', 'history', 'review'];
+  const defaultTabs = ['slang', 'translate', 'grammar', 'history', 'review', 'ai'];
   const rawOrder = userProfile?.tabOrder || defaultTabs;
   const fullOrder = [...rawOrder, ...defaultTabs.filter(t => !rawOrder.includes(t))];
   const tabs = fullOrder.map(id => {
@@ -482,6 +488,7 @@ export default function App() {
       case 'review': return { id, label: t.reviewTab, icon: BookOpen };
       case 'grammar': return { id, label: t.grammarTab, icon: PenTool };
       case 'slang': return { id, label: t.slangTab, icon: MessageSquare };
+      case 'ai': return { id, label: 'AI', icon: Zap };
       default: return { id, label: '', icon: Search };
     }
   });
@@ -758,44 +765,18 @@ export default function App() {
                       </div>
                     )}
 
-                  <div className="flex flex-col sm:flex-row justify-between items-start gap-6 sm:gap-0 mb-6 sm:mb-8">
-                    <div className="w-full sm:w-auto">
-                      <div className="flex items-center gap-4 mb-2">
-                        <div className="flex flex-col">
-                          <h2 className="text-3xl sm:text-4xl font-black text-gray-900 tracking-tight break-words">
-                            {translationResult.usages[selectedUsageIndex].meaning}
-                          </h2>
-                          <p className="text-lg sm:text-xl font-bold text-blue-600 mt-1">
-                            {translationResult.usages[selectedUsageIndex].meaningZh}
-                          </p>
-                        </div>
-                        <button 
-                          onClick={() => speak(translationResult.usages[selectedUsageIndex].meaning)}
-                          disabled={loadingAudioText === translationResult.usages[selectedUsageIndex].meaning}
-                          className="p-2 text-blue-500 hover:bg-blue-50 rounded-full transition-colors self-start mt-2 disabled:opacity-50"
-                        >
-                          {loadingAudioText === translationResult.usages[selectedUsageIndex].meaning ? (
-                            <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" />
-                          ) : (
-                            <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" />
-                          )}
-                        </button>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        {translationResult.pronunciation && (
-                          <span className="text-blue-600 font-mono font-medium bg-blue-50 px-3 py-1 rounded-lg text-xs sm:text-sm">
-                            {translationResult.pronunciation}
-                          </span>
-                        )}
-                        <span className="text-gray-400 text-xs sm:text-sm font-medium">
-                          {translationResult.original}
-                        </span>
-                      </div>
+                  {/* Header: original word + pronunciation + save */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <h2 className="text-xl sm:text-2xl font-black text-gray-900">{translationResult.original}</h2>
+                      {translationResult.pronunciation && (
+                        <span className="text-blue-600 font-mono bg-blue-50 px-2 py-0.5 rounded-lg text-xs">{translationResult.pronunciation}</span>
+                      )}
                     </div>
-                    <button 
+                    <button
                       onClick={() => handleSaveWord()}
                       disabled={isSaving}
-                      className="w-full sm:w-auto bg-blue-600 text-white px-6 py-3 sm:py-4 rounded-2xl font-bold hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
+                      className="flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-700 transition-all shadow-md"
                     >
                       {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                       {t.save}
@@ -874,9 +855,9 @@ export default function App() {
                                   </h3>
                                   <div className="flex flex-wrap gap-2">
                                     {translationResult.usages[selectedUsageIndex].synonyms.map((syn, i) => (
-                                      <span key={i} className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-sm font-medium">
+                                      <button key={i} onClick={() => { setInputText(syn); handleTranslate(); }} className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-blue-100 hover:text-blue-600 transition-colors cursor-pointer">
                                         {syn}
-                                      </span>
+                                      </button>
                                     ))}
                                   </div>
                                 </div>
@@ -889,10 +870,41 @@ export default function App() {
                                   </h3>
                                   <div className="flex flex-wrap gap-2">
                                     {translationResult.usages[selectedUsageIndex].alternatives.map((alt, i) => (
-                                      <span key={i} className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-sm font-medium">
+                                      <button key={i} onClick={() => { setInputText(alt); handleTranslate(); }} className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-blue-100 hover:text-blue-700 transition-colors cursor-pointer">
                                         {alt}
-                                      </span>
+                                      </button>
                                     ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Verb conjugations / Word forms */}
+                              {(translationResult.usages[selectedUsageIndex] as any).conjugations && (
+                                <div>
+                                  <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
+                                    {uiLang === 'zh' ? '词形变化' : 'Word Forms'}
+                                  </h3>
+                                  <div className="flex flex-wrap gap-2">
+                                    {Object.entries((translationResult.usages[selectedUsageIndex] as any).conjugations)
+                                      .filter(([_, v]) => v)
+                                      .map(([key, val]) => {
+                                        const labels: Record<string, string> = {
+                                          pastTense: '过去式', pastParticiple: '过去分词',
+                                          presentParticiple: '现在分词', thirdPerson: '第三人称',
+                                          plural: '复数', comparative: '比较级', superlative: '最高级'
+                                        };
+                                        const labelsEn: Record<string, string> = {
+                                          pastTense: 'Past', pastParticiple: 'Past Part.',
+                                          presentParticiple: 'Pres. Part.', thirdPerson: '3rd Person',
+                                          plural: 'Plural', comparative: 'Comparative', superlative: 'Superlative'
+                                        };
+                                        return (
+                                          <button key={key} onClick={() => { setInputText(val as string); handleTranslate(); }} className="bg-purple-50 text-purple-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors cursor-pointer">
+                                            <span className="text-[10px] text-purple-400 mr-1">{uiLang === 'zh' ? labels[key] : labelsEn[key]}</span>
+                                            {val as string}
+                                          </button>
+                                        );
+                                      })}
                                   </div>
                                 </div>
                               )}
@@ -1132,6 +1144,68 @@ export default function App() {
                 onOpenOnboarding={() => setShowOnboarding(true)}
                 onLogout={logOut}
               />
+            </motion.div>
+          ) : activeTab === 'ai' ? (
+            <motion.div key="ai" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              {!userProfile?.isPro ? (
+                <div className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center space-y-4 max-w-md mx-auto mt-12">
+                  <Zap className="w-12 h-12 text-blue-500 mx-auto" />
+                  <h3 className="text-xl font-bold text-gray-900">{uiLang === 'zh' ? 'AI 助手' : 'AI Assistant'}</h3>
+                  <p className="text-gray-500 text-sm">{uiLang === 'zh' ? 'Pro 专属功能，升级后可自由提问' : 'Pro feature, upgrade to ask AI anything'}</p>
+                  <button onClick={() => { setPaymentTrigger('ai'); setShowPayment(true); }} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700">
+                    {uiLang === 'zh' ? '升级 Pro' : 'Upgrade to Pro'}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <h2 className="text-2xl font-black text-gray-900">{uiLang === 'zh' ? 'AI 助手' : 'AI Assistant'}</h2>
+                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden" style={{ minHeight: '400px' }}>
+                    <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
+                      {aiMessages.length === 0 && (
+                        <p className="text-center text-gray-400 py-12 text-sm">{uiLang === 'zh' ? '问我任何关于语言学习的问题' : 'Ask me anything about language learning'}</p>
+                      )}
+                      {aiMessages.map((msg, i) => (
+                        <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
+                            {msg.text}
+                          </div>
+                        </div>
+                      ))}
+                      {aiLoading && (
+                        <div className="flex justify-start">
+                          <div className="bg-gray-100 px-4 py-2.5 rounded-2xl"><Loader2 className="w-4 h-4 animate-spin text-gray-400" /></div>
+                        </div>
+                      )}
+                    </div>
+                    <form onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (!aiInput.trim() || aiLoading) return;
+                      const q = aiInput.trim();
+                      setAiMessages(prev => [...prev, { role: 'user', text: q }]);
+                      setAiInput('');
+                      setAiLoading(true);
+                      try {
+                        const answer = await translateSimple(q);
+                        setAiMessages(prev => [...prev, { role: 'ai', text: answer }]);
+                      } catch (err) {
+                        setAiMessages(prev => [...prev, { role: 'ai', text: uiLang === 'zh' ? '抱歉，回答失败，请重试' : 'Sorry, failed to respond. Try again.' }]);
+                      }
+                      setAiLoading(false);
+                    }} className="border-t border-gray-100 p-3 flex gap-2">
+                      <input
+                        type="text"
+                        value={aiInput}
+                        onChange={(e) => setAiInput(e.target.value)}
+                        placeholder={uiLang === 'zh' ? '输入你的问题...' : 'Type your question...'}
+                        className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 outline-none focus:border-blue-500 text-sm"
+                      />
+                      <button type="submit" disabled={aiLoading || !aiInput.trim()} className="bg-blue-600 text-white px-4 py-2.5 rounded-xl disabled:opacity-50 text-sm font-bold">
+                        {uiLang === 'zh' ? '发送' : 'Send'}
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              )}
             </motion.div>
           ) : null}
         </AnimatePresence>

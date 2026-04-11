@@ -162,8 +162,9 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
   const [currentSlang, setCurrentSlang] = useState<Slang | null>(null);
   const [meanings, setMeanings] = useState<SlangMeaning[]>([]);
-  const [searchResults, setSearchResults] = useState<Slang[]>([]);
+  const [searchResults, setSearchResults] = useState<(Slang & { topMeaning?: string; totalUpvotes?: number })[]>([]);
   const [allSlangCache, setAllSlangCache] = useState<Slang[]>([]);
+  const [meaningsBySlangId, setMeaningsBySlangId] = useState<Record<string, { meaning: string; upvotes: number }[]>>({});
   const [isSearching, setIsSearching] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showGuidelines, setShowGuidelines] = useState(false);
@@ -180,8 +181,22 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     const loadFeed = async () => {
       try {
         // Get all slangs
-        const allSnap = await getDocs(query(collection(db, 'slangs'), orderBy('createdAt', 'desc')));
-        const allSlangs = allSnap.docs.map(d => ({ id: d.id, ...d.data() } as Slang));
+        const [allSnap, meaningsSnap] = await Promise.all([
+          getDocs(collection(db, 'slangs')),
+          getDocs(query(collection(db, 'slang_meanings'), where('status', '==', 'approved')))
+        ]);
+        const allSlangs = allSnap.docs.map(d => ({ id: d.id, ...d.data() } as Slang)).filter(s => s.term && typeof s.term === 'string');
+
+        // Build meanings index by slangId
+        const mIndex: Record<string, { meaning: string; upvotes: number }[]> = {};
+        meaningsSnap.forEach(d => {
+          const data = d.data();
+          if (!mIndex[data.slangId]) mIndex[data.slangId] = [];
+          mIndex[data.slangId].push({ meaning: data.meaning, upvotes: data.upvotes || 0 });
+        });
+        // Sort each slang's meanings by upvotes desc
+        Object.values(mIndex).forEach(arr => arr.sort((a, b) => b.upvotes - a.upvotes));
+        setMeaningsBySlangId(mIndex);
 
         setAllSlangCache(allSlangs);
         if (allSlangs.length === 0) { setRecentSlangs([]); return; }
@@ -198,7 +213,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
         const scored = allSlangs.map(s => {
           let score = Math.random() * 10; // base randomness
           // Boost if term relates to user's search history
-          const termLower = s.term.toLowerCase();
+          const termLower = (s.term || '').toLowerCase();
           if (searchedTerms.some(t => termLower.includes(t) || t.includes(termLower))) {
             score += 20;
           }
@@ -229,6 +244,42 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     const timer = setInterval(() => setFeedPage(p => p + 1), FEED_INTERVAL);
     return () => clearInterval(timer);
   }, [feedPage]);
+
+  // Ensure search cache is loaded on mount (separate from feed)
+  useEffect(() => {
+    if (allSlangCache.length > 0) return;
+    const loadCache = async () => {
+      try {
+        // Load slangs first (critical for search)
+        const sSnap = await getDocs(collection(db, 'slangs'));
+        const slangs = sSnap.docs
+          .map(d => ({ id: d.id, ...d.data() } as Slang))
+          .filter(s => s.term && typeof s.term === 'string');
+        setAllSlangCache(slangs);
+
+        // Then load meanings (for upvote sorting)
+        const mSnap = await getDocs(collection(db, 'slang_meanings'));
+        const idx: Record<string, { meaning: string; upvotes: number }[]> = {};
+        mSnap.forEach(d => {
+          const data = d.data();
+          if (!idx[data.slangId]) idx[data.slangId] = [];
+          idx[data.slangId].push({ meaning: data.meaning || '', upvotes: data.upvotes || 0 });
+        });
+        Object.values(idx).forEach(arr => arr.sort((a, b) => b.upvotes - a.upvotes));
+        setMeaningsBySlangId(idx);
+      } catch (e) {
+        console.error('Cache load failed:', e);
+        // Fallback: try slangs only without meanings
+        try {
+          const sSnap = await getDocs(collection(db, 'slangs'));
+          setAllSlangCache(sSnap.docs.map(d => ({ id: d.id, ...d.data() } as Slang)).filter(s => s.term && typeof s.term === 'string'));
+        } catch (e2) {
+          console.error('Slang cache fallback also failed:', e2);
+        }
+      }
+    };
+    loadCache();
+  }, []);
 
   // Save search to local history for personalization
   const saveSearchHistory = useCallback((term: string) => {
@@ -551,20 +602,23 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
             const t = s.term.toLowerCase();
             return t === term || t.includes(term) || term.includes(t);
           })
-          .sort((a, b) => {
-            const aExact = a.term.toLowerCase() === term ? 0 : 1;
-            const bExact = b.term.toLowerCase() === term ? 0 : 1;
-            return aExact - bExact;
+          .map(s => {
+            const ms = meaningsBySlangId[s.id] || [];
+            const totalUpvotes = ms.reduce((sum, m) => sum + m.upvotes, 0);
+            return { ...s, topMeaning: ms[0]?.meaning, totalUpvotes };
           })
-          .slice(0, 10);
+          .sort((a, b) => {
+            // Exact match first, then by upvotes
+            const aExact = a.term.toLowerCase() === term ? 1000000 : 0;
+            const bExact = b.term.toLowerCase() === term ? 1000000 : 0;
+            return (bExact + (b.totalUpvotes || 0)) - (aExact + (a.totalUpvotes || 0));
+          });
 
         if (matches.length === 1) {
-          // Single match — go directly to it
           await selectSlang(matches[0]);
           setIsSearching(false);
           return;
-        } else if (matches.length > 1) {
-          // Multiple matches — show list for user to pick
+        } else if (matches.length > 0) {
           setSearchResults(matches);
           setIsSearching(false);
           return;
@@ -894,6 +948,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
       {/* Daily Challenge */}
       <DailyChallenge uiLang={uiLang} />
 
+      <div className="relative">
       <form onSubmit={handleSearch} className="relative">
         <input
           type="text"
@@ -902,11 +957,24 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
             const val = e.target.value;
             setSearchTerm(val);
             // Typeahead suggestions
-            if (val.trim() && allSlangCache.length > 0) {
+            if (val.trim()) {
               const q = val.trim().toLowerCase();
+              // If cache not loaded yet, load it now
+              if (allSlangCache.length === 0) {
+                getDocs(collection(db, 'slangs')).then(snap => {
+                  const slangs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Slang));
+                  setAllSlangCache(slangs);
+                });
+              }
               const suggestions = allSlangCache
                 .filter(s => s.term.toLowerCase().includes(q))
-                .slice(0, 6);
+                .map(s => {
+                  const ms = meaningsBySlangId[s.id] || [];
+                  const totalUpvotes = ms.reduce((sum, m) => sum + m.upvotes, 0);
+                  return { ...s, topMeaning: ms[0]?.meaning, totalUpvotes };
+                })
+                .sort((a, b) => (b.totalUpvotes || 0) - (a.totalUpvotes || 0))
+                .slice(0, 8);
               setSearchResults(suggestions.length > 0 && !currentSlang ? suggestions : []);
             } else {
               setSearchResults([]);
@@ -940,6 +1008,33 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
           {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : (uiLang === 'zh' ? '搜索' : 'Search')}
         </button>
       </form>
+
+      {/* Search results / typeahead */}
+      {searchResults.length > 0 && !currentSlang && searchTerm.trim() && (
+        <div className="absolute left-0 right-0 z-30 bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden mt-1 max-h-80 overflow-y-auto">
+          <div className="px-4 py-2 bg-gray-50 text-xs text-gray-500 font-medium border-b border-gray-100">
+            {uiLang === 'zh' ? `找到 ${searchResults.length} 个相关词条` : `${searchResults.length} matches`}
+          </div>
+          {searchResults.map(s => (
+            <button
+              key={s.id}
+              onClick={() => { selectSlang(s); setSearchResults([]); }}
+              className="w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors border-b border-gray-50 last:border-0"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-gray-800">{s.term}</span>
+                {(s.totalUpvotes || 0) > 0 && (
+                  <span className="text-xs text-gray-400 flex items-center gap-1">👍 {s.totalUpvotes}</span>
+                )}
+              </div>
+              {s.topMeaning && (
+                <p className="text-xs text-gray-500 mt-1 line-clamp-1">{s.topMeaning}</p>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      </div>
 
       {/* Weekly trending — always visible */}
       {!currentSlang && !showAddForm && trendingTerms.length > 0 && (
@@ -1013,21 +1108,6 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
         </div>
       )}
 
-      {/* Search suggestions dropdown */}
-      {searchResults.length > 0 && !currentSlang && searchTerm.trim() && (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-lg overflow-hidden -mt-2">
-          {searchResults.map(s => (
-            <button
-              key={s.id}
-              onClick={() => { selectSlang(s); setSearchResults([]); }}
-              className="w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors flex items-center justify-between border-b border-gray-50 last:border-0"
-            >
-              <span className="font-semibold text-gray-800">{s.term}</span>
-              <ChevronDown className="w-4 h-4 text-gray-300 -rotate-90" />
-            </button>
-          ))}
-        </div>
-      )}
 
       {searchTerm && !isSearching && !currentSlang && !showAddForm && searchResults.length === 0 && (
         <motion.div 

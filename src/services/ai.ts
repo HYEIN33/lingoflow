@@ -219,6 +219,9 @@ export async function translateText(text: string, formalityLevel?: number): Prom
     2. Provide the meaning in English and Chinese.
     3. Provide 2-3 example sentences with translations specific to this usage.
     4. Provide a list of synonyms and alternative translations.
+    5. If the word is a verb, provide conjugations (past tense, past participle, present participle, third person singular) in 'conjugations'.
+    6. If the word is a noun, provide plural form in 'conjugations'.
+    7. If the word is an adjective, provide comparative and superlative in 'conjugations'.
     ${formalityPrompt}
 
     Text: "${text}"`;
@@ -243,6 +246,15 @@ export async function translateText(text: string, formalityLevel?: number): Prom
               meaningZh: { type: Type.STRING },
               synonyms: { type: Type.ARRAY, items: { type: Type.STRING } },
               alternatives: { type: Type.ARRAY, items: { type: Type.STRING } },
+              conjugations: { type: Type.OBJECT, description: "Verb tenses, noun plurals, or adjective forms", properties: {
+                pastTense: { type: Type.STRING },
+                pastParticiple: { type: Type.STRING },
+                presentParticiple: { type: Type.STRING },
+                thirdPerson: { type: Type.STRING },
+                plural: { type: Type.STRING },
+                comparative: { type: Type.STRING },
+                superlative: { type: Type.STRING }
+              }},
               examples: {
                 type: Type.ARRAY,
                 items: {
