@@ -140,6 +140,7 @@ export default function ReviewPage(props: ReviewPageProps) {
               <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-4" />
               <h3 className="text-lg font-bold text-gray-900 mb-2">{uiLang === 'zh' ? '太棒了！' : 'Well done!'}</h3>
               <p className="text-gray-400">{uiLang === 'zh' ? '目前没有需要复习的单词。' : 'No words due for review right now.'}</p>
+              <p className="text-gray-300 text-sm mt-2">{uiLang === 'zh' ? '去翻译页面保存单词，系统会自动安排复习' : 'Save words from the Translate tab to start reviewing'}</p>
             </div>
           )}
         </>

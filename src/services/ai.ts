@@ -308,6 +308,31 @@ export async function checkGrammar(text: string): Promise<GrammarCheckResult> {
   return JSON.parse(text_);
 }
 
+export async function extractTextFromImage(base64Image: string, mimeType: string): Promise<string> {
+  const { model } = getEffectiveConfig();
+
+  const contents = [
+    {
+      parts: [
+        { text: 'Extract ALL text from this image. Return only the extracted text, nothing else. If multiple languages are present, include all of them. If no text is found, return "NO_TEXT".' },
+        { inlineData: { mimeType, data: base64Image } }
+      ]
+    }
+  ];
+
+  if (USE_PROXY) {
+    const result = await callGeminiProxy(model, contents);
+    return result.text?.trim() || '';
+  }
+
+  const ai = getGeminiAI();
+  const response = await ai.models.generateContent({
+    model,
+    contents: contents as any,
+  });
+  return response.text?.trim() || '';
+}
+
 export async function translateSimple(text: string): Promise<string> {
   const { model } = getEffectiveConfig();
 

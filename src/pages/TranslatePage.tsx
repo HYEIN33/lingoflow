@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Search, Plus, BookOpen, Loader2, Volume2, ChevronRight, ChevronDown, ChevronUp, Mic, MicOff, MessageSquare, Zap } from 'lucide-react';
+import { Search, Plus, BookOpen, Loader2, Volume2, ChevronRight, ChevronDown, ChevronUp, Mic, MicOff, MessageSquare, Zap, Camera } from 'lucide-react';
+import { extractTextFromImage } from '../services/ai';
 import { motion, AnimatePresence } from 'motion/react';
 import { TranslationResult, SlangExplanationResult } from '../services/ai';
 import { cn } from '../lib/utils';
@@ -42,6 +43,31 @@ export default function TranslatePage(props: TranslatePageProps) {
   } = props;
 
   const t = translations[uiLang];
+  const [isExtracting, setIsExtracting] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleImageCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsExtracting(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(',')[1];
+        const text = await extractTextFromImage(base64, file.type);
+        if (text && text !== 'NO_TEXT') {
+          setInputText(text);
+        }
+        setIsExtracting(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Image extraction failed:', err);
+      setIsExtracting(false);
+    }
+    // Reset input so same file can be selected again
+    e.target.value = '';
+  };
 
   return (
     <div className="space-y-6">
@@ -52,18 +78,35 @@ export default function TranslatePage(props: TranslatePageProps) {
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           placeholder={t.inputPlaceholder}
-          className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-28 sm:pr-32 text-lg sm:text-xl shadow-xl shadow-gray-200/50 outline-none transition-all placeholder:text-gray-300"
+          className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-40 sm:pr-48 text-lg sm:text-xl shadow-xl shadow-gray-200/50 outline-none transition-all placeholder:text-gray-300"
         />
         <div className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 sm:gap-2 z-20">
           <button
             type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isExtracting}
+            className="p-3 sm:p-4 rounded-2xl transition-all hover:scale-105 active:scale-95 shadow-lg cursor-pointer bg-blue-100 text-blue-600 shadow-blue-100"
+            title={uiLang === 'zh' ? '拍照翻译' : 'Photo Translate'}
+          >
+            {isExtracting ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" /> : <Camera className="w-5 h-5 sm:w-6 sm:h-6" />}
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={handleImageCapture}
+            className="hidden"
+          />
+          <button
+            type="button"
             onClick={onToggleListening}
             className={cn(
-              "p-3 sm:p-4 rounded-2xl transition-all hover:scale-105 active:scale-95 shadow-lg cursor-pointer",
-              isListening ? "bg-red-500 text-white shadow-red-200" : "bg-gray-100 text-gray-500 shadow-gray-100"
+              "p-2 rounded-xl transition-all cursor-pointer",
+              isListening ? "bg-red-500 text-white" : "text-gray-300 hover:text-gray-400"
             )}
           >
-            {isListening ? <MicOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Mic className="w-5 h-5 sm:w-6 sm:h-6" />}
+            {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
           </button>
           <button
             type="submit"

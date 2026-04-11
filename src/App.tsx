@@ -28,7 +28,8 @@ import { db, signIn, logOut, emailSignUp, emailSignIn, resetPassword } from './f
 import {
   TranslationResult,
   checkGrammar,
-  GrammarCheckResult
+  GrammarCheckResult,
+  extractTextFromImage
 } from './services/ai';
 import { cn } from './lib/utils';
 import { Language, translations } from './i18n';
@@ -133,10 +134,11 @@ import ReviewPage from './pages/ReviewPage';
 import WordbookPage from './pages/WordbookPage';
 
 function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
-  const [mode, setMode] = useState<'main' | 'email'>('main');
+  const [mode, setMode] = useState<'main' | 'email' | 'guest'>('main');
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [guestCode, setGuestCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [resetSent, setResetSent] = useState(false);
@@ -152,6 +154,7 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
       return;
     }
     setLoading(true);
+    setError('');
     try {
       if (isSignUp) {
         await emailSignUp(email, password);
@@ -166,9 +169,32 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
         setError(uiLang === 'zh' ? '该邮箱已注册，请直接登录' : 'Email already registered, please sign in');
       } else if (code === 'auth/invalid-email') {
         setError(uiLang === 'zh' ? '邮箱格式不正确' : 'Invalid email format');
+      } else if (code === 'auth/weak-password') {
+        setError(uiLang === 'zh' ? '密码太弱，至少 6 位' : 'Password too weak, at least 6 characters');
+      } else if (code === 'auth/too-many-requests') {
+        setError(uiLang === 'zh' ? '操作太频繁，请稍后重试' : 'Too many attempts, please try later');
+      } else if (code === 'auth/network-request-failed') {
+        setError(uiLang === 'zh' ? '网络连接失败，请检查网络' : 'Network error, please check connection');
       } else {
-        setError(e.message || 'Authentication failed');
+        setError(uiLang === 'zh' ? '登录失败，请重试' : 'Authentication failed, please try again');
       }
+      setLoading(false);
+    }
+  };
+
+  const handleGuestLogin = async () => {
+    setError('');
+    if (guestCode !== '8888') {
+      setError(uiLang === 'zh' ? '邀请码错误' : 'Invalid invite code');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { signInAnonymously } = await import('firebase/auth');
+      const { auth } = await import('./firebase');
+      await signInAnonymously(auth);
+    } catch (e: any) {
+      setError(e.message || 'Login failed');
     }
     setLoading(false);
   };
@@ -188,17 +214,17 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F9FA] flex flex-col items-center justify-center p-6 text-center">
+    <div className="min-h-screen bg-white sm:bg-[#F8F9FA] flex flex-col items-center justify-center p-4 sm:p-6 text-center">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full bg-white rounded-3xl shadow-xl p-10 border border-gray-100"
+        className="max-w-md w-full bg-white rounded-3xl shadow-none sm:shadow-xl p-6 sm:p-10 border-0 sm:border sm:border-gray-100"
       >
-        <div className="w-20 h-20 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-8">
-          <Languages className="w-10 h-10 text-blue-600" />
+        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-6 sm:mb-8">
+          <Languages className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600" />
         </div>
-        <h1 className="text-4xl font-bold text-gray-900 mb-4 tracking-tight">{t.appName}</h1>
-        <p className="text-gray-500 mb-10 text-lg leading-relaxed">{t.tagline}</p>
+        <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-3 sm:mb-4 tracking-tight">{t.appName}</h1>
+        <p className="text-gray-600 mb-8 sm:mb-10 text-base sm:text-lg leading-relaxed">{t.tagline}</p>
 
         {mode === 'main' ? (
           <div className="space-y-3">
@@ -216,8 +242,19 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
               <LogIn className="w-5 h-5" />
               {uiLang === 'zh' ? '邮箱登录 / 注册' : 'Sign in with Email'}
             </button>
+            <div className="relative flex items-center my-2">
+              <div className="flex-1 border-t border-gray-200" />
+              <span className="px-3 text-xs text-gray-400">{uiLang === 'zh' ? '或' : 'or'}</span>
+              <div className="flex-1 border-t border-gray-200" />
+            </div>
+            <button
+              onClick={() => setMode('guest')}
+              className="w-full border-2 border-gray-200 hover:border-gray-300 text-gray-700 font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3"
+            >
+              {uiLang === 'zh' ? '内测体验（邀请码）' : 'Beta Access (Invite Code)'}
+            </button>
           </div>
-        ) : (
+        ) : mode === 'email' ? (
           <div className="space-y-4 text-left">
             <button onClick={() => { setMode('main'); setError(''); setResetSent(false); }} className="text-sm text-blue-600 hover:text-blue-700 font-medium">
               ← {uiLang === 'zh' ? '返回' : 'Back'}
@@ -279,7 +316,39 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
               <p className="text-sm text-red-500 bg-red-50 rounded-xl px-4 py-2">{error}</p>
             )}
           </div>
-        )}
+        ) : mode === 'guest' ? (
+          <div className="space-y-4 text-left">
+            <button onClick={() => { setMode('main'); setError(''); setGuestCode(''); }} className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+              ← {uiLang === 'zh' ? '返回' : 'Back'}
+            </button>
+            <h3 className="text-lg font-bold text-gray-900">
+              {uiLang === 'zh' ? '内测体验' : 'Beta Access'}
+            </h3>
+            <p className="text-sm text-gray-500">
+              {uiLang === 'zh' ? '输入邀请码即可体验全部功能' : 'Enter invite code to access all features'}
+            </p>
+            <input
+              type="text"
+              value={guestCode}
+              onChange={(e) => setGuestCode(e.target.value)}
+              placeholder={uiLang === 'zh' ? '请输入邀请码' : 'Enter invite code'}
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-center text-lg tracking-widest"
+              maxLength={10}
+              onKeyDown={(e) => e.key === 'Enter' && handleGuestLogin()}
+            />
+            <button
+              onClick={handleGuestLogin}
+              disabled={loading || !guestCode}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
+            >
+              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+              {uiLang === 'zh' ? '进入体验' : 'Enter'}
+            </button>
+            {error && (
+              <p className="text-sm text-red-500 bg-red-50 rounded-xl px-4 py-2">{error}</p>
+            )}
+          </div>
+        ) : null}
       </motion.div>
     </div>
   );
@@ -297,6 +366,30 @@ export default function App() {
   const [grammarInput, setGrammarInput] = useState('');
   const [isCheckingGrammar, setIsCheckingGrammar] = useState(false);
   const [grammarResult, setGrammarResult] = useState<GrammarCheckResult | null>(null);
+  const [isExtractingPhoto, setIsExtractingPhoto] = useState(false);
+  const photoInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsExtractingPhoto(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(',')[1];
+        const text = await extractTextFromImage(base64, file.type);
+        if (text && text !== 'NO_TEXT') {
+          setInputText(text);
+        }
+        setIsExtractingPhoto(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Image extraction failed:', err);
+      setIsExtractingPhoto(false);
+    }
+    e.target.value = '';
+  };
 
   const [uiLang, setUiLang] = useState<Language>(
     typeof navigator !== 'undefined' && navigator.language.startsWith('zh') ? 'zh' : 'en'
@@ -326,7 +419,8 @@ export default function App() {
   const { isListening, toggleListening } = useSpeechRecognition({ uiLang, activeTab, setInputText, setGrammarInput, stopAllAudio });
 
   useEffect(() => {
-    if (activeTab === 'slang' && userProfile && !userProfile.hasCompletedOnboarding) {
+    const skipped = localStorage.getItem('memeflow_onboarding_skipped');
+    if (activeTab === 'slang' && userProfile && !userProfile.hasCompletedOnboarding && !skipped) {
       setShowOnboarding(true);
     }
   }, [activeTab, userProfile]);
@@ -514,25 +608,42 @@ export default function App() {
             >
               {/* Search Box */}
               <form onSubmit={handleTranslate} className="relative group">
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   placeholder={t.inputPlaceholder}
-                  className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-28 sm:pr-32 text-lg sm:text-xl shadow-xl shadow-gray-200/50 outline-none transition-all placeholder:text-gray-300"
+                  className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-40 sm:pr-48 text-lg sm:text-xl shadow-xl shadow-gray-200/50 outline-none transition-all placeholder:text-gray-300"
+                />
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handlePhotoCapture}
+                  className="hidden"
                 />
                 <div className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 sm:gap-2 z-20">
-                  <button 
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    disabled={isExtractingPhoto}
+                    className="p-3 sm:p-4 rounded-2xl transition-all hover:scale-105 active:scale-95 shadow-lg cursor-pointer bg-blue-100 text-blue-600 shadow-blue-100"
+                    title={uiLang === 'zh' ? '拍照翻译' : 'Photo Translate'}
+                  >
+                    {isExtractingPhoto ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" /> : <svg className="w-5 h-5 sm:w-6 sm:h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>}
+                  </button>
+                  <button
                     type="button"
                     onClick={toggleListening}
                     className={cn(
-                      "p-3 sm:p-4 rounded-2xl transition-all hover:scale-105 active:scale-95 shadow-lg cursor-pointer",
-                      isListening ? "bg-red-500 text-white shadow-red-200" : "bg-gray-100 text-gray-500 shadow-gray-100"
+                      "p-2 rounded-xl transition-all cursor-pointer",
+                      isListening ? "bg-red-500 text-white" : "text-gray-300 hover:text-gray-400"
                     )}
                   >
-                    {isListening ? <MicOff className="w-5 h-5 sm:w-6 sm:h-6" /> : <Mic className="w-5 h-5 sm:w-6 sm:h-6" />}
+                    {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
                   </button>
-                  <button 
+                  <button
                     type="submit"
                     disabled={isTranslating || !inputText.trim()}
                     className="bg-blue-600 text-white p-3 sm:p-4 rounded-2xl disabled:opacity-50 transition-all hover:scale-105 active:scale-95 shadow-lg shadow-blue-200"
@@ -1034,18 +1145,14 @@ export default function App() {
               uiLang={uiLang}
               onClose={() => setShowPayment(false)}
               onSuccess={async () => {
-                setShowPayment(false);
-                if (userProfile && user) {
-                  const updated = { ...userProfile, isPro: true };
-                  setUserProfile(updated);
+                if (user) {
                   try {
                     await updateDoc(doc(db, 'users', user.uid), { isPro: true });
                   } catch (e) {
-                    console.error('Failed to update Pro status:', e);
-                    // Force reload to sync
-                    window.location.reload();
+                    console.error('Failed to update Pro:', e);
                   }
                 }
+                window.location.reload();
               }}
             />
           )}
