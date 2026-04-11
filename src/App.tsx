@@ -646,6 +646,16 @@ export default function App() {
                   placeholder={t.inputPlaceholder}
                   className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-40 sm:pr-48 text-lg sm:text-xl shadow-xl shadow-gray-200/50 outline-none transition-all placeholder:text-gray-300"
                 />
+                {/* Clear button */}
+                {inputText && (
+                  <button
+                    type="button"
+                    onClick={() => { setInputText(''); setPreviousSearchWord(null); }}
+                    className="absolute left-auto right-36 sm:right-44 top-1/2 -translate-y-1/2 p-1.5 text-gray-300 hover:text-gray-500 transition-colors z-20"
+                  >
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                  </button>
+                )}
                 <input
                   ref={photoInputRef}
                   type="file"
@@ -732,13 +742,14 @@ export default function App() {
                     </button>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {searchHistory.slice(0, 15).map((item, i) => (
+                    {searchHistory.slice(0, 10).map((item, i) => (
                       <div key={i} className="group flex items-center">
                         <button
                           onClick={() => handleSearchWord(item.text)}
-                          className="bg-gray-50 hover:bg-blue-50 text-gray-600 hover:text-blue-600 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                          className="bg-gray-50 hover:bg-blue-50 text-gray-600 hover:text-blue-600 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors max-w-[200px] truncate"
+                          title={item.text}
                         >
-                          {item.text}
+                          {item.text.length > 15 ? item.text.slice(0, 15) + '...' : item.text}
                         </button>
                         <button
                           onClick={() => removeFromHistory(item.text)}
@@ -753,12 +764,16 @@ export default function App() {
               )}
 
               {/* Translation Result */}
-              {translationResult && (
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  <motion.div 
+              {translationResult && (() => {
+                // Detect if input is a sentence/paragraph (not a single word)
+                const isSentence = inputText.trim().split(/\s+/).length > 3 || inputText.trim().length > 20;
+
+                return (
+                <div className={cn("grid grid-cols-1 gap-8", !isSentence && "lg:grid-cols-3")}>
+                  <motion.div
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="lg:col-span-2 bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 space-y-8 overflow-hidden"
+                    className={cn("bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 space-y-8 overflow-hidden", !isSentence && "lg:col-span-2")}
                   >
                     {/* Dual Column Translation */}
                     {(translationResult.authenticTranslation || translationResult.academicTranslation) && (
@@ -821,8 +836,18 @@ export default function App() {
                       </div>
                     )}
 
+                  {/* Sentence mode: show original text */}
+                  {isSentence && (
+                    <div className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100">
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
+                        {uiLang === 'zh' ? '原文' : 'Original'}
+                      </h3>
+                      <p className="text-gray-700 leading-relaxed break-words">{translationResult.original}</p>
+                    </div>
+                  )}
+
                   {/* Back to original word */}
-                  {previousSearchWord && (
+                  {!isSentence && previousSearchWord && (
                     <button
                       onClick={handleGoBack}
                       className="flex items-center gap-1.5 text-sm font-bold text-blue-600 hover:text-blue-700 transition-colors mb-3"
@@ -832,6 +857,8 @@ export default function App() {
                     </button>
                   )}
 
+                  {/* Word-level details (hidden for sentence translation) */}
+                  {!isSentence && <>
                   {/* Header: original word + pronunciation + save */}
                   <div className="flex items-center justify-between mb-4 gap-3">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -1042,9 +1069,11 @@ export default function App() {
                       </div>
                     </motion.div>
                   </div>
+                  </>}
                 </motion.div>
 
-                {/* Slang Insight Sidebar (USP) */}
+                {/* Slang Insight Sidebar — only for word mode */}
+                {!isSentence && (
                 <motion.div
                       initial={{ opacity: 0, x: 20 }}
                       animate={{ opacity: 1, x: 0 }}
@@ -1123,8 +1152,10 @@ export default function App() {
                         </div>
                       )}
                     </motion.div>
-                  </div>
-                )}
+                  )}
+                </div>
+                );
+              })()}
             </div>
           ) : activeTab === 'grammar' ? (
             <div>
