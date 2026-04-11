@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MemeFlow Admin - Slang Database</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f0f4ff; color: #1a1a2e; min-height: 100vh; }
+
+  .header { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; padding: 20px 32px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; box-shadow: 0 2px 12px rgba(37,99,235,0.3); }
+  .header h1 { font-size: 20px; font-weight: 800; }
+  .header .status { font-size: 13px; opacity: 0.8; }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: white; border-radius: 16px; padding: 20px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #e8edf5; }
+  .stat-card .num { font-size: 32px; font-weight: 900; color: #2563eb; }
+  .stat-card .label { font-size: 13px; color: #64748b; margin-top: 4px; }
+
+  .tabs { display: flex; gap: 8px; margin-bottom: 24px; }
+  .tab { padding: 10px 24px; border-radius: 12px; border: none; cursor: pointer; font-size: 14px; font-weight: 700; background: white; color: #64748b; border: 1px solid #e8edf5; transition: all 0.2s; }
+  .tab.active { background: #2563eb; color: white; border-color: #2563eb; }
+  .tab:hover:not(.active) { background: #f1f5f9; }
+
+  .search-bar { display: flex; gap: 12px; margin-bottom: 20px; }
+  .search-bar input { flex: 1; padding: 12px 16px; border-radius: 12px; border: 1px solid #e2e8f0; font-size: 15px; outline: none; transition: border 0.2s; }
+  .search-bar input:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+
+  .slang-list { display: flex; flex-direction: column; gap: 12px; }
+  .slang-card { background: white; border-radius: 16px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #e8edf5; transition: all 0.2s; }
+  .slang-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+  .slang-term { font-size: 20px; font-weight: 900; color: #1e293b; margin-bottom: 4px; }
+  .slang-meta { font-size: 12px; color: #94a3b8; margin-bottom: 12px; }
+  .meaning-block { background: #f8fafc; border-radius: 12px; padding: 14px; margin-top: 10px; border-left: 3px solid #2563eb; }
+  .meaning-text { font-size: 14px; color: #334155; line-height: 1.6; }
+  .meaning-example { font-size: 13px; color: #64748b; margin-top: 6px; font-style: italic; }
+  .meaning-meta { font-size: 11px; color: #94a3b8; margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+  .badge-approved { background: #dcfce7; color: #16a34a; }
+  .badge-pending { background: #fef9c3; color: #ca8a04; }
+  .badge-rejected { background: #fecaca; color: #dc2626; }
+
+  .delete-btn { background: none; border: 1px solid #fecaca; color: #ef4444; padding: 4px 10px; border-radius: 8px; font-size: 11px; cursor: pointer; transition: all 0.2s; }
+  .delete-btn:hover { background: #fef2f2; }
+
+  .import-area { background: white; border-radius: 16px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); border: 1px solid #e8edf5; }
+  .import-area h3 { font-size: 16px; font-weight: 800; margin-bottom: 4px; }
+  .import-area p { font-size: 13px; color: #64748b; margin-bottom: 16px; }
+  .import-area textarea { width: 100%; height: 300px; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; font-family: 'SF Mono', Monaco, monospace; font-size: 13px; resize: vertical; outline: none; line-height: 1.5; }
+  .import-area textarea:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+
+  .btn-row { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+  .btn { padding: 12px 24px; border-radius: 12px; border: none; cursor: pointer; font-size: 14px; font-weight: 700; transition: all 0.2s; }
+  .btn-primary { background: #2563eb; color: white; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+  .btn-secondary { background: white; color: #2563eb; border: 1px solid #2563eb; }
+  .btn-secondary:hover { background: #eff6ff; }
+  .btn-file { position: relative; overflow: hidden; }
+  .btn-file input[type=file] { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+
+  .progress-bar { width: 100%; height: 6px; background: #e2e8f0; border-radius: 3px; margin-top: 16px; overflow: hidden; display: none; }
+  .progress-bar.visible { display: block; }
+  .progress-fill { height: 100%; background: #2563eb; border-radius: 3px; transition: width 0.2s; width: 0%; }
+
+  .log { margin-top: 12px; background: #1e293b; border-radius: 12px; padding: 16px; font-family: 'SF Mono', Monaco, monospace; font-size: 12px; color: #94a3b8; max-height: 300px; overflow-y: auto; display: none; line-height: 1.8; }
+  .log.visible { display: block; }
+  .log .success { color: #4ade80; }
+  .log .skip { color: #facc15; }
+  .log .error { color: #f87171; }
+
+  .empty { text-align: center; padding: 60px 20px; color: #94a3b8; }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+  .loading { text-align: center; padding: 40px; color: #64748b; }
+  .spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid #e2e8f0; border-top-color: #2563eb; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .template-hint { background: #eff6ff; border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid #bfdbfe; }
+  .template-hint code { background: #dbeafe; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>MemeFlow 梗百科数据库</h1>
+    <div class="status" id="authStatus">连接中...</div>
+  </div>
+  <div style="font-size:13px; opacity:0.7;" id="dbInfo"></div>
+</div>
+
+<div class="container">
+  <div class="stats" id="stats"></div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('browse')">浏览词条</button>
+    <button class="tab" onclick="switchTab('import')">导入</button>
+    <button class="tab" onclick="switchTab('export')">导出</button>
+    <button class="tab" onclick="switchTab('repair')">修复数据</button>
+  </div>
+
+  <div id="tab-browse">
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="搜索词条或释义..." oninput="filterSlangs()">
+    </div>
+    <div class="slang-list" id="slangList">
+      <div class="loading"><div class="spinner"></div><br>加载中...</div>
+    </div>
+  </div>
+
+  <div id="tab-import" style="display:none">
+    <div class="import-area">
+      <h3>导入词条</h3>
+      <p>粘贴 JSON 数组或上传 .json 文件。重复词条自动跳过，并行导入提升速度。</p>
+      <div class="template-hint">
+        Format: <code>[{ "term": "...", "meaning": "...", "example": "...", "sentiment": "..." }, ...]</code>
+        <button class="btn btn-secondary" style="padding:4px 10px; font-size:11px; margin-left:8px;" onclick="fillTemplate()">插入模板</button>
+      </div>
+      <textarea id="importJson" placeholder='[
+  { "term": "yyds", "meaning": "永远的神", "example": "这道菜YYDS", "sentiment": "褒义" }
+]'></textarea>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="importBtn" onclick="doImport()">开始导入</button>
+        <label class="btn btn-secondary btn-file">上传 .json 文件<input type="file" accept=".json" onchange="loadFile(event)"></label>
+        <button class="btn btn-secondary" onclick="clearImport()">清空</button>
+        <input type="hidden" id="forceImport">
+      </div>
+      <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="log" id="importLog"></div>
+    </div>
+  </div>
+
+  <div id="tab-repair" style="display:none">
+    <div class="import-area">
+      <h3>数据修复工具</h3>
+      <p>扫描所有词条和释义，自动修复不符合 Firestore 规则的数据。修复前会显示问题列表供确认。</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="scanBtn" onclick="scanIssues()">扫描问题</button>
+        <button class="btn btn-secondary" id="fixBtn" onclick="fixAll()" disabled>一键修复</button>
+      </div>
+      <div class="progress-bar" id="repairBar"><div class="progress-fill" id="repairFill"></div></div>
+      <div class="log" id="repairLog"></div>
+    </div>
+  </div>
+
+  <div id="tab-export" style="display:none">
+    <div class="import-area">
+      <h3>导出所有词条</h3>
+      <p>将所有词条导出为 JSON 文件备份。</p>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="doExport()">下载 JSON</button>
+        <button class="btn btn-secondary" onclick="copyExport()">复制到剪贴板</button>
+      </div>
+      <textarea id="exportJson" readonly style="margin-top:16px; height:400px; background:#f8fafc;"></textarea>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js';
+import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js';
+import { getFirestore, collection, doc, addDoc, getDocs, deleteDoc, query, where, orderBy, serverTimestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
+
+const config = {
+  projectId: "gen-lang-client-0343041160",
+  appId: "1:62018427733:web:dd4adb2b5cd607ab58addc",
+  apiKey: "AIzaSyCOAkcdMpVBEckROWgmL7AlYma9kTdRmpc",
+  authDomain: "gen-lang-client-0343041160.firebaseapp.com",
+  storageBucket: "gen-lang-client-0343041160.firebasestorage.app",
+  messagingSenderId: "62018427733"
+};
+const DB_ID = "ai-studio-e4b5c619-e556-4bff-b9dc-4cd16b61ce62";
+
+const app = initializeApp(config);
+const auth = getAuth(app);
+const db = getFirestore(app, DB_ID);
+
+let allSlangs = [];
+let uid = '';
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+async function init() {
+  try {
+    const cred = await signInAnonymously(auth);
+    uid = cred.user.uid;
+    document.getElementById('authStatus').textContent = `已连接 (${uid.slice(0,8)}...)`;
+    document.getElementById('dbInfo').textContent = `数据库: ${DB_ID.slice(0,24)}...`;
+    await loadAllData();
+  } catch(e) {
+    document.getElementById('authStatus').textContent = '连接失败: ' + e.message;
+    console.error(e);
+  }
+}
+
+async function loadAllData() {
+  document.getElementById('slangList').innerHTML = '<div class="loading"><div class="spinner"></div><br>Loading...</div>';
+
+  const [slangsSnap, meaningsSnap] = await Promise.all([
+    getDocs(query(collection(db, 'slangs'), orderBy('createdAt', 'desc'))),
+    getDocs(collection(db, 'slang_meanings'))
+  ]);
+
+  const meaningsMap = {};
+  meaningsSnap.forEach(d => {
+    const data = d.data();
+    if (!meaningsMap[data.slangId]) meaningsMap[data.slangId] = [];
+    meaningsMap[data.slangId].push({ id: d.id, ...data });
+  });
+
+  allSlangs = [];
+  slangsSnap.forEach(d => {
+    const data = d.data();
+    allSlangs.push({
+      id: d.id,
+      term: data.term,
+      createdAt: data.createdAt?.toDate?.() || new Date(),
+      meanings: (meaningsMap[d.id] || []).sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0))
+    });
+  });
+
+  renderStats();
+  renderSlangs(allSlangs);
+}
+
+function renderStats() {
+  const totalMeanings = allSlangs.reduce((s, x) => s + x.meanings.length, 0);
+  const approved = allSlangs.reduce((s, x) => s + x.meanings.filter(m => m.status === 'approved').length, 0);
+  const authors = new Set(allSlangs.flatMap(x => x.meanings.map(m => m.authorName || m.authorId))).size;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card"><div class="num">${allSlangs.length}</div><div class="label">词条数</div></div>
+    <div class="stat-card"><div class="num">${totalMeanings}</div><div class="label">释义数</div></div>
+    <div class="stat-card"><div class="num">${approved}</div><div class="label">已审核</div></div>
+    <div class="stat-card"><div class="num">${authors}</div><div class="label">贡献者</div></div>`;
+}
+
+function renderSlangs(list) {
+  const el = document.getElementById('slangList');
+  if (list.length === 0) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">📭</div>暂无词条</div>';
+    return;
+  }
+  el.innerHTML = list.map(s => `
+    <div class="slang-card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div>
+          <div class="slang-term">${esc(s.term)}</div>
+          <div class="slang-meta">ID: ${s.id} · ${s.createdAt.toLocaleDateString()} · ${s.meanings.length} meaning(s)</div>
+        </div>
+        <button class="delete-btn" data-action="delete-term" data-id="${s.id}" data-term="${esc(s.term)}">删除词条</button>
+      </div>
+      ${s.meanings.map(m => `
+        <div class="meaning-block">
+          <div class="meaning-text">${esc(m.meaning)}</div>
+          ${m.example ? `<div class="meaning-example">${esc(m.example)}</div>` : ''}
+          <div class="meaning-meta">
+            <span class="badge ${m.status === 'approved' ? 'badge-approved' : m.status === 'rejected' ? 'badge-rejected' : 'badge-pending'}">${m.status || 'pending'}</span>
+            <span>👤 ${esc(m.authorName || m.authorId?.slice(0, 8) || '?')}</span>
+            <span>👍 ${m.upvotes || 0}</span>
+            ${m.qualityScore ? `<span>⭐ ${m.qualityScore}</span>` : ''}
+            <button class="delete-btn" data-action="delete-meaning" data-id="${m.id}" data-term="${esc(s.term)}">删除</button>
+          </div>
+        </div>`).join('')}
+    </div>`).join('');
+}
+
+// Event delegation for delete buttons
+document.getElementById('slangList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const action = btn.dataset.action;
+  const id = btn.dataset.id;
+  const term = btn.dataset.term;
+
+  if (action === 'delete-term') {
+    if (!confirm(`确认删除「${term}」及其所有释义？`)) return;
+    const s = allSlangs.find(x => x.id === id);
+    if (s) {
+      const batch = writeBatch(db);
+      s.meanings.forEach(m => batch.delete(doc(db, 'slang_meanings', m.id)));
+      batch.delete(doc(db, 'slangs', id));
+      await batch.commit();
+    }
+    await loadAllData();
+  } else if (action === 'delete-meaning') {
+    if (!confirm(`确认删除「${term}」的这条释义？`)) return;
+    await deleteDoc(doc(db, 'slang_meanings', id));
+    await loadAllData();
+  }
+});
+
+window.filterSlangs = function() {
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  if (!q) { renderSlangs(allSlangs); return; }
+  renderSlangs(allSlangs.filter(s =>
+    s.term.toLowerCase().includes(q) ||
+    s.meanings.some(m => (m.meaning || '').toLowerCase().includes(q))
+  ));
+};
+
+// Import — parallel with batched writes
+window.doImport = async function() {
+  const log = document.getElementById('importLog');
+  const btn = document.getElementById('importBtn');
+  const bar = document.getElementById('progressBar');
+  const fill = document.getElementById('progressFill');
+  log.innerHTML = '';
+  log.classList.add('visible');
+  bar.classList.add('visible');
+  fill.style.width = '0%';
+
+  try { await _doImportInner(log, btn, bar, fill); } catch(e) {
+    log.innerHTML += `<div class="error">导入异常: ${esc(e.message)}</div>`;
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '开始导入';
+    bar.classList.remove('visible');
+  }
+};
+
+async function _doImportInner(log, btn, bar, fill) {
+  let raw = document.getElementById('importJson').value.trim();
+  if (!raw) { log.innerHTML = '<div class="error">请先粘贴或上传 JSON 数据</div>'; return; }
+  const forceMode = document.getElementById('forceImport').checked;
+  let entries;
+  let fixed = false;
+
+  // Robust parser
+  function robustParse(str) {
+    // Step 1: direct parse
+    try { return { data: JSON.parse(str), method: null }; } catch(e) {}
+
+    // Step 2: line-by-line extraction — most reliable for AI-generated JSON
+    // Handles unescaped quotes, mixed quote styles, numeric values, etc.
+    const objects = [];
+    let current = null;
+    for (const line of str.split('\n')) {
+      const t = line.trim();
+      if (t === '{' || t === '[' || t === '[{') { current = current || {}; continue; }
+      if (t === '}' || t === '},' || t === '}]') {
+        if (current && Object.keys(current).length > 0) objects.push({...current});
+        current = {};
+        continue;
+      }
+      // Extract key: find "key" at start of line
+      const keyMatch = t.match(/^"([^"]+)"\s*:\s*/);
+      if (!keyMatch || !current) continue;
+      const key = keyMatch[1];
+      let rest = t.slice(keyMatch[0].length);
+      // Remove trailing comma
+      if (rest.endsWith(',')) rest = rest.slice(0, -1).trimEnd();
+      // String value: starts and ends with "
+      if (rest.startsWith('"') && rest.endsWith('"')) {
+        // Take everything between first and last quote
+        current[key] = rest.slice(1, -1);
+      } else if (rest.startsWith('"')) {
+        // Unmatched quote — take rest without leading quote
+        current[key] = rest.slice(1);
+      } else if (/^\d+$/.test(rest)) {
+        current[key] = rest;
+      } else {
+        current[key] = rest;
+      }
+    }
+    if (current && Object.keys(current).length > 0) objects.push(current);
+    if (objects.length > 0) return { data: objects, method: 'extracted' };
+
+    // Step 3: wrap / fix commas
+    let attempt = str.replace(/,\s*([}\]])/g, '$1').replace(/\}\s*\{/g, '},{');
+    if (!attempt.startsWith('[')) attempt = '[' + attempt + ']';
+    try { return { data: JSON.parse(attempt), method: 'repaired' }; } catch(e) {}
+
+    return null;
+  }
+
+  const parsed = robustParse(raw);
+  if (!parsed) {
+    log.innerHTML = `<div class="error">JSON 解析失败，无法识别数据格式</div>`;
+    return;
+  }
+  entries = parsed.data;
+  fixed = parsed.method;
+  if (!Array.isArray(entries)) { entries = [entries]; fixed = fixed || 'single'; }
+
+  if (!Array.isArray(entries)) {
+    // Single object → wrap in array
+    entries = [entries];
+    fixed = fixed || 'single';
+  }
+
+  const fixLabels = { quotes: '修复了未转义的引号', wrapped: '自动补了 [] 数组括号', repaired: '修复了逗号/括号问题', extracted: '逐行提取了数据（部分引号可能被替换为中文引号）', single: '单个对象已转为数组' };
+  if (fixed) {
+    log.innerHTML += `<div class="skip">⚠️ JSON 格式有问题，已自动修复（${fixLabels[fixed]}），识别到 ${entries.length} 条</div>`;
+  }
+
+  btn.disabled = true;
+  const addLog = (cls, msg) => { log.innerHTML += `<div class="${cls}">${msg}</div>`; log.scrollTop = log.scrollHeight; };
+
+  // Auto-map field names
+  const fieldMap = {
+    term: ['term', '词条', '词', '梗', 'slang', 'word', 'title', '名称'],
+    meaning: ['meaning', '含义', '释义', '解释', '意思', 'definition', 'def', 'desc', 'description'],
+    example: ['example', '例句', '示例', '用法', 'usage', 'sentence', '造句'],
+    sentiment: ['sentiment', '情感', '感情色彩', '色彩', 'tone', 'tag']
+  };
+
+  function normalize(obj) {
+    const result = {};
+    for (const [target, aliases] of Object.entries(fieldMap)) {
+      for (const alias of aliases) {
+        const val = obj[alias];
+        if (val !== undefined && val !== null) {
+          const str = String(val).trim();
+          if (str !== '') { result[target] = str; break; }
+        }
+      }
+    }
+    // Fallback: if no alias matched, check all keys case-insensitively
+    if (!result.term) {
+      for (const key of Object.keys(obj)) {
+        if (!result.term && obj[key] != null) {
+          const k = key.toLowerCase();
+          if (k === 'term' || k === 'name' || k === 'title' || k === 'word' || k === '词条' || k === '梗') {
+            result.term = String(obj[key]).trim();
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  entries = entries.map(normalize);
+
+  // Show detected mapping
+  if (entries.length > 0) {
+    const sample = entries[0];
+    addLog('skip', `字段映射：term="${sample.term || '❌'}", meaning="${(sample.meaning || '❌').slice(0,30)}...", example="${(sample.example || '无').slice(0,30)}..."`);
+  }
+
+  // Show all parsed entries for verification
+  addLog('success', `✅ 共解析到 ${entries.length} 条词条：`);
+  entries.forEach((s, i) => {
+    addLog(s.term && s.meaning ? 'success' : 'error', `  ${i+1}. ${esc(s.term || '❌无term')} — ${esc((s.meaning || '❌无meaning').slice(0,40))}...`);
+  });
+  addLog('skip', '---开始导入---');
+  const total = entries.length;
+  let created = 0, skipped = 0, errors = 0, done = 0;
+
+  // Pre-fetch all existing terms for fast dedup
+  const existingSnap = await getDocs(collection(db, 'slangs'));
+  const existingTerms = {};
+  existingSnap.forEach(d => { existingTerms[d.data().term] = d.id; });
+
+  btn.textContent = `导入中...`;
+
+  // Process in parallel batches of 5
+  const BATCH_SIZE = 5;
+  for (let i = 0; i < entries.length; i += BATCH_SIZE) {
+    const chunk = entries.slice(i, i + BATCH_SIZE);
+    await Promise.all(chunk.map(async (s, ci) => {
+      const idx = i + ci;
+      if (!s.term || !s.meaning) {
+        addLog('error', `[${idx}] 缺少 term 或 meaning（原始数据: ${esc(JSON.stringify(entries[idx]).slice(0,80))}）`);
+        errors++;
+        return;
+      }
+      try {
+        const termText = (s.term || '').slice(0, 99);
+        const meaningText = (s.meaning || '').slice(0, 990);
+        const exampleText = (s.example || '').slice(0, 990);
+
+        let slangId = existingTerms[termText];
+        if (slangId) {
+          addLog('skip', `[已有] "${esc(termText)}"`);
+          skipped++;
+        } else {
+          const ref = await addDoc(collection(db, 'slangs'), {
+            term: termText,
+            createdAt: serverTimestamp()
+          });
+          slangId = ref.id;
+          existingTerms[termText] = slangId;
+          addLog('success', `[新建] "${esc(termText)}"`);
+        }
+
+        if (!forceMode) {
+          const existMeaning = await getDocs(query(
+            collection(db, 'slang_meanings'),
+            where('slangId', '==', slangId)
+          ));
+          if (!existMeaning.empty) {
+            addLog('skip', `  "${esc(termText)}" 已有 ${existMeaning.size} 条释义，跳过`);
+            return;
+          }
+        }
+
+        await addDoc(collection(db, 'slang_meanings'), {
+          slangId,
+          meaning: meaningText,
+          example: exampleText,
+          authorId: uid,
+          authorName: 'MemeFlow Bot',
+          qualityScore: 85,
+          upvotes: 0,
+          status: 'approved',
+          voiceName: 'Kore',
+          createdAt: serverTimestamp()
+        });
+        created++;
+        addLog('success', `  释义已添加 (${esc(s.sentiment || '')})`);
+      } catch(e) {
+        addLog('error', `[失败] "${esc(s.term)}": ${esc(e.message)}`);
+        errors++;
+      }
+    }));
+    done += chunk.length;
+    fill.style.width = `${Math.round(done / total * 100)}%`;
+    btn.textContent = `${done}/${total}`;
+  }
+
+  addLog('success', `\n完成：${created} 条新增，${skipped} 条跳过，${errors} 条失败`);
+  alert(`导入完成！\n新增 ${created} 条，跳过 ${skipped} 条，失败 ${errors} 条`);
+  await loadAllData();
+}
+
+window.fillTemplate = function() {
+  document.getElementById('importJson').value = JSON.stringify([
+    { term: "example", meaning: "This is the meaning", example: "Usage sentence", sentiment: "neutral" }
+  ], null, 2);
+};
+
+window.loadFile = function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { document.getElementById('importJson').value = reader.result; };
+  reader.readAsText(file);
+};
+
+window.clearImport = function() {
+  document.getElementById('importJson').value = '';
+  document.getElementById('importLog').classList.remove('visible');
+  document.getElementById('progressBar').classList.remove('visible');
+};
+
+// Export
+window.doExport = function() {
+  const data = allSlangs.flatMap(s => s.meanings.map(m => ({
+    term: s.term, meaning: m.meaning, example: m.example || '', sentiment: '',
+    authorName: m.authorName || '', status: m.status || 'pending', upvotes: m.upvotes || 0
+  })));
+  const json = JSON.stringify(data, null, 2);
+  document.getElementById('exportJson').value = json;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+  a.download = `lingoflow-slangs-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+};
+
+window.copyExport = function() {
+  const data = allSlangs.flatMap(s => s.meanings.map(m => ({
+    term: s.term, meaning: m.meaning, example: m.example || '', sentiment: ''
+  })));
+  const json = JSON.stringify(data, null, 2);
+  document.getElementById('exportJson').value = json;
+  navigator.clipboard.writeText(json).then(() => alert('已复制！'));
+};
+
+window.switchTab = function(name) {
+  const tabNames = ['browse', 'import', 'export', 'repair'];
+  document.querySelectorAll('.tabs .tab').forEach((t, i) => {
+    t.classList.toggle('active', tabNames[i] === name);
+  });
+  tabNames.forEach(t => {
+    document.getElementById('tab-' + t).style.display = t === name ? '' : 'none';
+  });
+};
+
+// ===== Repair =====
+let issuesList = [];
+
+window.scanIssues = async function() {
+  const log = document.getElementById('repairLog');
+  const bar = document.getElementById('repairBar');
+  const fill = document.getElementById('repairFill');
+  const fixBtn = document.getElementById('fixBtn');
+  log.innerHTML = '';
+  log.classList.add('visible');
+  bar.classList.add('visible');
+  fill.style.width = '0%';
+  issuesList = [];
+
+  const addLog = (cls, msg) => { log.innerHTML += `<div class="${cls}">${msg}</div>`; log.scrollTop = log.scrollHeight; };
+  addLog('skip', '扫描中...');
+
+  const [slangsSnap, meaningsSnap] = await Promise.all([
+    getDocs(collection(db, 'slangs')),
+    getDocs(collection(db, 'slang_meanings'))
+  ]);
+
+  const slangIds = new Set();
+  const slangsData = [];
+  slangsSnap.forEach(d => { slangIds.add(d.id); slangsData.push({ id: d.id, ...d.data() }); });
+
+  const total = slangsData.length + meaningsSnap.size;
+  let checked = 0;
+
+  // Check slangs
+  for (const s of slangsData) {
+    checked++;
+    fill.style.width = `${Math.round(checked / total * 100)}%`;
+    if (!s.term || typeof s.term !== 'string') {
+      issuesList.push({ type: 'slang', id: s.id, field: 'term', issue: 'term 缺失或非字符串', fix: 'delete' });
+      addLog('error', `[词条 ${s.id}] term 缺失`);
+    }
+    if (!s.createdAt) {
+      issuesList.push({ type: 'slang', id: s.id, field: 'createdAt', issue: 'createdAt 缺失', fix: 'set_timestamp' });
+      addLog('error', `[词条 ${s.id}] "${s.term || '?'}" 缺少 createdAt`);
+    }
+  }
+
+  // Check meanings
+  const validStatuses = ['approved', 'rejected', 'pending'];
+  const validVoices = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'];
+  const validMediaTypes = ['image', 'video', 'gif'];
+
+  meaningsSnap.forEach(d => {
+    checked++;
+    fill.style.width = `${Math.round(checked / total * 100)}%`;
+    const m = d.data();
+    const id = d.id;
+    const label = `[释义 ${id.slice(0,8)}]`;
+
+    if (!m.slangId || !slangIds.has(m.slangId)) {
+      issuesList.push({ type: 'meaning', id, field: 'slangId', issue: '关联的词条不存在 (orphan)', fix: 'delete' });
+      addLog('error', `${label} 孤立释义，slangId=${m.slangId} 不存在`);
+    }
+    if (!m.meaning || typeof m.meaning !== 'string') {
+      issuesList.push({ type: 'meaning', id, field: 'meaning', issue: 'meaning 缺失', fix: 'delete' });
+      addLog('error', `${label} meaning 缺失`);
+    }
+    if (m.meaning && m.meaning.length >= 1000) {
+      issuesList.push({ type: 'meaning', id, field: 'meaning', issue: `meaning 超长 (${m.meaning.length}/1000)`, fix: 'truncate', value: m.meaning.slice(0, 990) });
+      addLog('error', `${label} meaning 超过 1000 字符`);
+    }
+    if (typeof m.example !== 'string') {
+      issuesList.push({ type: 'meaning', id, field: 'example', issue: 'example 非字符串', fix: 'set_field', value: '' });
+      addLog('error', `${label} example 不是字符串`);
+    }
+    if (typeof m.upvotes !== 'number') {
+      issuesList.push({ type: 'meaning', id, field: 'upvotes', issue: 'upvotes 非数字', fix: 'set_field', value: 0 });
+      addLog('error', `${label} upvotes 不是数字`);
+    }
+    if (!validStatuses.includes(m.status)) {
+      issuesList.push({ type: 'meaning', id, field: 'status', issue: `status 无效: "${m.status}"`, fix: 'set_field', value: 'pending' });
+      addLog('error', `${label} status="${m.status}" 不在允许列表中`);
+    }
+    if (m.voiceName && !validVoices.includes(m.voiceName)) {
+      issuesList.push({ type: 'meaning', id, field: 'voiceName', issue: `voiceName 无效: "${m.voiceName}"`, fix: 'remove_field' });
+      addLog('error', `${label} voiceName="${m.voiceName}" 无效`);
+    }
+    if (m.mediaType && !validMediaTypes.includes(m.mediaType)) {
+      issuesList.push({ type: 'meaning', id, field: 'mediaType', issue: `mediaType 无效: "${m.mediaType}"`, fix: 'remove_field' });
+      addLog('error', `${label} mediaType="${m.mediaType}" 无效`);
+    }
+    if (!m.authorId || typeof m.authorId !== 'string') {
+      issuesList.push({ type: 'meaning', id, field: 'authorId', issue: 'authorId 缺失', fix: 'set_field', value: uid });
+      addLog('error', `${label} authorId 缺失`);
+    }
+    if (!m.createdAt) {
+      issuesList.push({ type: 'meaning', id, field: 'createdAt', issue: 'createdAt 缺失', fix: 'set_timestamp' });
+      addLog('error', `${label} createdAt 缺失`);
+    }
+  });
+
+  fill.style.width = '100%';
+  if (issuesList.length === 0) {
+    addLog('success', `\n✅ 扫描完成，共 ${slangsData.length} 词条 + ${meaningsSnap.size} 释义，未发现问题！`);
+    fixBtn.disabled = true;
+  } else {
+    addLog('skip', `\n⚠️ 发现 ${issuesList.length} 个问题，点击「一键修复」自动处理`);
+    fixBtn.disabled = false;
+  }
+  bar.classList.remove('visible');
+};
+
+window.fixAll = async function() {
+  if (issuesList.length === 0) return;
+  if (!confirm(`确认修复 ${issuesList.length} 个问题？`)) return;
+
+  const log = document.getElementById('repairLog');
+  const bar = document.getElementById('repairBar');
+  const fill = document.getElementById('repairFill');
+  bar.classList.add('visible');
+  const addLog = (cls, msg) => { log.innerHTML += `<div class="${cls}">${msg}</div>`; log.scrollTop = log.scrollHeight; };
+
+  addLog('skip', '\n开始修复...');
+  let fixed = 0, failed = 0;
+
+  // Batch by 10
+  for (let i = 0; i < issuesList.length; i += 10) {
+    const chunk = issuesList.slice(i, i + 10);
+    const batch = writeBatch(db);
+    let batchOps = 0;
+
+    for (const issue of chunk) {
+      const colName = issue.type === 'slang' ? 'slangs' : 'slang_meanings';
+      const ref = doc(db, colName, issue.id);
+
+      if (issue.fix === 'delete') {
+        batch.delete(ref);
+        batchOps++;
+      } else if (issue.fix === 'set_field') {
+        batch.update(ref, { [issue.field]: issue.value });
+        batchOps++;
+      } else if (issue.fix === 'truncate') {
+        batch.update(ref, { [issue.field]: issue.value });
+        batchOps++;
+      } else if (issue.fix === 'set_timestamp') {
+        batch.update(ref, { [issue.field]: serverTimestamp() });
+        batchOps++;
+      } else if (issue.fix === 'remove_field') {
+        // Firestore doesn't have deleteField in writeBatch easily, set to null
+        batch.update(ref, { [issue.field]: null });
+        batchOps++;
+      }
+    }
+
+    if (batchOps > 0) {
+      try {
+        await batch.commit();
+        fixed += batchOps;
+        addLog('success', `修复了 ${batchOps} 条 (${Math.min(i + 10, issuesList.length)}/${issuesList.length})`);
+      } catch(e) {
+        failed += batchOps;
+        addLog('error', `批量修复失败: ${e.message}`);
+      }
+    }
+    fill.style.width = `${Math.round(Math.min(i + 10, issuesList.length) / issuesList.length * 100)}%`;
+  }
+
+  addLog('success', `\n修复完成：${fixed} 成功，${failed} 失败`);
+  bar.classList.remove('visible');
+  document.getElementById('fixBtn').disabled = true;
+  issuesList = [];
+  await loadAllData();
+};
+
+init();
+</script>
+</body>
+</html>

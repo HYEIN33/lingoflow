@@ -170,11 +170,20 @@ service cloud.firestore {
 
     match /slang_upvotes/{upvoteId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && 
+      allow create: if isAuthenticated() &&
                     upvoteId == request.auth.uid + '_' + request.resource.data.meaningId &&
                     request.resource.data.userId == request.auth.uid &&
                     request.resource.data.meaningId is string;
       allow delete: if isAuthenticated() && upvoteId.matches('^' + request.auth.uid + '_.*');
+    }
+
+    match /slang_searches/{searchId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+                    request.resource.data.term is string &&
+                    request.resource.data.term.size() > 0 &&
+                    request.resource.data.userId == request.auth.uid &&
+                    (request.resource.data.createdAt is timestamp || request.resource.data.createdAt == request.time);
     }
   }
 }

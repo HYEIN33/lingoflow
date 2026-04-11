@@ -72,23 +72,38 @@ async function callGeminiProxy(
 /**
  * Unified generate helper — routes through proxy or SDK depending on config.
  */
+const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+
 async function geminiGenerate(opts: {
   model: string;
   contents: string | { parts: { text: string }[] }[];
   config?: Record<string, any>;
 }): Promise<string> {
-  if (USE_PROXY) {
-    const result = await callGeminiProxy(opts.model, opts.contents, opts.config);
-    return result.text;
-  }
+  const models = [opts.model, ...FALLBACK_MODELS.filter(m => m !== opts.model)];
 
-  const ai = getGeminiAI();
-  const response = await ai.models.generateContent({
-    model: opts.model,
-    contents: opts.contents as any,
-    config: opts.config as any,
-  });
-  return response.text;
+  for (let i = 0; i < models.length; i++) {
+    try {
+      if (USE_PROXY) {
+        const result = await callGeminiProxy(models[i], opts.contents, opts.config);
+        return result.text;
+      }
+      const ai = getGeminiAI();
+      const response = await ai.models.generateContent({
+        model: models[i],
+        contents: opts.contents as any,
+        config: opts.config as any,
+      });
+      return response.text;
+    } catch (e: any) {
+      const status = e?.status || e?.message?.match(/(\d{3})/)?.[1];
+      if ((status == 503 || status == 429) && i < models.length - 1) {
+        console.warn(`${models[i]} unavailable (${status}), falling back to ${models[i + 1]}`);
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw new Error('All models unavailable');
 }
 
 export interface Example {

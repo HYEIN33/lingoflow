@@ -324,7 +324,7 @@ export default function UserProfile({
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `lingoflow-wordbook-${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `memeflow-wordbook-${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (error) {
