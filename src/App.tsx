@@ -594,16 +594,12 @@ export default function App() {
 
       <main className="max-w-2xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 relative z-10">
         {/* Tabs */}
-        <Reorder.Group 
-          axis="x" 
-          values={fullOrder}
-          onReorder={handleTabOrderChange}
+        <div
           className="flex bg-white/30 backdrop-blur-sm border border-white/50 p-1 rounded-2xl mb-6 sm:mb-8 overflow-x-auto no-scrollbar shadow-inner"
         >
           {tabs.map((tab) => (
-            <Reorder.Item 
-              key={tab.id} 
-              value={tab.id}
+            <div
+              key={tab.id}
               className="flex-1 min-w-[80px]"
             >
               <button 
@@ -616,17 +612,13 @@ export default function App() {
                 <tab.icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 {tab.label} {tab.count !== undefined && <span className="hidden xs:inline">({tab.count})</span>}
               </button>
-            </Reorder.Item>
+            </div>
           ))}
-        </Reorder.Group>
+        </div>
 
-        <AnimatePresence mode="wait">
+        <>
           {activeTab === 'translate' ? (
-            <motion.div 
-              key="translate"
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
+            <div
               className="space-y-6"
             >
               {/* Search Box */}
@@ -1090,9 +1082,9 @@ export default function App() {
                     </motion.div>
                   </div>
                 )}
-            </motion.div>
+            </div>
           ) : activeTab === 'grammar' ? (
-            <motion.div key="grammar" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}>
+            <div>
               <GrammarPage
                 grammarInput={grammarInput}
                 setGrammarInput={setGrammarInput}
@@ -1103,9 +1095,9 @@ export default function App() {
                 onCheckGrammar={handleCheckGrammar}
                 onToggleListening={toggleListening}
               />
-            </motion.div>
+            </div>
           ) : activeTab === 'review' ? (
-            <motion.div key="review" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+            <div>
               <ReviewPage
                 userProfile={userProfile}
                 uiLang={uiLang}
@@ -1122,9 +1114,9 @@ export default function App() {
                 loadingAudioText={loadingAudioText}
                 totalWords={savedWords.length}
               />
-            </motion.div>
+            </div>
           ) : activeTab === 'history' ? (
-            <motion.div key="history" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+            <div>
               <WordbookPage
                 savedWords={savedWords}
                 filteredWords={filteredWords}
@@ -1151,14 +1143,9 @@ export default function App() {
                 onSetActiveFolder={setActiveFolderId}
                 onMoveWordsToFolder={moveWordsToFolder}
               />
-            </motion.div>
+            </div>
           ) : activeTab === 'slang' ? (
-            <motion.div
-              key="slang"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-            >
+            <div>
               {userProfile && !userProfile.hasCompletedOnboarding && (userProfile.approvedSlangCount || 0) < 3 && (
                 <OnboardingChecklist
                   uiLang={uiLang}
@@ -1173,23 +1160,13 @@ export default function App() {
                 />
               )}
               <SlangDictionary uiLang={uiLang} initialSearchTerm={searchQuery} />
-            </motion.div>
+            </div>
           ) : activeTab === 'leaderboard' ? (
-            <motion.div
-              key="leaderboard"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-            >
+            <div>
               <Leaderboard currentUserId={user.uid} uiLang={uiLang} />
-            </motion.div>
+            </div>
           ) : activeTab === 'profile' ? (
-            <motion.div
-              key="profile"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-            >
+            <div>
               {!userProfile?.isPro && (
                 <button
                   onClick={() => { setPaymentTrigger('default'); setShowPayment(true); }}
@@ -1218,9 +1195,9 @@ export default function App() {
                 onOpenOnboarding={() => setShowOnboarding(true)}
                 onLogout={logOut}
               />
-            </motion.div>
+            </div>
           ) : activeTab === 'ai' ? (
-            <motion.div key="ai" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+            <div>
               {!userProfile?.isPro ? (
                 <div className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center space-y-4 max-w-md mx-auto mt-12">
                   <Zap className="w-12 h-12 text-blue-500 mx-auto" />
@@ -1281,9 +1258,9 @@ export default function App() {
                   </div>
                 </div>
               )}
-            </motion.div>
+            </div>
           ) : null}
-        </AnimatePresence>
+        </>
 
         {/* Payment Modal */}
         <AnimatePresence>
