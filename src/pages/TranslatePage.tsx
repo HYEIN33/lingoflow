@@ -349,11 +349,11 @@ export default function TranslatePage(props: TranslatePageProps) {
                   <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">{t.examples}</h3>
                   <div className="space-y-4">
                     {translationResult.usages[selectedUsageIndex].examples.map((ex, i) => (
-                      <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 space-y-3 group/ex hover:border-blue-200 transition-colors">
+                      <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 space-y-3 group/ex hover:border-blue-200 transition-colors overflow-hidden">
                         <div className="flex items-start justify-between gap-4">
-                          <div className="flex gap-4">
-                            <span className="text-blue-200 font-black text-xl italic">{String(i + 1).padStart(2, '0')}</span>
-                            <p className="text-gray-800 font-medium leading-relaxed text-lg">{ex.sentence}</p>
+                          <div className="flex gap-4 min-w-0 flex-1">
+                            <span className="text-blue-200 font-black text-xl italic shrink-0">{String(i + 1).padStart(2, '0')}</span>
+                            <p className="text-gray-800 font-medium leading-relaxed text-lg break-words">{ex.sentence}</p>
                           </div>
                           <button onClick={() => onSpeak(ex.sentence)} disabled={loadingAudioText === ex.sentence} className="p-2 text-gray-300 hover:text-blue-500 transition-colors shrink-0 disabled:opacity-50">
                             {loadingAudioText === ex.sentence ? <Loader2 className="w-5 h-5 animate-spin" /> : <Volume2 className="w-5 h-5" />}

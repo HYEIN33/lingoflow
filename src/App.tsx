@@ -1,5 +1,6 @@
 import React, { useState, useEffect, Component, ReactNode } from 'react';
 import * as Sentry from '@sentry/react';
+import ReactMarkdown from 'react-markdown';
 import {
   Search,
   Plus,
@@ -31,7 +32,8 @@ import {
   GrammarCheckResult,
   extractTextFromImage,
   translateSimple,
-  aiChat
+  aiChat,
+  getReviewHint
 } from './services/ai';
 import { cn } from './lib/utils';
 import { Language, translations } from './i18n';
@@ -974,11 +976,11 @@ export default function App() {
                         </h3>
                         <div className="space-y-4">
                           {translationResult.usages[selectedUsageIndex].examples.map((ex, i) => (
-                            <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 space-y-3 group/ex hover:border-blue-200 transition-colors">
+                            <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 space-y-3 group/ex hover:border-blue-200 transition-colors overflow-hidden">
                               <div className="flex items-start justify-between gap-4">
-                                <div className="flex gap-4">
-                                  <span className="text-blue-200 font-black text-xl italic">{String(i + 1).padStart(2, '0')}</span>
-                                  <p className="text-gray-800 font-medium leading-relaxed text-lg">{ex.sentence}</p>
+                                <div className="flex gap-4 min-w-0 flex-1">
+                                  <span className="text-blue-200 font-black text-xl italic shrink-0">{String(i + 1).padStart(2, '0')}</span>
+                                  <p className="text-gray-800 font-medium leading-relaxed text-lg break-words">{ex.sentence}</p>
                                 </div>
                                 <button 
                                   onClick={() => speak(ex.sentence)}
@@ -1113,6 +1115,7 @@ export default function App() {
                 onSpeak={speak}
                 loadingAudioText={loadingAudioText}
                 totalWords={savedWords.length}
+                onGetHint={getReviewHint}
               />
             </div>
           ) : activeTab === 'history' ? (
@@ -1218,7 +1221,9 @@ export default function App() {
                       {aiMessages.map((msg, i) => (
                         <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                           <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
-                            {msg.text}
+                            {msg.role === 'ai' ? (
+                              <ReactMarkdown className="prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0 [&>p+p]:mt-2">{msg.text}</ReactMarkdown>
+                            ) : msg.text}
                           </div>
                         </div>
                       ))}

@@ -371,6 +371,25 @@ export async function translateSimple(text: string): Promise<string> {
   return result.trim();
 }
 
+export async function getReviewHint(word: string, meaningZh: string): Promise<string> {
+  const { model } = getEffectiveConfig();
+
+  const contents = `你是一个英语记忆助手。用户正在复习单词，请帮助他们记住这个词。
+
+单词: "${word}"
+中文含义: "${meaningZh}"
+
+请用中文给出:
+1. 一个记忆技巧（谐音、联想、词根拆解等，选最有效的一种）
+2. 一个容易混淆的词及区别（如果有）
+3. 一个简短的使用场景
+
+要求：简洁，每条不超过一行，总共不超过3行。不要标号。`;
+
+  const result = await geminiGenerate({ model, contents });
+  return result.trim();
+}
+
 export async function aiChat(messages: { role: 'user' | 'ai'; text: string }[]): Promise<string> {
   const { model } = getEffectiveConfig();
 

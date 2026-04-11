@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { BookOpen, CheckCircle, Volume2, Loader2, RotateCcw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { BookOpen, CheckCircle, Volume2, Loader2, RotateCcw, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Language, translations } from '../i18n';
@@ -20,18 +20,21 @@ interface ReviewPageProps {
   onSpeak?: (text: string) => void;
   loadingAudioText?: string | null;
   totalWords?: number;
+  onGetHint?: (word: string, meaningZh: string) => Promise<string>;
 }
 
 export default function ReviewPage(props: ReviewPageProps) {
   const {
     userProfile, uiLang, dueWords, currentReviewWord, reviewIndex,
     showReviewAnswer, setShowReviewAnswer, onReview, onSetReviewIndex,
-    onOpenOnboarding, onOpenPayment, onSpeak, loadingAudioText, totalWords = 0
+    onOpenOnboarding, onOpenPayment, onSpeak, loadingAudioText, totalWords = 0,
+    onGetHint
   } = props;
 
   const t = translations[uiLang];
   const [reviewedCount, setReviewedCount] = useState(0);
-  const [reviewMode, setReviewMode] = useState<'card' | 'quiz'>('card');
+  const [aiHint, setAiHint] = useState<string | null>(null);
+  const [aiHintLoading, setAiHintLoading] = useState(false);
 
   const progress = dueWords.length > 0 ? Math.round((reviewedCount / dueWords.length) * 100) : 0;
 
@@ -156,6 +159,45 @@ export default function ReviewPage(props: ReviewPageProps) {
                       ))}
                     </div>
 
+                    {/* AI Memory Hint */}
+                    {onGetHint && (
+                      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-4 border border-indigo-100">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="w-4 h-4 text-indigo-500" />
+                            <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">
+                              {uiLang === 'zh' ? 'AI 记忆助手' : 'AI Memory Aid'}
+                            </span>
+                          </div>
+                          {!aiHint && (
+                            <button
+                              onClick={async () => {
+                                setAiHintLoading(true);
+                                try {
+                                  const hint = await onGetHint(currentReviewWord.original, currentReviewWord.usages[0]?.meaningZh || '');
+                                  setAiHint(hint);
+                                } catch { setAiHint(uiLang === 'zh' ? '获取提示失败' : 'Failed to get hint'); }
+                                setAiHintLoading(false);
+                              }}
+                              disabled={aiHintLoading}
+                              className="text-xs font-bold text-indigo-500 hover:text-indigo-700 transition-colors flex items-center gap-1"
+                            >
+                              {aiHintLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                              {uiLang === 'zh' ? '帮我记住' : 'Help me remember'}
+                            </button>
+                          )}
+                        </div>
+                        {aiHint && (
+                          <p className="text-sm text-indigo-800 leading-relaxed whitespace-pre-line">{aiHint}</p>
+                        )}
+                        {!aiHint && !aiHintLoading && (
+                          <p className="text-xs text-indigo-400 italic">
+                            {uiLang === 'zh' ? '点击「帮我记住」获取记忆技巧、联想、易混词' : 'Click to get memory tricks, associations, and confusable words'}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-4 gap-2">
                       {[
                         { q: 1, label: uiLang === 'zh' ? '忘记' : 'Forgot', color: 'bg-red-500', hint: uiLang === 'zh' ? '1天后' : 'in 1d' },
@@ -169,6 +211,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                             onReview(currentReviewWord.id, btn.q);
                             setShowReviewAnswer(false);
                             setReviewedCount(c => c + 1);
+                            setAiHint(null);
                             if (reviewIndex < dueWords.length - 1) {
                               onSetReviewIndex(reviewIndex + 1);
                             } else {

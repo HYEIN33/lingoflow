@@ -40,6 +40,7 @@
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
     "jsdom": "^29.0.2",
+    "playwright": "^1.59.1",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
