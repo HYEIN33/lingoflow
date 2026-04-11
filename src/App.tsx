@@ -361,7 +361,7 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
 
 export default function App() {
 
-  const [activeTab, setActiveTab] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile' | 'ai'>('slang');
+  const [activeTab, setActiveTab] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile'>('slang');
   // Slang is the primary USP, always default tab
   const [showPayment, setShowPayment] = useState(false);
   const [paymentTrigger, setPaymentTrigger] = useState('default');
@@ -495,7 +495,7 @@ export default function App() {
     }
   };
 
-  const defaultTabs = ['slang', 'translate', 'grammar', 'history', 'review', 'ai'];
+  const defaultTabs = ['slang', 'translate', 'grammar', 'history', 'review'];
   const rawOrder = userProfile?.tabOrder || defaultTabs;
   const fullOrder = [...rawOrder, ...defaultTabs.filter(t => !rawOrder.includes(t))];
   const tabs = fullOrder.map(id => {
@@ -505,7 +505,7 @@ export default function App() {
       case 'review': return { id, label: t.reviewTab, icon: BookOpen };
       case 'grammar': return { id, label: t.grammarTab, icon: PenTool };
       case 'slang': return { id, label: t.slangTab, icon: MessageSquare };
-      case 'ai': return { id, label: 'AI', icon: Zap };
+      // AI is now integrated into Review tab
       default: return { id, label: '', icon: Search };
     }
   });
@@ -1131,6 +1131,7 @@ export default function App() {
                 loadingAudioText={loadingAudioText}
                 totalWords={savedWords.length}
                 onGetHint={getReviewHint}
+                onAiChat={aiChat}
               />
             </div>
           ) : activeTab === 'history' ? (
@@ -1213,71 +1214,6 @@ export default function App() {
                 onOpenOnboarding={() => setShowOnboarding(true)}
                 onLogout={logOut}
               />
-            </div>
-          ) : activeTab === 'ai' ? (
-            <div>
-              {!userProfile?.isPro ? (
-                <div className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center space-y-4 max-w-md mx-auto mt-12">
-                  <Zap className="w-12 h-12 text-blue-500 mx-auto" />
-                  <h3 className="text-xl font-bold text-gray-900">{uiLang === 'zh' ? 'AI 助手' : 'AI Assistant'}</h3>
-                  <p className="text-gray-500 text-sm">{uiLang === 'zh' ? 'Pro 专属功能，升级后可自由提问' : 'Pro feature, upgrade to ask AI anything'}</p>
-                  <button onClick={() => { setPaymentTrigger('ai'); setShowPayment(true); }} className="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700">
-                    {uiLang === 'zh' ? '升级 Pro' : 'Upgrade to Pro'}
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <h2 className="text-2xl font-black text-gray-900">{uiLang === 'zh' ? 'AI 助手' : 'AI Assistant'}</h2>
-                  <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden" style={{ minHeight: '400px' }}>
-                    <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
-                      {aiMessages.length === 0 && (
-                        <p className="text-center text-gray-400 py-12 text-sm">{uiLang === 'zh' ? '问我任何关于语言学习的问题' : 'Ask me anything about language learning'}</p>
-                      )}
-                      {aiMessages.map((msg, i) => (
-                        <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                          <div className={`max-w-[80%] px-4 py-2.5 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
-                            {msg.role === 'ai' ? (
-                              <ReactMarkdown className="prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0 [&>p+p]:mt-2">{msg.text}</ReactMarkdown>
-                            ) : msg.text}
-                          </div>
-                        </div>
-                      ))}
-                      {aiLoading && (
-                        <div className="flex justify-start">
-                          <div className="bg-gray-100 px-4 py-2.5 rounded-2xl"><Loader2 className="w-4 h-4 animate-spin text-gray-400" /></div>
-                        </div>
-                      )}
-                    </div>
-                    <form onSubmit={async (e) => {
-                      e.preventDefault();
-                      if (!aiInput.trim() || aiLoading) return;
-                      const q = aiInput.trim();
-                      setAiMessages(prev => [...prev, { role: 'user', text: q }]);
-                      setAiInput('');
-                      setAiLoading(true);
-                      try {
-                        const allMessages = [...aiMessages, { role: 'user' as const, text: q }];
-                        const answer = await aiChat(allMessages);
-                        setAiMessages(prev => [...prev, { role: 'ai', text: answer }]);
-                      } catch (err) {
-                        setAiMessages(prev => [...prev, { role: 'ai', text: uiLang === 'zh' ? '抱歉，回答失败，请重试' : 'Sorry, failed to respond. Try again.' }]);
-                      }
-                      setAiLoading(false);
-                    }} className="border-t border-gray-100 p-3 flex gap-2">
-                      <input
-                        type="text"
-                        value={aiInput}
-                        onChange={(e) => setAiInput(e.target.value)}
-                        placeholder={uiLang === 'zh' ? '输入你的问题...' : 'Type your question...'}
-                        className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 outline-none focus:border-blue-500 text-sm"
-                      />
-                      <button type="submit" disabled={aiLoading || !aiInput.trim()} className="bg-blue-600 text-white px-4 py-2.5 rounded-xl disabled:opacity-50 text-sm font-bold">
-                        {uiLang === 'zh' ? '发送' : 'Send'}
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              )}
             </div>
           ) : null}
         </>

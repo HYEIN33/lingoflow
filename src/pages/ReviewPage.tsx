@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { BookOpen, CheckCircle, Volume2, Loader2, RotateCcw, Sparkles } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { BookOpen, CheckCircle, Volume2, Loader2, RotateCcw, Sparkles, Send, MessageSquare } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Language, translations } from '../i18n';
@@ -21,6 +22,7 @@ interface ReviewPageProps {
   loadingAudioText?: string | null;
   totalWords?: number;
   onGetHint?: (word: string, meaningZh: string) => Promise<string>;
+  onAiChat?: (messages: { role: 'user' | 'ai'; text: string }[]) => Promise<string>;
 }
 
 export default function ReviewPage(props: ReviewPageProps) {
@@ -28,13 +30,50 @@ export default function ReviewPage(props: ReviewPageProps) {
     userProfile, uiLang, dueWords, currentReviewWord, reviewIndex,
     showReviewAnswer, setShowReviewAnswer, onReview, onSetReviewIndex,
     onOpenOnboarding, onOpenPayment, onSpeak, loadingAudioText, totalWords = 0,
-    onGetHint
+    onGetHint, onAiChat
   } = props;
 
   const t = translations[uiLang];
   const [reviewedCount, setReviewedCount] = useState(0);
   const [aiHint, setAiHint] = useState<string | null>(null);
   const [aiHintLoading, setAiHintLoading] = useState(false);
+  // AI Chat state
+  const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'ai'; text: string }[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
+  // Reset chat when word changes
+  useEffect(() => {
+    setChatMessages([]);
+    setAiHint(null);
+    setShowChat(false);
+  }, [currentReviewWord?.id]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  const handleChatSend = async () => {
+    if (!chatInput.trim() || chatLoading || !onAiChat || !currentReviewWord) return;
+    const q = chatInput.trim();
+    const contextPrefix = `[用户正在复习单词 "${currentReviewWord.original}"（${currentReviewWord.usages[0]?.meaningZh || ''}）] `;
+    const newMessages: { role: 'user' | 'ai'; text: string }[] = [...chatMessages, { role: 'user', text: q }];
+    setChatMessages(newMessages);
+    setChatInput('');
+    setChatLoading(true);
+    try {
+      const messagesWithContext = newMessages.map((m, i) =>
+        i === 0 && m.role === 'user' ? { ...m, text: contextPrefix + m.text } : m
+      );
+      const answer = await onAiChat(messagesWithContext);
+      setChatMessages(prev => [...prev, { role: 'ai', text: answer }]);
+    } catch {
+      setChatMessages(prev => [...prev, { role: 'ai', text: '抱歉，回答失败，请重试' }]);
+    }
+    setChatLoading(false);
+  };
 
   const progress = dueWords.length > 0 ? Math.round((reviewedCount / dueWords.length) * 100) : 0;
 
@@ -101,6 +140,7 @@ export default function ReviewPage(props: ReviewPageProps) {
           )}
 
           {currentReviewWord ? (
+          <>
             <div className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center space-y-8">
               {/* Card number */}
               <div className="text-xs font-bold text-gray-300">
@@ -241,6 +281,86 @@ export default function ReviewPage(props: ReviewPageProps) {
                 )}
               </AnimatePresence>
             </div>
+
+            {/* AI Chat integrated into review */}
+            {onAiChat && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <button
+                  onClick={() => setShowChat(!showChat)}
+                  className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-indigo-500" />
+                    <span className="text-sm font-bold text-gray-700">
+                      {uiLang === 'zh' ? 'AI 复习助手' : 'AI Review Assistant'}
+                    </span>
+                  </div>
+                  <span className="text-xs text-gray-400">
+                    {showChat ? (uiLang === 'zh' ? '收起' : 'Collapse') : (uiLang === 'zh' ? `关于「${currentReviewWord.original}」提问` : `Ask about "${currentReviewWord.original}"`)}
+                  </span>
+                </button>
+                {showChat && (
+                  <div className="border-t border-gray-100">
+                    {/* Quick action buttons */}
+                    {chatMessages.length === 0 && (
+                      <div className="p-3 flex flex-wrap gap-2">
+                        {[
+                          uiLang === 'zh' ? '怎么记住这个词？' : 'How to remember this?',
+                          uiLang === 'zh' ? '造几个句子' : 'Make some sentences',
+                          uiLang === 'zh' ? '有哪些易混词？' : 'Similar words?',
+                          uiLang === 'zh' ? '词根词缀分析' : 'Root/prefix analysis',
+                        ].map((q, i) => (
+                          <button
+                            key={i}
+                            onClick={() => { setChatInput(q); setTimeout(() => handleChatSend(), 50); }}
+                            className="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg font-medium hover:bg-indigo-100 transition-colors"
+                          >
+                            {q}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {/* Messages */}
+                    <div className="max-h-[40vh] overflow-y-auto p-4 space-y-3">
+                      {chatMessages.map((msg, i) => (
+                        <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-[85%] px-3.5 py-2 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
+                            {msg.role === 'ai' ? (
+                              <ReactMarkdown className="prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0 [&>p+p]:mt-2">{msg.text}</ReactMarkdown>
+                            ) : msg.text}
+                          </div>
+                        </div>
+                      ))}
+                      {chatLoading && (
+                        <div className="flex justify-start">
+                          <div className="bg-gray-100 px-3.5 py-2 rounded-2xl"><Loader2 className="w-4 h-4 animate-spin text-gray-400" /></div>
+                        </div>
+                      )}
+                      <div ref={chatEndRef} />
+                    </div>
+                    {/* Input */}
+                    <div className="border-t border-gray-100 p-3 flex gap-2">
+                      <input
+                        type="text"
+                        value={chatInput}
+                        onChange={(e) => setChatInput(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleChatSend()}
+                        placeholder={uiLang === 'zh' ? `关于「${currentReviewWord.original}」的问题...` : `Ask about "${currentReviewWord.original}"...`}
+                        className="flex-1 px-3.5 py-2 rounded-xl border border-gray-200 outline-none focus:border-indigo-400 text-sm"
+                      />
+                      <button
+                        onClick={handleChatSend}
+                        disabled={chatLoading || !chatInput.trim()}
+                        className="bg-indigo-600 text-white px-3.5 py-2 rounded-xl disabled:opacity-50 text-sm font-bold shrink-0"
+                      >
+                        <Send className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
           ) : reviewedCount > 0 ? (
             <div className="text-center py-16 bg-white rounded-3xl border border-gray-100 shadow-sm space-y-4">
               <CheckCircle className="w-16 h-16 text-green-400 mx-auto" />
