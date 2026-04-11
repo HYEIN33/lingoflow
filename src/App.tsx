@@ -365,7 +365,39 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
   );
 }
 
+// ====== MAINTENANCE MODE ======
+// Set to true to show maintenance page to all users
+// You can bypass with ?admin in the URL
+const MAINTENANCE_MODE = true;
+
+function MaintenancePage() {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-6">
+      <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 sm:p-10 text-center space-y-6">
+        <div className="w-20 h-20 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto">
+          <svg className="w-10 h-10 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+          </svg>
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-black text-gray-900">MemeFlow 维护中</h1>
+        <p className="text-gray-500 leading-relaxed">
+          我们正在升级服务器，预计很快恢复。感谢你的耐心等待！
+        </p>
+        <div className="bg-blue-50 rounded-2xl p-4">
+          <p className="text-sm text-blue-600 font-medium">System Maintenance in Progress</p>
+          <p className="text-xs text-blue-400 mt-1">We're upgrading our servers. Back soon!</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  // Maintenance mode bypass: add ?admin to URL
+  const isAdmin = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('admin');
+  if (MAINTENANCE_MODE && !isAdmin) {
+    return <MaintenancePage />;
+  }
 
   const [activeTab, setActiveTab] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile'>('slang');
   // Slang is the primary USP, always default tab
