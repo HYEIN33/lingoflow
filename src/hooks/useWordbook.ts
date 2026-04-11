@@ -103,7 +103,7 @@ export function useWordbook(user: User | null) {
 
   const filteredWords = savedWords.filter(word => {
     const matchesSearch = word.original.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      word.usages.some(u => u.meaningZh.includes(searchQuery));
+      (word.usages || []).some(u => u.meaningZh?.includes(searchQuery));
     const matchesFilter = wordbookFilter === 'all' || word.styleTag === wordbookFilter;
     return matchesSearch && matchesFilter;
   });

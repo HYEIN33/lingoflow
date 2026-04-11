@@ -219,13 +219,13 @@ export default function WordbookPage(props: WordbookPageProps) {
                       className="overflow-hidden"
                     >
                       <div className="pt-6 space-y-6 border-t border-gray-100">
-                        {selectedWordbookItem.usages?.[selectedUsageIndex]?.synonyms && selectedWordbookItem.usages[selectedUsageIndex].synonyms.length > 0 && (
+                        {selectedWordbookItem.usages?.[selectedUsageIndex]?.synonyms && selectedWordbookItem.usages?.[selectedUsageIndex]?.synonyms.length > 0 && (
                           <div>
                             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
                               {t.synonyms}
                             </h3>
                             <div className="flex flex-wrap gap-2">
-                              {selectedWordbookItem.usages[selectedUsageIndex].synonyms.map((syn, i) => (
+                              {selectedWordbookItem.usages?.[selectedUsageIndex]?.synonyms.map((syn, i) => (
                                 <span key={i} className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-sm font-medium">
                                   {syn}
                                 </span>
@@ -234,13 +234,13 @@ export default function WordbookPage(props: WordbookPageProps) {
                           </div>
                         )}
 
-                        {selectedWordbookItem.usages?.[selectedUsageIndex]?.alternatives && selectedWordbookItem.usages[selectedUsageIndex].alternatives.length > 0 && (
+                        {selectedWordbookItem.usages?.[selectedUsageIndex]?.alternatives && selectedWordbookItem.usages?.[selectedUsageIndex]?.alternatives.length > 0 && (
                           <div>
                             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
                               {t.alternatives}
                             </h3>
                             <div className="flex flex-wrap gap-2">
-                              {selectedWordbookItem.usages[selectedUsageIndex].alternatives.map((alt, i) => (
+                              {selectedWordbookItem.usages?.[selectedUsageIndex]?.alternatives.map((alt, i) => (
                                 <span key={i} className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-sm font-medium">
                                   {alt}
                                 </span>

@@ -201,18 +201,18 @@ export default function TranslatePage(props: TranslatePageProps) {
                 <div className="flex items-center gap-4 mb-2">
                   <div className="flex flex-col">
                     <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight break-words overflow-wrap-anywhere">
-                      {translationResult.usages[selectedUsageIndex].meaning}
+                      {translationResult.usages?.[selectedUsageIndex]?.meaning}
                     </h2>
                     <p className="text-lg sm:text-xl font-bold text-blue-600 mt-1">
-                      {translationResult.usages[selectedUsageIndex].meaningZh}
+                      {translationResult.usages?.[selectedUsageIndex]?.meaningZh}
                     </p>
                   </div>
                   <button
-                    onClick={() => onSpeak(translationResult.usages[selectedUsageIndex].meaning)}
-                    disabled={loadingAudioText === translationResult.usages[selectedUsageIndex].meaning}
+                    onClick={() => onSpeak(translationResult.usages?.[selectedUsageIndex]?.meaning)}
+                    disabled={loadingAudioText === translationResult.usages?.[selectedUsageIndex]?.meaning}
                     className="p-2 text-blue-500 hover:bg-blue-50 rounded-full transition-colors self-start mt-2 disabled:opacity-50"
                   >
-                    {loadingAudioText === translationResult.usages[selectedUsageIndex].meaning ? (
+                    {loadingAudioText === translationResult.usages?.[selectedUsageIndex]?.meaning ? (
                       <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" />
                     ) : (
                       <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -262,8 +262,8 @@ export default function TranslatePage(props: TranslatePageProps) {
                 <div>
                   <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">{uiLang === 'zh' ? '释义' : 'Meaning'}</h3>
                   <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 space-y-3">
-                    <p className="text-gray-800 text-lg font-bold leading-relaxed">{translationResult.usages[selectedUsageIndex].meaning}</p>
-                    <p className="text-blue-600 text-lg font-medium leading-relaxed border-t border-gray-100 pt-3">{translationResult.usages[selectedUsageIndex].meaningZh}</p>
+                    <p className="text-gray-800 text-lg font-bold leading-relaxed">{translationResult.usages?.[selectedUsageIndex]?.meaning}</p>
+                    <p className="text-blue-600 text-lg font-medium leading-relaxed border-t border-gray-100 pt-3">{translationResult.usages?.[selectedUsageIndex]?.meaningZh}</p>
                   </div>
                 </div>
 
@@ -276,40 +276,40 @@ export default function TranslatePage(props: TranslatePageProps) {
                   {showDetails && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                       <div className="pt-6 space-y-6 border-t border-gray-100">
-                        {translationResult.usages[selectedUsageIndex].synonyms && translationResult.usages[selectedUsageIndex].synonyms!.length > 0 && (
+                        {translationResult.usages?.[selectedUsageIndex]?.synonyms && translationResult.usages?.[selectedUsageIndex]?.synonyms!.length > 0 && (
                           <div>
                             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">{t.synonyms}</h3>
                             <div className="flex flex-wrap gap-2">
-                              {translationResult.usages[selectedUsageIndex].synonyms!.map((syn, i) => (
+                              {translationResult.usages?.[selectedUsageIndex]?.synonyms!.map((syn, i) => (
                                 <button key={i} onClick={() => props.onSearchWord?.(syn)} className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-blue-100 hover:text-blue-600 transition-colors cursor-pointer">{syn}</button>
                               ))}
                             </div>
                           </div>
                         )}
-                        {translationResult.usages[selectedUsageIndex].alternatives && translationResult.usages[selectedUsageIndex].alternatives!.length > 0 && (
+                        {translationResult.usages?.[selectedUsageIndex]?.alternatives && translationResult.usages?.[selectedUsageIndex]?.alternatives!.length > 0 && (
                           <div>
                             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">{t.alternatives}</h3>
                             <div className="flex flex-wrap gap-2">
-                              {translationResult.usages[selectedUsageIndex].alternatives!.map((alt, i) => (
+                              {translationResult.usages?.[selectedUsageIndex]?.alternatives!.map((alt, i) => (
                                 <button key={i} onClick={() => props.onSearchWord?.(alt)} className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-blue-100 hover:text-blue-700 transition-colors cursor-pointer">{alt}</button>
                               ))}
                             </div>
                           </div>
                         )}
                         {/* Antonyms */}
-                        {(translationResult.usages[selectedUsageIndex] as any).antonyms && (translationResult.usages[selectedUsageIndex] as any).antonyms.length > 0 && (
+                        {(translationResult.usages?.[selectedUsageIndex] as any)?.antonyms && (translationResult.usages?.[selectedUsageIndex] as any)?.antonyms.length > 0 && (
                           <div>
                             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">{uiLang === 'zh' ? '反义词' : 'Antonyms'}</h3>
                             <div className="flex flex-wrap gap-2">
-                              {(translationResult.usages[selectedUsageIndex] as any).antonyms.map((ant: string, i: number) => (
+                              {(translationResult.usages?.[selectedUsageIndex] as any)?.antonyms.map((ant: string, i: number) => (
                                 <button key={i} onClick={() => props.onSearchWord?.(ant)} className="bg-red-50 text-red-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-red-100 hover:text-red-700 transition-colors cursor-pointer">{ant}</button>
                               ))}
                             </div>
                           </div>
                         )}
                         {/* Conjugations / Word Forms */}
-                        {(translationResult.usages[selectedUsageIndex] as any).conjugations && (() => {
-                          const conj = (translationResult.usages[selectedUsageIndex] as any).conjugations;
+                        {(translationResult.usages?.[selectedUsageIndex] as any)?.conjugations && (() => {
+                          const conj = (translationResult.usages?.[selectedUsageIndex] as any)?.conjugations;
                           const labels: Record<string, string> = {
                             pastTense: '过去式', pastParticiple: '过去分词',
                             presentParticiple: '现在分词', presentPerfect: '现在完成时',

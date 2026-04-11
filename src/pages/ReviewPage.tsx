@@ -187,7 +187,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                     className="space-y-6 pt-6 border-t border-gray-100"
                   >
                     <div className="space-y-4">
-                      {currentReviewWord.usages.map((usage: any, idx: number) => (
+                      {(currentReviewWord.usages || []).map((usage: any, idx: number) => (
                         <div key={idx} className="text-left bg-gray-50 rounded-2xl p-4 space-y-2">
                           <p className="font-bold text-blue-600">{usage.meaningZh}</p>
                           <p className="text-sm text-gray-700">{usage.meaning}</p>
