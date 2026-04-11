@@ -10,6 +10,7 @@ import { UserProfile } from '../App';
 interface TranslatePageProps {
   inputText: string;
   setInputText: (v: string) => void;
+  onSearchWord?: (word: string) => void;
   isTranslating: boolean;
   translationResult: TranslationResult | null;
   slangInsights: SlangExplanationResult[];
@@ -157,7 +158,7 @@ export default function TranslatePage(props: TranslatePageProps) {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="lg:col-span-2 bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 space-y-8"
+            className="lg:col-span-2 bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 space-y-8 overflow-hidden"
           >
             {/* Dual Column Translation */}
             {(translationResult.authenticTranslation || translationResult.academicTranslation) && (
@@ -199,7 +200,7 @@ export default function TranslatePage(props: TranslatePageProps) {
               <div className="w-full sm:w-auto">
                 <div className="flex items-center gap-4 mb-2">
                   <div className="flex flex-col">
-                    <h2 className="text-3xl sm:text-4xl font-black text-gray-900 tracking-tight break-words">
+                    <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight break-words overflow-wrap-anywhere">
                       {translationResult.usages[selectedUsageIndex].meaning}
                     </h2>
                     <p className="text-lg sm:text-xl font-bold text-blue-600 mt-1">
@@ -280,7 +281,7 @@ export default function TranslatePage(props: TranslatePageProps) {
                             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">{t.synonyms}</h3>
                             <div className="flex flex-wrap gap-2">
                               {translationResult.usages[selectedUsageIndex].synonyms!.map((syn, i) => (
-                                <span key={i} className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-sm font-medium">{syn}</span>
+                                <button key={i} onClick={() => props.onSearchWord?.(syn)} className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-blue-100 hover:text-blue-600 transition-colors cursor-pointer">{syn}</button>
                               ))}
                             </div>
                           </div>
@@ -290,11 +291,55 @@ export default function TranslatePage(props: TranslatePageProps) {
                             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">{t.alternatives}</h3>
                             <div className="flex flex-wrap gap-2">
                               {translationResult.usages[selectedUsageIndex].alternatives!.map((alt, i) => (
-                                <span key={i} className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-sm font-medium">{alt}</span>
+                                <button key={i} onClick={() => props.onSearchWord?.(alt)} className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-blue-100 hover:text-blue-700 transition-colors cursor-pointer">{alt}</button>
                               ))}
                             </div>
                           </div>
                         )}
+                        {/* Conjugations / Word Forms */}
+                        {(translationResult.usages[selectedUsageIndex] as any).conjugations && (() => {
+                          const conj = (translationResult.usages[selectedUsageIndex] as any).conjugations;
+                          const labels: Record<string, string> = {
+                            pastTense: '过去式', pastParticiple: '过去分词',
+                            presentParticiple: '现在分词', presentPerfect: '现在完成时',
+                            thirdPerson: '第三人称', plural: '复数',
+                            comparative: '比较级', superlative: '最高级'
+                          };
+                          const labelsEn: Record<string, string> = {
+                            pastTense: 'Past', pastParticiple: 'Past Part.',
+                            presentParticiple: 'Pres. Part.', presentPerfect: 'Pres. Perfect',
+                            thirdPerson: '3rd Person', plural: 'Plural',
+                            comparative: 'Comparative', superlative: 'Superlative'
+                          };
+                          const entries: { key: string; label: string; value: string }[] = [];
+                          const pastT = conj.pastTense;
+                          const pastP = conj.pastParticiple;
+                          if (pastT && pastP && pastT === pastP) {
+                            entries.push({ key: 'pastCombined', label: uiLang === 'zh' ? '过去式/过去分词' : 'Past / Past Part.', value: pastT });
+                          } else {
+                            if (pastT) entries.push({ key: 'pastTense', label: uiLang === 'zh' ? labels.pastTense : labelsEn.pastTense, value: pastT });
+                            if (pastP) entries.push({ key: 'pastParticiple', label: uiLang === 'zh' ? labels.pastParticiple : labelsEn.pastParticiple, value: pastP });
+                          }
+                          ['presentParticiple', 'presentPerfect', 'thirdPerson', 'plural', 'comparative', 'superlative'].forEach(k => {
+                            if (conj[k]) entries.push({ key: k, label: uiLang === 'zh' ? labels[k] : labelsEn[k], value: conj[k] });
+                          });
+                          if (entries.length === 0) return null;
+                          return (
+                            <div>
+                              <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
+                                {uiLang === 'zh' ? '词形变化' : 'Word Forms'}
+                              </h3>
+                              <div className="flex flex-wrap gap-2">
+                                {entries.map(({ key, label, value }) => (
+                                  <button key={key} onClick={() => props.onSearchWord?.(value.replace(/^have\/has\s+/, ''))} className="bg-purple-50 text-purple-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors cursor-pointer border border-purple-100">
+                                    <span className="text-[10px] text-purple-400 mr-1.5 font-bold">{label}</span>
+                                    {value}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </motion.div>
                   )}

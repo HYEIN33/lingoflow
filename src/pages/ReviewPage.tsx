@@ -1,5 +1,5 @@
-import React from 'react';
-import { BookOpen, CheckCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { BookOpen, CheckCircle, Volume2, Loader2, RotateCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Language, translations } from '../i18n';
@@ -17,16 +17,23 @@ interface ReviewPageProps {
   onSetReviewIndex: (v: number) => void;
   onOpenOnboarding: () => void;
   onOpenPayment: (source: string) => void;
+  onSpeak?: (text: string) => void;
+  loadingAudioText?: string | null;
+  totalWords?: number;
 }
 
 export default function ReviewPage(props: ReviewPageProps) {
   const {
     userProfile, uiLang, dueWords, currentReviewWord, reviewIndex,
     showReviewAnswer, setShowReviewAnswer, onReview, onSetReviewIndex,
-    onOpenOnboarding, onOpenPayment
+    onOpenOnboarding, onOpenPayment, onSpeak, loadingAudioText, totalWords = 0
   } = props;
 
   const t = translations[uiLang];
+  const [reviewedCount, setReviewedCount] = useState(0);
+  const [reviewMode, setReviewMode] = useState<'card' | 'quiz'>('card');
+
+  const progress = dueWords.length > 0 ? Math.round((reviewedCount / dueWords.length) * 100) : 0;
 
   return (
     <div className="space-y-6">
@@ -57,17 +64,51 @@ export default function ReviewPage(props: ReviewPageProps) {
         </div>
       ) : (
         <>
+          {/* Header with stats */}
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">{uiLang === 'zh' ? '复习' : 'Review'}</h2>
-            <span className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
-              {dueWords.length} {uiLang === 'zh' ? '个待复习' : 'due'}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+                {dueWords.length} {uiLang === 'zh' ? '个待复习' : 'due'}
+              </span>
+              <span className="text-sm font-medium text-gray-400 bg-gray-50 px-3 py-1 rounded-full">
+                {totalWords} {uiLang === 'zh' ? '总词数' : 'total'}
+              </span>
+            </div>
           </div>
+
+          {/* Progress bar */}
+          {dueWords.length > 0 && (
+            <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-gray-500">
+                  {uiLang === 'zh' ? `进度 ${reviewedCount}/${dueWords.length}` : `Progress ${reviewedCount}/${dueWords.length}`}
+                </span>
+                <span className="text-xs font-bold text-blue-600">{progress}%</span>
+              </div>
+              <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progress}%` }}
+                  transition={{ duration: 0.5 }}
+                />
+              </div>
+            </div>
+          )}
 
           {currentReviewWord ? (
             <div className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center space-y-8">
-              <div className="space-y-2">
+              {/* Card number */}
+              <div className="text-xs font-bold text-gray-300">
+                {reviewIndex + 1} / {dueWords.length}
+              </div>
+
+              <div className="space-y-3">
                 <h3 className="text-4xl font-black text-gray-900 tracking-tight">{currentReviewWord.original}</h3>
+                {currentReviewWord.pronunciation && (
+                  <p className="text-blue-500 font-mono text-sm">{currentReviewWord.pronunciation}</p>
+                )}
                 {currentReviewWord.styleTag && currentReviewWord.styleTag !== 'standard' && (
                   <span className={cn(
                     "inline-block px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest",
@@ -75,6 +116,20 @@ export default function ReviewPage(props: ReviewPageProps) {
                   )}>
                     {currentReviewWord.styleTag === 'authentic' ? t.styleAuthentic : t.styleAcademic}
                   </span>
+                )}
+                {/* Audio button */}
+                {onSpeak && (
+                  <button
+                    onClick={() => onSpeak(currentReviewWord.original)}
+                    disabled={loadingAudioText === currentReviewWord.original}
+                    className="mx-auto flex items-center gap-2 text-blue-500 hover:text-blue-600 transition-colors mt-2"
+                  >
+                    {loadingAudioText === currentReviewWord.original ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Volume2 className="w-5 h-5" />
+                    )}
+                  </button>
                 )}
               </div>
 
@@ -88,25 +143,32 @@ export default function ReviewPage(props: ReviewPageProps) {
                   >
                     <div className="space-y-4">
                       {currentReviewWord.usages.map((usage: any, idx: number) => (
-                        <div key={idx} className="text-left bg-gray-50 rounded-2xl p-4">
-                          <p className="font-bold text-blue-600 mb-1">{usage.meaningZh}</p>
-                          <p className="text-sm text-gray-600 italic">"{usage.example}"</p>
+                        <div key={idx} className="text-left bg-gray-50 rounded-2xl p-4 space-y-2">
+                          <p className="font-bold text-blue-600">{usage.meaningZh}</p>
+                          <p className="text-sm text-gray-700">{usage.meaning}</p>
+                          {usage.examples && usage.examples.length > 0 && (
+                            <div className="pt-2 border-t border-gray-100">
+                              <p className="text-sm text-gray-600 italic">"{usage.examples[0].sentence}"</p>
+                              <p className="text-xs text-gray-400 mt-1">{usage.examples[0].translation}</p>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
 
                     <div className="grid grid-cols-4 gap-2">
                       {[
-                        { q: 1, label: uiLang === 'zh' ? '忘记' : 'Forgot', color: 'bg-red-500' },
-                        { q: 3, label: uiLang === 'zh' ? '模糊' : 'Hard', color: 'bg-orange-500' },
-                        { q: 4, label: uiLang === 'zh' ? '记得' : 'Good', color: 'bg-green-500' },
-                        { q: 5, label: uiLang === 'zh' ? '秒杀' : 'Easy', color: 'bg-blue-500' }
+                        { q: 1, label: uiLang === 'zh' ? '忘记' : 'Forgot', color: 'bg-red-500', hint: uiLang === 'zh' ? '1天后' : 'in 1d' },
+                        { q: 3, label: uiLang === 'zh' ? '模糊' : 'Hard', color: 'bg-orange-500', hint: uiLang === 'zh' ? '~3天' : '~3d' },
+                        { q: 4, label: uiLang === 'zh' ? '记得' : 'Good', color: 'bg-green-500', hint: uiLang === 'zh' ? '~1周' : '~1w' },
+                        { q: 5, label: uiLang === 'zh' ? '秒杀' : 'Easy', color: 'bg-blue-500', hint: uiLang === 'zh' ? '~2周' : '~2w' }
                       ].map((btn) => (
                         <button
                           key={btn.q}
                           onClick={() => {
                             onReview(currentReviewWord.id, btn.q);
                             setShowReviewAnswer(false);
+                            setReviewedCount(c => c + 1);
                             if (reviewIndex < dueWords.length - 1) {
                               onSetReviewIndex(reviewIndex + 1);
                             } else {
@@ -114,11 +176,12 @@ export default function ReviewPage(props: ReviewPageProps) {
                             }
                           }}
                           className={cn(
-                            "py-3 rounded-xl text-white text-[10px] font-black uppercase tracking-wider shadow-lg transition-transform active:scale-95",
+                            "py-3 rounded-xl text-white font-bold transition-transform active:scale-95 shadow-lg flex flex-col items-center",
                             btn.color
                           )}
                         >
-                          {btn.label}
+                          <span className="text-xs">{btn.label}</span>
+                          <span className="text-[10px] opacity-70 mt-0.5">{btn.hint}</span>
                         </button>
                       ))}
                     </div>
@@ -134,6 +197,19 @@ export default function ReviewPage(props: ReviewPageProps) {
                   </motion.div>
                 )}
               </AnimatePresence>
+            </div>
+          ) : reviewedCount > 0 ? (
+            <div className="text-center py-16 bg-white rounded-3xl border border-gray-100 shadow-sm space-y-4">
+              <CheckCircle className="w-16 h-16 text-green-400 mx-auto" />
+              <h3 className="text-2xl font-black text-gray-900">{uiLang === 'zh' ? '复习完成！' : 'Review Complete!'}</h3>
+              <p className="text-gray-500">{uiLang === 'zh' ? `本次复习了 ${reviewedCount} 个单词` : `You reviewed ${reviewedCount} words`}</p>
+              <button
+                onClick={() => { setReviewedCount(0); onSetReviewIndex(0); }}
+                className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors mt-4"
+              >
+                <RotateCcw className="w-4 h-4" />
+                {uiLang === 'zh' ? '再来一轮' : 'Review Again'}
+              </button>
             </div>
           ) : (
             <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">

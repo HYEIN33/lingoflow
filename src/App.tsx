@@ -30,7 +30,8 @@ import {
   checkGrammar,
   GrammarCheckResult,
   extractTextFromImage,
-  translateSimple
+  translateSimple,
+  aiChat
 } from './services/ai';
 import { cn } from './lib/utils';
 import { Language, translations } from './i18n';
@@ -40,6 +41,7 @@ import { useSpeechRecognition } from './hooks/useSpeechRecognition';
 import { useTranslation } from './hooks/useTranslation';
 import { useWordbook } from './hooks/useWordbook';
 import { useReview } from './hooks/useReview';
+import { useSearchHistory } from './hooks/useSearchHistory';
 
 // --- Error Handling ---
 export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean, error: any }> {
@@ -412,7 +414,7 @@ export default function App() {
     setShowPayment(true);
   };
 
-  const { savedWords, searchQuery, setSearchQuery, wordbookFilter, setWordbookFilter, filteredWords, selectedWordbookItem, setSelectedWordbookItem, handleDeleteWord } = useWordbook(user);
+  const { savedWords, searchQuery, setSearchQuery, wordbookFilter, setWordbookFilter, filteredWords, selectedWordbookItem, setSelectedWordbookItem, handleDeleteWord, folders, wordFolderMap, activeFolderId, setActiveFolderId, createFolder, renameFolder, deleteFolder, moveWordsToFolder } = useWordbook(user);
 
   const {
     inputText, setInputText, isTranslating, translationResult, slangInsights, isFetchingSlang,
@@ -423,6 +425,20 @@ export default function App() {
   const { dueWords, reviewIndex, setReviewIndex, showReviewAnswer, setShowReviewAnswer, currentReviewWord, handleReview } = useReview(user, userProfile, savedWords);
 
   const { isListening, toggleListening } = useSpeechRecognition({ uiLang, activeTab, setInputText, setGrammarInput, stopAllAudio });
+
+  const { history: searchHistory, addToHistory, removeFromHistory, clearHistory } = useSearchHistory();
+
+  const handleTranslateWithHistory = (e?: React.FormEvent) => {
+    if (inputText.trim()) addToHistory(inputText.trim());
+    handleTranslate(e);
+  };
+
+  const handleSearchWord = (word: string) => {
+    setInputText(word);
+    addToHistory(word);
+    // Trigger translate after setting text
+    setTimeout(() => handleTranslate(), 50);
+  };
 
   useEffect(() => {
     const skipped = localStorage.getItem('memeflow_onboarding_skipped');
@@ -614,7 +630,7 @@ export default function App() {
               className="space-y-6"
             >
               {/* Search Box */}
-              <form onSubmit={handleTranslate} className="relative group">
+              <form onSubmit={handleTranslateWithHistory} className="relative group">
                 <input
                   type="text"
                   value={inputText}
@@ -696,25 +712,57 @@ export default function App() {
                 />
               </div>
 
+              {/* Search History */}
+              {!translationResult && searchHistory.length > 0 && (
+                <div className="bg-white/60 backdrop-blur-md border border-white/60 rounded-2xl p-4 shadow-sm">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
+                      {uiLang === 'zh' ? '搜索记录' : 'Search History'}
+                    </h3>
+                    <button onClick={clearHistory} className="text-[10px] text-gray-400 hover:text-red-400 font-medium transition-colors">
+                      {uiLang === 'zh' ? '清空' : 'Clear'}
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {searchHistory.slice(0, 15).map((item, i) => (
+                      <div key={i} className="group flex items-center">
+                        <button
+                          onClick={() => handleSearchWord(item.text)}
+                          className="bg-gray-50 hover:bg-blue-50 text-gray-600 hover:text-blue-600 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                        >
+                          {item.text}
+                        </button>
+                        <button
+                          onClick={() => removeFromHistory(item.text)}
+                          className="ml-0.5 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Translation Result */}
               {translationResult && (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <motion.div 
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="lg:col-span-2 bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 space-y-8"
+                    className="lg:col-span-2 bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 space-y-8 overflow-hidden"
                   >
                     {/* Dual Column Translation */}
                     {(translationResult.authenticTranslation || translationResult.academicTranslation) && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Authentic Column */}
                         {translationResult.authenticTranslation && (
-                          <div className="bg-blue-50/50 rounded-2xl p-6 border border-blue-100 relative">
+                          <div className="bg-blue-50/50 rounded-2xl p-6 border border-blue-100 relative overflow-hidden">
                             <h3 className="text-xs font-black text-blue-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                               <Zap className="w-3 h-3 fill-current" />
                               {uiLang === 'zh' ? '地道表达 (Authentic)' : 'Authentic Expression'}
                             </h3>
-                            <p className="text-gray-900 text-lg font-medium leading-relaxed">
+                            <p className="text-gray-900 text-lg font-medium leading-relaxed break-words pr-8">
                               {translationResult.authenticTranslation}
                             </p>
                             <button 
@@ -737,12 +785,12 @@ export default function App() {
 
                         {/* Academic Column */}
                         {translationResult.academicTranslation && (
-                          <div className="bg-gray-50 rounded-2xl p-6 border border-gray-200 relative">
+                          <div className="bg-gray-50 rounded-2xl p-6 border border-gray-200 relative overflow-hidden">
                             <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                               <BookOpen className="w-3 h-3" />
                               {uiLang === 'zh' ? '学术表达 (Academic)' : 'Academic Expression'}
                             </h3>
-                            <p className="text-gray-900 text-lg font-medium leading-relaxed">
+                            <p className="text-gray-900 text-lg font-medium leading-relaxed break-words pr-8">
                               {translationResult.academicTranslation}
                             </p>
                             <button 
@@ -766,9 +814,9 @@ export default function App() {
                     )}
 
                   {/* Header: original word + pronunciation + save */}
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <h2 className="text-xl sm:text-2xl font-black text-gray-900">{translationResult.original}</h2>
+                  <div className="flex items-center justify-between mb-4 gap-3">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <h2 className="text-xl sm:text-2xl font-black text-gray-900 break-words">{translationResult.original}</h2>
                       {translationResult.pronunciation && (
                         <span className="text-blue-600 font-mono bg-blue-50 px-2 py-0.5 rounded-lg text-xs">{translationResult.pronunciation}</span>
                       )}
@@ -820,11 +868,11 @@ export default function App() {
                         <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
                           {uiLang === 'zh' ? '释义' : 'Meaning'}
                         </h3>
-                        <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 space-y-3">
-                          <p className="text-gray-800 text-lg font-bold leading-relaxed">
+                        <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 space-y-3 overflow-hidden">
+                          <p className="text-gray-800 text-lg font-bold leading-relaxed break-words">
                             {translationResult.usages[selectedUsageIndex].meaning}
                           </p>
-                          <p className="text-blue-600 text-lg font-medium leading-relaxed border-t border-gray-100 pt-3">
+                          <p className="text-blue-600 text-lg font-medium leading-relaxed border-t border-gray-100 pt-3 break-words">
                             {translationResult.usages[selectedUsageIndex].meaningZh}
                           </p>
                         </div>
@@ -879,35 +927,50 @@ export default function App() {
                               )}
 
                               {/* Verb conjugations / Word forms */}
-                              {(translationResult.usages[selectedUsageIndex] as any).conjugations && (
-                                <div>
-                                  <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
-                                    {uiLang === 'zh' ? '词形变化' : 'Word Forms'}
-                                  </h3>
-                                  <div className="flex flex-wrap gap-2">
-                                    {Object.entries((translationResult.usages[selectedUsageIndex] as any).conjugations)
-                                      .filter(([_, v]) => v)
-                                      .map(([key, val]) => {
-                                        const labels: Record<string, string> = {
-                                          pastTense: '过去式', pastParticiple: '过去分词',
-                                          presentParticiple: '现在分词', thirdPerson: '第三人称',
-                                          plural: '复数', comparative: '比较级', superlative: '最高级'
-                                        };
-                                        const labelsEn: Record<string, string> = {
-                                          pastTense: 'Past', pastParticiple: 'Past Part.',
-                                          presentParticiple: 'Pres. Part.', thirdPerson: '3rd Person',
-                                          plural: 'Plural', comparative: 'Comparative', superlative: 'Superlative'
-                                        };
-                                        return (
-                                          <button key={key} onClick={() => { setInputText(val as string); handleTranslate(); }} className="bg-purple-50 text-purple-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors cursor-pointer">
-                                            <span className="text-[10px] text-purple-400 mr-1">{uiLang === 'zh' ? labels[key] : labelsEn[key]}</span>
-                                            {val as string}
-                                          </button>
-                                        );
-                                      })}
+                              {(translationResult.usages[selectedUsageIndex] as any).conjugations && (() => {
+                                const conj = (translationResult.usages[selectedUsageIndex] as any).conjugations;
+                                const labels: Record<string, string> = {
+                                  pastTense: '过去式', pastParticiple: '过去分词',
+                                  presentParticiple: '现在分词', presentPerfect: '现在完成时',
+                                  thirdPerson: '第三人称', plural: '复数',
+                                  comparative: '比较级', superlative: '最高级'
+                                };
+                                const labelsEn: Record<string, string> = {
+                                  pastTense: 'Past', pastParticiple: 'Past Part.',
+                                  presentParticiple: 'Pres. Part.', presentPerfect: 'Pres. Perfect',
+                                  thirdPerson: '3rd Person', plural: 'Plural',
+                                  comparative: 'Comparative', superlative: 'Superlative'
+                                };
+                                // Group pastTense and pastParticiple if they are the same
+                                const entries: { key: string; label: string; value: string }[] = [];
+                                const pastT = conj.pastTense;
+                                const pastP = conj.pastParticiple;
+                                if (pastT && pastP && pastT === pastP) {
+                                  entries.push({ key: 'pastCombined', label: uiLang === 'zh' ? '过去式/过去分词' : 'Past / Past Part.', value: pastT });
+                                } else {
+                                  if (pastT) entries.push({ key: 'pastTense', label: uiLang === 'zh' ? labels.pastTense : labelsEn.pastTense, value: pastT });
+                                  if (pastP) entries.push({ key: 'pastParticiple', label: uiLang === 'zh' ? labels.pastParticiple : labelsEn.pastParticiple, value: pastP });
+                                }
+                                ['presentParticiple', 'presentPerfect', 'thirdPerson', 'plural', 'comparative', 'superlative'].forEach(k => {
+                                  if (conj[k]) entries.push({ key: k, label: uiLang === 'zh' ? labels[k] : labelsEn[k], value: conj[k] });
+                                });
+                                if (entries.length === 0) return null;
+                                return (
+                                  <div>
+                                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
+                                      {uiLang === 'zh' ? '词形变化' : 'Word Forms'}
+                                    </h3>
+                                    <div className="flex flex-wrap gap-2">
+                                      {entries.map(({ key, label, value }) => (
+                                        <button key={key} onClick={() => { setInputText(value.replace(/^have\/has\s+/, '')); handleTranslate(); }} className="bg-purple-50 text-purple-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors cursor-pointer border border-purple-100">
+                                          <span className="text-[10px] text-purple-400 mr-1.5 font-bold">{label}</span>
+                                          {value}
+                                        </button>
+                                      ))}
+                                    </div>
                                   </div>
-                                </div>
-                              )}
+                                );
+                              })()}
                             </div>
                           </motion.div>
                         )}
@@ -1055,6 +1118,9 @@ export default function App() {
                 onSetReviewIndex={setReviewIndex}
                 onOpenOnboarding={() => setShowOnboarding(true)}
                 onOpenPayment={(source) => { setPaymentTrigger(source); setShowPayment(true); }}
+                onSpeak={speak}
+                loadingAudioText={loadingAudioText}
+                totalWords={savedWords.length}
               />
             </motion.div>
           ) : activeTab === 'history' ? (
@@ -1076,6 +1142,14 @@ export default function App() {
                 uiLang={uiLang}
                 onSpeak={speak}
                 onDeleteWord={handleDeleteWord}
+                folders={folders}
+                wordFolderMap={wordFolderMap}
+                activeFolderId={activeFolderId}
+                onCreateFolder={createFolder}
+                onRenameFolder={renameFolder}
+                onDeleteFolder={deleteFolder}
+                onSetActiveFolder={setActiveFolderId}
+                onMoveWordsToFolder={moveWordsToFolder}
               />
             </motion.div>
           ) : activeTab === 'slang' ? (
@@ -1185,7 +1259,8 @@ export default function App() {
                       setAiInput('');
                       setAiLoading(true);
                       try {
-                        const answer = await translateSimple(q);
+                        const allMessages = [...aiMessages, { role: 'user' as const, text: q }];
+                        const answer = await aiChat(allMessages);
                         setAiMessages(prev => [...prev, { role: 'ai', text: answer }]);
                       } catch (err) {
                         setAiMessages(prev => [...prev, { role: 'ai', text: uiLang === 'zh' ? '抱歉，回答失败，请重试' : 'Sorry, failed to respond. Try again.' }]);

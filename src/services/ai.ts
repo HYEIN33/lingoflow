@@ -111,6 +111,17 @@ export interface Example {
   translation: string;
 }
 
+export interface Conjugations {
+  pastTense?: string;
+  pastParticiple?: string;
+  presentParticiple?: string;
+  presentPerfect?: string;
+  thirdPerson?: string;
+  plural?: string;
+  comparative?: string;
+  superlative?: string;
+}
+
 export interface UsageDefinition {
   label: string;
   labelZh: string;
@@ -119,6 +130,7 @@ export interface UsageDefinition {
   examples: Example[];
   synonyms?: string[];
   alternatives?: string[];
+  conjugations?: Conjugations;
 }
 
 export interface TranslationResult {
@@ -219,7 +231,7 @@ export async function translateText(text: string, formalityLevel?: number): Prom
     2. Provide the meaning in English and Chinese.
     3. Provide 2-3 example sentences with translations specific to this usage.
     4. Provide a list of synonyms and alternative translations.
-    5. If the word is a verb, provide conjugations (past tense, past participle, present participle, third person singular) in 'conjugations'.
+    5. If the word is a verb, provide conjugations (past tense, past participle, present participle, present perfect example, third person singular) in 'conjugations'. For present perfect, provide a short example like "have/has + past participle". If the past tense and past participle are the same word, combine them into one entry labeled "Past Tense / Past Participle".
     6. If the word is a noun, provide plural form in 'conjugations'.
     7. If the word is an adjective, provide comparative and superlative in 'conjugations'.
     ${formalityPrompt}
@@ -250,6 +262,7 @@ export async function translateText(text: string, formalityLevel?: number): Prom
                 pastTense: { type: Type.STRING },
                 pastParticiple: { type: Type.STRING },
                 presentParticiple: { type: Type.STRING },
+                presentPerfect: { type: Type.STRING, description: "Present perfect form, e.g. 'have/has gone'" },
                 thirdPerson: { type: Type.STRING },
                 plural: { type: Type.STRING },
                 comparative: { type: Type.STRING },
@@ -354,6 +367,35 @@ export async function translateSimple(text: string): Promise<string> {
     Only return the translated text, no other explanation.
 
     Text: "${text}"`;
+  const result = await geminiGenerate({ model, contents });
+  return result.trim();
+}
+
+export async function aiChat(messages: { role: 'user' | 'ai'; text: string }[]): Promise<string> {
+  const { model } = getEffectiveConfig();
+
+  const systemPrompt = `You are MemeFlow AI Assistant, a friendly and knowledgeable language learning companion. You help users with:
+- English/Chinese translation questions
+- Grammar explanations
+- Vocabulary building tips
+- Internet slang and meme culture
+- Pronunciation guidance
+- Language learning strategies
+
+Always respond in the same language the user uses. If they write in Chinese, respond in Chinese. If English, respond in English.
+Keep answers concise, practical, and encouraging. Use examples when helpful.`;
+
+  const chatHistory = messages.map(m => ({
+    parts: [{ text: m.text }],
+    role: m.role === 'user' ? 'user' : 'model'
+  }));
+
+  const contents = [
+    { parts: [{ text: systemPrompt }], role: 'user' },
+    { parts: [{ text: '好的，我是 MemeFlow AI 助手，随时为你解答语言学习相关的问题！' }], role: 'model' },
+    ...chatHistory
+  ];
+
   const result = await geminiGenerate({ model, contents });
   return result.trim();
 }

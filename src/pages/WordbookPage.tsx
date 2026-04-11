@@ -1,9 +1,15 @@
-import React from 'react';
-import { Search, BookOpen, Trash2, Loader2, Volume2, ChevronRight, ChevronDown, ChevronUp } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, BookOpen, Trash2, Loader2, Volume2, ChevronRight, ChevronDown, ChevronUp, FolderPlus, Folder, FolderOpen, MoreHorizontal, Pencil, Check, X, CheckSquare, Square } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Language, translations } from '../i18n';
 import { SavedWord } from '../App';
+
+export interface WordbookFolder {
+  id: string;
+  name: string;
+  createdAt: number;
+}
 
 interface WordbookPageProps {
   savedWords: SavedWord[];
@@ -22,6 +28,15 @@ interface WordbookPageProps {
   uiLang: Language;
   onSpeak: (text: string) => void;
   onDeleteWord: (id: string) => Promise<void>;
+  // Folder props
+  folders: WordbookFolder[];
+  wordFolderMap: Record<string, string>; // wordId -> folderId
+  activeFolderId: string | null;
+  onCreateFolder: (name: string) => void;
+  onRenameFolder: (id: string, name: string) => void;
+  onDeleteFolder: (id: string) => void;
+  onSetActiveFolder: (id: string | null) => void;
+  onMoveWordsToFolder: (wordIds: string[], folderId: string | null) => void;
 }
 
 export default function WordbookPage(props: WordbookPageProps) {
@@ -29,14 +44,59 @@ export default function WordbookPage(props: WordbookPageProps) {
     savedWords, filteredWords, searchQuery, setSearchQuery,
     wordbookFilter, setWordbookFilter, selectedWordbookItem, setSelectedWordbookItem,
     selectedUsageIndex, setSelectedUsageIndex, showDetails, setShowDetails,
-    loadingAudioText, uiLang, onSpeak, onDeleteWord
+    loadingAudioText, uiLang, onSpeak, onDeleteWord,
+    folders, wordFolderMap, activeFolderId, onCreateFolder, onRenameFolder,
+    onDeleteFolder, onSetActiveFolder, onMoveWordsToFolder
   } = props;
 
   const t = translations[uiLang];
+  const [showFolderCreate, setShowFolderCreate] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
+  const [editFolderName, setEditFolderName] = useState('');
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedWordIds, setSelectedWordIds] = useState<Set<string>>(new Set());
+  const [showBatchMoveMenu, setShowBatchMoveMenu] = useState(false);
+  const [folderMenuId, setFolderMenuId] = useState<string | null>(null);
+
+  // Filter words by active folder
+  const folderFilteredWords = activeFolderId
+    ? filteredWords.filter(w => wordFolderMap[w.id] === activeFolderId)
+    : filteredWords;
+
+  const toggleWordSelection = (id: string) => {
+    const next = new Set(selectedWordIds);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelectedWordIds(next);
+  };
+
+  const handleCreateFolder = () => {
+    if (!newFolderName.trim()) return;
+    onCreateFolder(newFolderName.trim());
+    setNewFolderName('');
+    setShowFolderCreate(false);
+  };
+
+  const handleBatchMove = (folderId: string | null) => {
+    onMoveWordsToFolder(Array.from(selectedWordIds), folderId);
+    setSelectedWordIds(new Set());
+    setBatchMode(false);
+    setShowBatchMoveMenu(false);
+  };
+
+  const handleBatchDelete = async () => {
+    const ids = Array.from(selectedWordIds);
+    for (const id of ids) {
+      await onDeleteWord(id);
+    }
+    setSelectedWordIds(new Set());
+    setBatchMode(false);
+  };
 
   return (
     <div className="space-y-4">
       {selectedWordbookItem ? (
+        /* ======================== DETAIL VIEW ======================== */
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -132,7 +192,10 @@ export default function WordbookPage(props: WordbookPageProps) {
                     {uiLang === 'zh' ? '释义' : 'Meaning'}
                   </h3>
                   <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 space-y-3">
-                    <p className="text-blue-600 text-lg font-medium leading-relaxed">
+                    <p className="text-gray-800 text-lg font-bold leading-relaxed">
+                      {selectedWordbookItem.usages[selectedUsageIndex].meaning}
+                    </p>
+                    <p className="text-blue-600 text-lg font-medium leading-relaxed border-t border-gray-100 pt-3">
                       {selectedWordbookItem.usages[selectedUsageIndex].meaningZh}
                     </p>
                   </div>
@@ -224,6 +287,7 @@ export default function WordbookPage(props: WordbookPageProps) {
           </div>
         </motion.div>
       ) : savedWords.length === 0 ? (
+        /* ======================== EMPTY STATE ======================== */
         <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">
           <BookOpen className="w-12 h-12 text-gray-200 mx-auto mb-4" />
           <p className="text-gray-400 font-medium">{t.emptyWordbook}</p>
@@ -232,23 +296,136 @@ export default function WordbookPage(props: WordbookPageProps) {
           </p>
         </div>
       ) : (
-        <div className="space-y-6">
+        /* ======================== LIST VIEW ======================== */
+        <div className="space-y-4">
+          {/* Header */}
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
             <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">{t.wordbook}</h2>
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder={t.search}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none transition-all"
-              />
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder={t.search}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none transition-all"
+                />
+              </div>
+              <button
+                onClick={() => { setBatchMode(!batchMode); setSelectedWordIds(new Set()); }}
+                className={cn(
+                  "px-3 py-2 rounded-xl text-xs font-bold transition-all border",
+                  batchMode ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-200 text-gray-500 hover:border-blue-200"
+                )}
+              >
+                {uiLang === 'zh' ? '批量' : 'Batch'}
+              </button>
             </div>
           </div>
 
+          {/* Folder bar */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+            <button
+              onClick={() => onSetActiveFolder(null)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border whitespace-nowrap",
+                !activeFolderId ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-100 text-gray-500 hover:border-blue-200"
+              )}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              {uiLang === 'zh' ? '全部' : 'All'}
+              <span className="opacity-60">({savedWords.length})</span>
+            </button>
+            {folders.map(folder => {
+              const count = Object.values(wordFolderMap).filter(fid => fid === folder.id).length;
+              return (
+                <div key={folder.id} className="relative">
+                  {editingFolderId === folder.id ? (
+                    <div className="flex items-center gap-1 bg-white border border-blue-300 rounded-lg px-2 py-1">
+                      <input
+                        type="text"
+                        value={editFolderName}
+                        onChange={(e) => setEditFolderName(e.target.value)}
+                        className="w-24 text-xs outline-none"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { onRenameFolder(folder.id, editFolderName); setEditingFolderId(null); }
+                          if (e.key === 'Escape') setEditingFolderId(null);
+                        }}
+                      />
+                      <button onClick={() => { onRenameFolder(folder.id, editFolderName); setEditingFolderId(null); }} className="text-green-500"><Check className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => setEditingFolderId(null)} className="text-gray-400"><X className="w-3.5 h-3.5" /></button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => onSetActiveFolder(activeFolderId === folder.id ? null : folder.id)}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border whitespace-nowrap group",
+                        activeFolderId === folder.id ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-100 text-gray-500 hover:border-blue-200"
+                      )}
+                    >
+                      {activeFolderId === folder.id ? <FolderOpen className="w-3.5 h-3.5" /> : <Folder className="w-3.5 h-3.5" />}
+                      {folder.name}
+                      <span className="opacity-60">({count})</span>
+                      <span
+                        onClick={(e) => { e.stopPropagation(); setFolderMenuId(folderMenuId === folder.id ? null : folder.id); }}
+                        className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <MoreHorizontal className="w-3.5 h-3.5" />
+                      </span>
+                    </button>
+                  )}
+                  {/* Folder context menu */}
+                  {folderMenuId === folder.id && (
+                    <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1 min-w-[120px]">
+                      <button
+                        onClick={() => { setEditingFolderId(folder.id); setEditFolderName(folder.name); setFolderMenuId(null); }}
+                        className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                      >
+                        <Pencil className="w-3 h-3" /> {uiLang === 'zh' ? '重命名' : 'Rename'}
+                      </button>
+                      <button
+                        onClick={() => { onDeleteFolder(folder.id); setFolderMenuId(null); }}
+                        className="w-full text-left px-3 py-2 text-xs font-medium text-red-500 hover:bg-red-50 flex items-center gap-2"
+                      >
+                        <Trash2 className="w-3 h-3" /> {uiLang === 'zh' ? '删除' : 'Delete'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {showFolderCreate ? (
+              <div className="flex items-center gap-1 bg-white border border-blue-300 rounded-lg px-2 py-1">
+                <input
+                  type="text"
+                  value={newFolderName}
+                  onChange={(e) => setNewFolderName(e.target.value)}
+                  placeholder={uiLang === 'zh' ? '文件夹名' : 'Folder name'}
+                  className="w-24 text-xs outline-none"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreateFolder();
+                    if (e.key === 'Escape') { setShowFolderCreate(false); setNewFolderName(''); }
+                  }}
+                />
+                <button onClick={handleCreateFolder} className="text-green-500"><Check className="w-3.5 h-3.5" /></button>
+                <button onClick={() => { setShowFolderCreate(false); setNewFolderName(''); }} className="text-gray-400"><X className="w-3.5 h-3.5" /></button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowFolderCreate(true)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold border border-dashed border-gray-300 text-gray-400 hover:border-blue-300 hover:text-blue-500 transition-all whitespace-nowrap"
+              >
+                <FolderPlus className="w-3.5 h-3.5" />
+                {uiLang === 'zh' ? '新建' : 'New'}
+              </button>
+            )}
+          </div>
+
           {/* Style Filter */}
-          <div className="flex flex-wrap gap-2 mb-4">
+          <div className="flex flex-wrap gap-2">
             {[
               { id: 'all', label: uiLang === 'zh' ? '全部' : 'All' },
               { id: 'authentic', label: uiLang === 'zh' ? '地道' : 'Authentic' },
@@ -270,43 +447,82 @@ export default function WordbookPage(props: WordbookPageProps) {
             ))}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredWords.map((word) => (
+          {/* Batch action bar */}
+          {batchMode && selectedWordIds.size > 0 && (
+            <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl p-3">
+              <span className="text-xs font-bold text-blue-600">
+                {uiLang === 'zh' ? `已选 ${selectedWordIds.size} 个` : `${selectedWordIds.size} selected`}
+              </span>
+              <div className="flex-1" />
+              <div className="relative">
+                <button
+                  onClick={() => setShowBatchMoveMenu(!showBatchMoveMenu)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-blue-200 text-blue-600 hover:bg-blue-50"
+                >
+                  {uiLang === 'zh' ? '移动到...' : 'Move to...'}
+                </button>
+                {showBatchMoveMenu && (
+                  <div className="absolute top-full right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 py-1 min-w-[140px]">
+                    <button onClick={() => handleBatchMove(null)} className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                      {uiLang === 'zh' ? '移出文件夹' : 'Remove from folder'}
+                    </button>
+                    {folders.map(f => (
+                      <button key={f.id} onClick={() => handleBatchMove(f.id)} className="w-full text-left px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 flex items-center gap-2">
+                        <Folder className="w-3 h-3" /> {f.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={handleBatchDelete}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-red-50 border border-red-200 text-red-500 hover:bg-red-100"
+              >
+                {uiLang === 'zh' ? '批量删除' : 'Delete'}
+              </button>
+            </div>
+          )}
+
+          {/* Word cards — compact: only word + translation */}
+          <div className="space-y-2">
+            {folderFilteredWords.map((word) => (
               <motion.div
                 layout
                 key={word.id}
-                onClick={() => setSelectedWordbookItem(word)}
-                className="bg-white p-5 sm:p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between group hover:shadow-md hover:border-blue-200 transition-all cursor-pointer gap-4"
+                className="bg-white rounded-2xl border border-gray-100 hover:border-blue-200 transition-all shadow-sm hover:shadow-md"
               >
-                <div className="flex-1">
-                  <div className="flex items-center gap-4">
-                    <div className="flex flex-col">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight break-words">{word.original}</h3>
-                        {word.styleTag && word.styleTag !== 'standard' && (
-                          <span className={cn(
-                            "px-1.5 py-0.5 rounded text-[10px] font-bold uppercase",
-                            word.styleTag === 'authentic' ? "bg-blue-100 text-blue-600" : "bg-purple-100 text-purple-600"
-                          )}>
-                            {word.styleTag === 'authentic' ? t.styleAuthentic : t.styleAcademic}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs sm:text-sm font-medium text-blue-600">{word.usages[0].meaningZh}</span>
-                      </div>
+                <div
+                  onClick={() => batchMode ? toggleWordSelection(word.id) : setSelectedWordbookItem(word)}
+                  className="flex items-center gap-3 px-4 py-3.5 cursor-pointer"
+                >
+                  {batchMode && (
+                    <span className="shrink-0">
+                      {selectedWordIds.has(word.id) ? (
+                        <CheckSquare className="w-5 h-5 text-blue-600" />
+                      ) : (
+                        <Square className="w-5 h-5 text-gray-300" />
+                      )}
+                    </span>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-base font-bold text-gray-900 truncate">{word.original}</h3>
+                      {word.styleTag && word.styleTag !== 'standard' && (
+                        <span className={cn(
+                          "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase shrink-0",
+                          word.styleTag === 'authentic' ? "bg-blue-100 text-blue-600" : "bg-purple-100 text-purple-600"
+                        )}>
+                          {word.styleTag === 'authentic' ? t.styleAuthentic : t.styleAcademic}
+                        </span>
+                      )}
                     </div>
+                    <p className="text-sm text-gray-500 truncate mt-0.5">{word.usages[0].meaningZh}</p>
                   </div>
-                </div>
-                <div className="flex items-center justify-between sm:justify-end gap-2 pt-3 sm:pt-0 border-t sm:border-t-0 border-gray-50">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSpeak(word.original);
-                      }}
+                      onClick={(e) => { e.stopPropagation(); onSpeak(word.original); }}
                       disabled={loadingAudioText === word.original}
-                      className="p-2 text-gray-300 hover:text-blue-500 transition-colors shrink-0 disabled:opacity-50"
+                      className="p-1.5 text-gray-300 hover:text-blue-500 transition-colors disabled:opacity-50"
                     >
                       {loadingAudioText === word.original ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -314,23 +530,28 @@ export default function WordbookPage(props: WordbookPageProps) {
                         <Volume2 className="w-4 h-4" />
                       )}
                     </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteWord(word.id);
-                      }}
-                      className="p-2 text-gray-300 hover:text-red-500 transition-colors shrink-0"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {!batchMode && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onDeleteWord(word.id); }}
+                        className="p-1.5 text-gray-300 hover:text-red-500 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                    {!batchMode && <ChevronRight className="w-4 h-4 text-gray-300" />}
                   </div>
-                  <span className="text-[10px] text-gray-300 sm:hidden">
-                    {word.createdAt?.toDate().toLocaleDateString()}
-                  </span>
                 </div>
               </motion.div>
             ))}
           </div>
+
+          {folderFilteredWords.length === 0 && (
+            <div className="text-center py-12 text-gray-400 text-sm">
+              {activeFolderId
+                ? (uiLang === 'zh' ? '该文件夹为空' : 'This folder is empty')
+                : (uiLang === 'zh' ? '没有找到匹配的单词' : 'No matching words found')}
+            </div>
+          )}
         </div>
       )}
     </div>
