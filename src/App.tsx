@@ -63,17 +63,23 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError
 
   render() {
     if (this.state.hasError) {
+      const msg = this.state.error?.message || String(this.state.error);
+      const isQuota = msg.includes('Quota') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED');
       return (
         <div className="p-8 text-center bg-red-50 min-h-screen flex flex-col items-center justify-center">
-          <h1 className="text-2xl font-bold text-red-600 mb-4">Something went wrong</h1>
-          <pre className="text-xs bg-white p-4 rounded border border-red-200 max-w-full overflow-auto mb-4">
-            {this.state.error?.message || String(this.state.error)}
-          </pre>
-          <button 
+          <h1 className="text-2xl font-bold text-red-600 mb-4">
+            {isQuota ? '数据库配额已用完' : 'Something went wrong'}
+          </h1>
+          <p className="text-gray-600 mb-4 max-w-md">
+            {isQuota
+              ? '今日免费数据库请求次数已达上限，请稍后再试（通常在几小时内重置）。'
+              : msg}
+          </p>
+          <button
             onClick={() => window.location.reload()}
             className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
           >
-            Reload Page
+            刷新重试
           </button>
         </div>
       );

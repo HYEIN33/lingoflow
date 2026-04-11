@@ -156,6 +156,11 @@ export function useWordbook(user: User | null) {
       setSavedWords(sortedWords);
     }, (error) => {
       console.error('onSnapshot error:', error);
+      // Don't throw on quota errors — just log and keep empty state
+      if (error?.message?.includes('Quota') || error?.code === 'resource-exhausted') {
+        console.warn('Firestore quota exceeded, using empty state');
+        return;
+      }
       handleFirestoreError(error, OperationType.LIST, path);
     });
 
