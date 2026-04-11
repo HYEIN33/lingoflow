@@ -122,7 +122,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                       {selectedWordbookItem.original}
                     </h2>
                     <p className="text-lg sm:text-xl font-bold text-blue-600 mt-1">
-                      {selectedWordbookItem.usages[selectedUsageIndex].meaningZh}
+                      {selectedWordbookItem.usages?.[selectedUsageIndex]?.meaningZh || ''}
                     </p>
                   </div>
                   <button
@@ -193,10 +193,10 @@ export default function WordbookPage(props: WordbookPageProps) {
                   </h3>
                   <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 space-y-3">
                     <p className="text-gray-800 text-lg font-bold leading-relaxed">
-                      {selectedWordbookItem.usages[selectedUsageIndex].meaning}
+                      {selectedWordbookItem.usages?.[selectedUsageIndex]?.meaning || ''}
                     </p>
                     <p className="text-blue-600 text-lg font-medium leading-relaxed border-t border-gray-100 pt-3">
-                      {selectedWordbookItem.usages[selectedUsageIndex].meaningZh}
+                      {selectedWordbookItem.usages?.[selectedUsageIndex]?.meaningZh || ''}
                     </p>
                   </div>
                 </div>
@@ -219,7 +219,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                       className="overflow-hidden"
                     >
                       <div className="pt-6 space-y-6 border-t border-gray-100">
-                        {selectedWordbookItem.usages[selectedUsageIndex].synonyms && selectedWordbookItem.usages[selectedUsageIndex].synonyms.length > 0 && (
+                        {selectedWordbookItem.usages?.[selectedUsageIndex]?.synonyms && selectedWordbookItem.usages[selectedUsageIndex].synonyms.length > 0 && (
                           <div>
                             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
                               {t.synonyms}
@@ -234,7 +234,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                           </div>
                         )}
 
-                        {selectedWordbookItem.usages[selectedUsageIndex].alternatives && selectedWordbookItem.usages[selectedUsageIndex].alternatives.length > 0 && (
+                        {selectedWordbookItem.usages?.[selectedUsageIndex]?.alternatives && selectedWordbookItem.usages[selectedUsageIndex].alternatives.length > 0 && (
                           <div>
                             <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
                               {t.alternatives}
@@ -258,7 +258,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                     {t.examples}
                   </h3>
                   <div className="space-y-4">
-                    {selectedWordbookItem.usages[selectedUsageIndex].examples.map((ex, i) => (
+                    {(selectedWordbookItem.usages[selectedUsageIndex]?.examples || []).map((ex, i) => (
                       <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 space-y-3 group/ex hover:border-blue-200 transition-colors">
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex gap-4">
@@ -516,7 +516,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-500 truncate mt-0.5">{word.usages[0].meaningZh}</p>
+                    <p className="text-sm text-gray-500 truncate mt-0.5">{word.usages?.[0]?.meaningZh || ''}</p>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button

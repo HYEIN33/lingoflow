@@ -1043,7 +1043,7 @@ export default function App() {
                           {t.examples}
                         </h3>
                         <div className="space-y-4">
-                          {translationResult.usages[selectedUsageIndex].examples.map((ex, i) => (
+                          {(translationResult.usages[selectedUsageIndex]?.examples || []).map((ex, i) => (
                             <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 space-y-3 group/ex hover:border-blue-200 transition-colors overflow-hidden">
                               <div className="flex items-start justify-between gap-4">
                                 <div className="flex gap-4 min-w-0 flex-1">
