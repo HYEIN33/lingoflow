@@ -60,25 +60,10 @@ service cloud.firestore {
     }
 
     function isValidWord(data) {
-      let hasBasicFields = data.original is string && data.original.size() > 0 && data.original.size() < 500 &&
-                           (!('pronunciation' in data) || (data.pronunciation is string && data.pronunciation.size() < 200)) &&
-                           data.userId == request.auth.uid &&
-                           (data.createdAt is timestamp || data.createdAt == request.time);
-      
-      let hasValidUsages = data.usages is list && data.usages.size() > 0 && data.usages.size() <= 10 &&
-                           data.usages.all(u, u is map && 
-                             u.label is string && u.labelZh is string && 
-                             u.meaning is string && u.meaningZh is string && 
-                             u.examples is list && u.examples.size() <= 5 && 
-                             u.examples.all(ex, ex is map && ex.sentence is string && ex.translation is string)
-                           );
-                           
-      let hasValidOptionalFields = (!('styleTag' in data) || data.styleTag in ['authentic', 'academic', 'standard']) &&
-                                   (!('nextReviewDate' in data) || data.nextReviewDate is timestamp || data.nextReviewDate == request.time) &&
-                                   (!('interval' in data) || data.interval is number) &&
-                                   (!('easeFactor' in data) || data.easeFactor is number);
-      
-      return hasBasicFields && hasValidUsages && hasValidOptionalFields;
+      return data.original is string && data.original.size() > 0 && data.original.size() < 500 &&
+             data.userId == request.auth.uid &&
+             data.usages is list &&
+             (data.createdAt is timestamp || data.createdAt == request.time);
     }
 
     function isValidSlang(data) {
