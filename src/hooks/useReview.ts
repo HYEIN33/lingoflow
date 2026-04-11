@@ -18,7 +18,7 @@ export function useReview(user: User | null, userProfile: UserProfile | null, sa
   const currentReviewWord = dueWords[reviewIndex];
 
   const handleReview = async (wordId: string, quality: number) => {
-    if (!user || !userProfile?.isPro) return;
+    if (!user || (!userProfile?.isPro && !userProfile?.hasCompletedOnboarding)) return;
 
     const word = savedWords.find(w => w.id === wordId);
     if (!word) return;

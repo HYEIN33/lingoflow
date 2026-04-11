@@ -105,6 +105,12 @@
     <div class="search-bar">
       <input type="text" id="searchInput" placeholder="搜索词条或释义..." oninput="filterSlangs()">
     </div>
+    <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; align-items:center;">
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#64748b; cursor:pointer;">
+        <input type="checkbox" id="selectAll" onchange="toggleSelectAll()"> 全选
+      </label>
+      <button class="btn btn-secondary" style="padding:6px 14px; font-size:12px;" onclick="batchDelete()" id="batchDeleteBtn" disabled>批量删除 (<span id="selectedCount">0</span>)</button>
+    </div>
     <div class="slang-list" id="slangList">
       <div class="loading"><div class="spinner"></div><br>加载中...</div>
     </div>
@@ -245,9 +251,12 @@ function renderSlangs(list) {
   el.innerHTML = list.map(s => `
     <div class="slang-card">
       <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-        <div>
-          <div class="slang-term">${esc(s.term)}</div>
-          <div class="slang-meta">ID: ${s.id} · ${s.createdAt.toLocaleDateString()} · ${s.meanings.length} meaning(s)</div>
+        <div style="display:flex; align-items:flex-start; gap:10px;">
+          <input type="checkbox" class="slang-checkbox" data-id="${s.id}" onchange="updateSelectedCount()" style="margin-top:6px; width:16px; height:16px; cursor:pointer;">
+          <div>
+            <div class="slang-term">${esc(s.term)}</div>
+            <div class="slang-meta">ID: ${s.id} · ${s.createdAt.toLocaleDateString()} · ${s.meanings.length} meaning(s)</div>
+          </div>
         </div>
         <button class="delete-btn" data-action="delete-term" data-id="${s.id}" data-term="${esc(s.term)}">删除词条</button>
       </div>
@@ -290,6 +299,48 @@ document.getElementById('slangList').addEventListener('click', async (e) => {
     await loadAllData();
   }
 });
+
+window.toggleSelectAll = function() {
+  const checked = document.getElementById('selectAll').checked;
+  document.querySelectorAll('.slang-checkbox').forEach(cb => { cb.checked = checked; });
+  updateSelectedCount();
+};
+
+window.updateSelectedCount = function() {
+  const count = document.querySelectorAll('.slang-checkbox:checked').length;
+  document.getElementById('selectedCount').textContent = count;
+  document.getElementById('batchDeleteBtn').disabled = count === 0;
+};
+
+window.batchDelete = async function() {
+  const checked = document.querySelectorAll('.slang-checkbox:checked');
+  const ids = Array.from(checked).map(cb => cb.dataset.id);
+  if (ids.length === 0) return;
+  if (!confirm(`确认批量删除 ${ids.length} 个词条及其所有释义？`)) return;
+
+  const btn = document.getElementById('batchDeleteBtn');
+  btn.disabled = true;
+  btn.textContent = `删除中...`;
+
+  // Batch in groups of 10 (Firestore batch limit is 500)
+  for (let i = 0; i < ids.length; i += 10) {
+    const chunk = ids.slice(i, i + 10);
+    const batch = writeBatch(db);
+    for (const id of chunk) {
+      const s = allSlangs.find(x => x.id === id);
+      if (s) {
+        s.meanings.forEach(m => batch.delete(doc(db, 'slang_meanings', m.id)));
+        batch.delete(doc(db, 'slangs', id));
+      }
+    }
+    await batch.commit();
+    btn.textContent = `已删除 ${Math.min(i + 10, ids.length)}/${ids.length}`;
+  }
+
+  document.getElementById('selectAll').checked = false;
+  alert(`已删除 ${ids.length} 个词条`);
+  await loadAllData();
+};
 
 window.filterSlangs = function() {
   const q = document.getElementById('searchInput').value.toLowerCase();

@@ -502,12 +502,31 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
         className="relative w-full max-w-md bg-white border border-gray-200 rounded-[2rem] p-6 sm:p-8 shadow-2xl overflow-hidden"
       >
         {step < 5 && (
-          <button
-            onClick={onClose}
-            className="absolute top-6 right-6 text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="absolute top-4 right-4 sm:top-6 sm:right-6 flex items-center gap-3 z-20">
+            <button
+              onClick={async () => {
+                // Mark as completed locally + Firestore
+                localStorage.setItem('memeflow_onboarding_skipped', 'true');
+                if (auth.currentUser) {
+                  try {
+                    await updateDoc(doc(db, 'users', auth.currentUser.uid), { hasCompletedOnboarding: true });
+                  } catch (e) {
+                    console.error('Skip onboarding failed:', e);
+                  }
+                }
+                onClose();
+              }}
+              className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors font-medium"
+            >
+              {uiLang === 'zh' ? '跳过' : 'Skip'}
+            </button>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         )}
 
         <AnimatePresence mode="wait">

@@ -152,20 +152,20 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && isValidUserProfile(request.resource.data);
-      allow update: if isOwner(userId) && isValidUserProfile(request.resource.data);
+      allow update: if isOwner(userId);
     }
 
     match /slangs/{slangId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidSlang(request.resource.data);
-      allow update: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
     }
 
     match /slang_meanings/{meaningId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidSlangMeaning(request.resource.data) && request.resource.data.upvotes == 0;
       allow update: if isAuthenticated() && isValidCounterUpdate(meaningId);
-      allow delete: if isAuthenticated() && resource.data.authorId == request.auth.uid;
+      allow delete: if isAuthenticated();
     }
 
     match /slang_upvotes/{upvoteId} {

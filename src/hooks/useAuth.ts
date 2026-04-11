@@ -31,9 +31,10 @@ export function useAuth() {
           const today = new Date().toISOString().split('T')[0];
 
           if (!userDoc.exists()) {
+            const isAnonymous = user.isAnonymous;
             const newProfile: UserProfile = {
               userId: user.uid,
-              isPro: false,
+              isPro: isAnonymous,  // Beta testers (invite code) get Pro by default
               translationCount: 0,
               grammarCount: 0,
               lastResetDate: today,

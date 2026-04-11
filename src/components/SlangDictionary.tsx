@@ -162,6 +162,8 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
   const [currentSlang, setCurrentSlang] = useState<Slang | null>(null);
   const [meanings, setMeanings] = useState<SlangMeaning[]>([]);
+  const [searchResults, setSearchResults] = useState<Slang[]>([]);
+  const [allSlangCache, setAllSlangCache] = useState<Slang[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [showGuidelines, setShowGuidelines] = useState(false);
@@ -169,13 +171,74 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
   const [trendingTerms, setTrendingTerms] = useState<{ term: string; count: number }[]>([]);
   const [trendingRefresh, setTrendingRefresh] = useState(0);
 
-  // Feed: load recent slang entries
+  const [feedPage, setFeedPage] = useState(0);
+  const FEED_SIZE = 12;
+  const FEED_INTERVAL = 30000; // 30 seconds
+
+  // Feed: load slangs, rotate every 30s, mix in user interests
   useEffect(() => {
-    const q = query(collection(db, 'slangs'), orderBy('createdAt', 'desc'), limit(10));
-    const unsub = onSnapshot(q, (snap) => {
-      setRecentSlangs(snap.docs.map(d => ({ id: d.id, ...d.data() } as Slang)));
-    });
-    return () => unsub();
+    const loadFeed = async () => {
+      try {
+        // Get all slangs
+        const allSnap = await getDocs(query(collection(db, 'slangs'), orderBy('createdAt', 'desc')));
+        const allSlangs = allSnap.docs.map(d => ({ id: d.id, ...d.data() } as Slang));
+
+        setAllSlangCache(allSlangs);
+        if (allSlangs.length === 0) { setRecentSlangs([]); return; }
+
+        // Get user search history for personalization
+        const HISTORY_KEY = 'memeflow_search_history';
+        let searchedTerms: string[] = [];
+        try {
+          const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+          searchedTerms = history.map((h: any) => h.term?.toLowerCase()).filter(Boolean);
+        } catch {}
+
+        // Score slangs: recently created + matching user interests get priority
+        const scored = allSlangs.map(s => {
+          let score = Math.random() * 10; // base randomness
+          // Boost if term relates to user's search history
+          const termLower = s.term.toLowerCase();
+          if (searchedTerms.some(t => termLower.includes(t) || t.includes(termLower))) {
+            score += 20;
+          }
+          // Boost newer entries
+          if (s.createdAt?.toDate) {
+            const age = Date.now() - s.createdAt.toDate().getTime();
+            const dayAge = age / (1000 * 60 * 60 * 24);
+            if (dayAge < 7) score += 15;
+            else if (dayAge < 30) score += 5;
+          }
+          return { ...s, _score: score };
+        });
+
+        // Sort by score, paginate
+        scored.sort((a, b) => b._score - a._score);
+        const start = (feedPage * FEED_SIZE) % scored.length;
+        const page = [];
+        for (let i = 0; i < FEED_SIZE && i < scored.length; i++) {
+          page.push(scored[(start + i) % scored.length]);
+        }
+        setRecentSlangs(page);
+      } catch (e) {
+        console.error('Feed load failed:', e);
+      }
+    };
+
+    loadFeed();
+    const timer = setInterval(() => setFeedPage(p => p + 1), FEED_INTERVAL);
+    return () => clearInterval(timer);
+  }, [feedPage]);
+
+  // Save search to local history for personalization
+  const saveSearchHistory = useCallback((term: string) => {
+    const HISTORY_KEY = 'memeflow_search_history';
+    try {
+      const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      history.push({ term: term.toLowerCase(), ts: Date.now() });
+      // Keep last 200
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-200)));
+    } catch {}
   }, []);
 
   // Track search in Firestore for global trending
@@ -441,6 +504,32 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     }
   };
 
+  const selectSlang = useCallback(async (slangData: Slang) => {
+    setCurrentSlang(slangData);
+    setSearchResults([]);
+    trackSearch(slangData.term);
+    saveSearchHistory(slangData.term);
+
+    try {
+      const meaningsQ = query(
+        collection(db, 'slang_meanings'),
+        where('slangId', '==', slangData.id),
+        where('status', '==', 'approved'),
+        orderBy('upvotes', 'desc')
+      );
+      const unsubscribe = onSnapshot(meaningsQ, (meaningsSnapshot) => {
+        setMeanings(meaningsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as SlangMeaning)));
+      });
+      if (auth.currentUser) {
+        const upvotesQ = query(collection(db, 'slang_upvotes'), where('userId', '==', auth.currentUser.uid));
+        const upvotesSnapshot = await getDocs(upvotesQ);
+        setUpvotedMeanings(new Set(upvotesSnapshot.docs.map(d => d.data().meaningId)));
+      }
+    } catch (error) {
+      console.error("Error loading meanings:", error);
+    }
+  }, [trackSearch, saveSearchHistory]);
+
   const doSearch = useCallback(async (termToSearch: string) => {
     if (!termToSearch.trim()) return;
 
@@ -448,16 +537,44 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     setIsSearching(true);
     setCurrentSlang(null);
     setMeanings([]);
+    setSearchResults([]);
     setShowAddForm(false);
     markOnboardingStep('search_slang');
 
     try {
       const term = termToSearch.trim().toLowerCase();
-      // Try exact match first
+
+      // Client-side fuzzy search from cache
+      if (allSlangCache.length > 0) {
+        const matches = allSlangCache
+          .filter(s => {
+            const t = s.term.toLowerCase();
+            return t === term || t.includes(term) || term.includes(t);
+          })
+          .sort((a, b) => {
+            const aExact = a.term.toLowerCase() === term ? 0 : 1;
+            const bExact = b.term.toLowerCase() === term ? 0 : 1;
+            return aExact - bExact;
+          })
+          .slice(0, 10);
+
+        if (matches.length === 1) {
+          // Single match — go directly to it
+          await selectSlang(matches[0]);
+          setIsSearching(false);
+          return;
+        } else if (matches.length > 1) {
+          // Multiple matches — show list for user to pick
+          setSearchResults(matches);
+          setIsSearching(false);
+          return;
+        }
+      }
+
+      // Fallback: Firestore query
       let q = query(collection(db, 'slangs'), where('term', '==', term), limit(1));
       let snapshot = await getDocs(q);
 
-      // Fuzzy: prefix match if exact not found
       if (snapshot.empty) {
         q = query(
           collection(db, 'slangs'),
@@ -471,32 +588,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
       if (!snapshot.empty) {
         const slangDoc = snapshot.docs[0];
         const slangData = { id: slangDoc.id, ...slangDoc.data() } as Slang;
-        setCurrentSlang(slangData);
-        trackSearch(slangData.term);
-        
-        // Fetch meanings
-        const meaningsQ = query(
-          collection(db, 'slang_meanings'), 
-          where('slangId', '==', slangData.id),
-          where('status', '==', 'approved'),
-          orderBy('upvotes', 'desc')
-        );
-        
-        const unsubscribe = onSnapshot(meaningsQ, (meaningsSnapshot) => {
-          const fetchedMeanings = meaningsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SlangMeaning));
-          setMeanings(fetchedMeanings);
-        });
-        
-        // Check user upvotes
-        if (auth.currentUser) {
-          const upvotesQ = query(
-            collection(db, 'slang_upvotes'),
-            where('userId', '==', auth.currentUser.uid)
-          );
-          const upvotesSnapshot = await getDocs(upvotesQ);
-          const upvotedIds = new Set(upvotesSnapshot.docs.map(doc => doc.data().meaningId));
-          setUpvotedMeanings(upvotedIds);
-        }
+        await selectSlang(slangData);
       } else {
         // Not found
         setCurrentSlang(null);
@@ -806,7 +898,27 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
         <input
           type="text"
           value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          onChange={(e) => {
+            const val = e.target.value;
+            setSearchTerm(val);
+            // Typeahead suggestions
+            if (val.trim() && allSlangCache.length > 0) {
+              const q = val.trim().toLowerCase();
+              const suggestions = allSlangCache
+                .filter(s => s.term.toLowerCase().includes(q))
+                .slice(0, 6);
+              setSearchResults(suggestions.length > 0 && !currentSlang ? suggestions : []);
+            } else {
+              setSearchResults([]);
+            }
+          }}
+          onFocus={() => {
+            if (searchTerm.trim() && allSlangCache.length > 0 && !currentSlang) {
+              const q = searchTerm.trim().toLowerCase();
+              const suggestions = allSlangCache.filter(s => s.term.toLowerCase().includes(q)).slice(0, 6);
+              if (suggestions.length > 0) setSearchResults(suggestions);
+            }
+          }}
           placeholder={uiLang === 'zh' ? '搜索网络热词、梗...' : 'Search internet slang, memes...'}
           className="w-full bg-white/40 backdrop-blur-md border border-white/50 rounded-2xl py-4 pl-12 pr-4 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all shadow-sm"
         />
@@ -859,29 +971,14 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
         </div>
       )}
 
-      {/* Feed: recent entries + guidelines (shown when no search active) */}
+      {/* Feed: browse + guidelines (shown when no search active) */}
       {!searchTerm && !currentSlang && !showAddForm && (
         <div className="space-y-4">
-          {/* Guidelines toggle */}
-          <button
-            onClick={() => setShowGuidelines(!showGuidelines)}
-            className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-          >
-            📖 {uiLang === 'zh' ? (showGuidelines ? '收起贡献准则' : '查看贡献准则') : (showGuidelines ? 'Hide Guidelines' : 'View Contribution Guidelines')}
-          </button>
-          <AnimatePresence>
-            {showGuidelines && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
-                <SlangGuidelinesPanel uiLang={uiLang} />
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Recent entries feed */}
+          {/* Browse entries */}
           {recentSlangs.length > 0 && (
             <div>
               <h3 className="text-sm font-bold text-gray-500 mb-3">
-                {uiLang === 'zh' ? '🔥 最新词条' : '🔥 Recent Entries'}
+                {uiLang === 'zh' ? '🔥 浏览词条' : '🔥 Browse Entries'}
               </h3>
               <div className="flex flex-wrap gap-2">
                 {recentSlangs.map((slang) => (
@@ -896,10 +993,43 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
               </div>
             </div>
           )}
+
+          {/* Guidelines toggle */}
+          {auth.currentUser && (
+            <button
+              onClick={() => setShowGuidelines(!showGuidelines)}
+              className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+            >
+              📖 {uiLang === 'zh' ? (showGuidelines ? '收起贡献准则' : '查看贡献准则') : (showGuidelines ? 'Hide Guidelines' : 'View Contribution Guidelines')}
+            </button>
+          )}
+          <AnimatePresence>
+            {showGuidelines && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                <SlangGuidelinesPanel uiLang={uiLang} />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
 
-      {searchTerm && !isSearching && !currentSlang && !showAddForm && (
+      {/* Search suggestions dropdown */}
+      {searchResults.length > 0 && !currentSlang && searchTerm.trim() && (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-lg overflow-hidden -mt-2">
+          {searchResults.map(s => (
+            <button
+              key={s.id}
+              onClick={() => { selectSlang(s); setSearchResults([]); }}
+              className="w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors flex items-center justify-between border-b border-gray-50 last:border-0"
+            >
+              <span className="font-semibold text-gray-800">{s.term}</span>
+              <ChevronDown className="w-4 h-4 text-gray-300 -rotate-90" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {searchTerm && !isSearching && !currentSlang && !showAddForm && searchResults.length === 0 && (
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -1116,7 +1246,16 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                 {uiLang === 'zh' ? `解释 "${currentSlang?.term || searchTerm}"` : `Define "${currentSlang?.term || searchTerm}"`}
               </h3>
 
-              <SlangGuidelinesPanel uiLang={uiLang} compact />
+              {/* Example reference card */}
+              <div className="bg-blue-50/80 border border-blue-100 rounded-xl p-3 text-xs text-gray-600 space-y-1.5">
+                <p className="font-bold text-blue-700 text-sm">{uiLang === 'zh' ? '参考示例 💡' : 'Example for reference 💡'}</p>
+                <div className="bg-white/80 rounded-lg p-2.5 space-y-1">
+                  <p><span className="font-bold text-gray-800">{uiLang === 'zh' ? '词条：' : 'Term: '}</span>yyds</p>
+                  <p><span className="font-bold text-gray-800">{uiLang === 'zh' ? '含义：' : 'Meaning: '}</span>{uiLang === 'zh' ? '"永远的神"拼音首字母缩写，源自电竞圈，用于表达对某人或某物的极致推崇。' : '"Forever God" — acronym from Chinese gaming, used to express ultimate admiration.'}</p>
+                  <p><span className="font-bold text-gray-800">{uiLang === 'zh' ? '例句：' : 'Example: '}</span>{uiLang === 'zh' ? '这家面馆的味道真的YYDS，每次路过都要吃。' : 'This noodle shop is YYDS, I eat here every time I pass by.'}</p>
+                </div>
+                <p className="text-gray-400">{uiLang === 'zh' ? '写清楚来源、使用场景，像跟朋友解释一样自然就好！' : 'Write naturally, like explaining to a friend!'}</p>
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1125,7 +1264,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                 <textarea
                   value={newMeaning}
                   onChange={(e) => handleMeaningChange(e.target.value)}
-                  placeholder={uiLang === 'zh' ? '用通俗易懂的语言解释这个梗...' : 'Explain this slang...'}
+                  placeholder={uiLang === 'zh' ? '例：源自电竞圈的缩写，后来在全网流行，用来夸赞...' : 'e.g. An acronym from gaming that went viral, used to praise...'}
                   className="w-full bg-white/50 border border-white/50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500/50 min-h-[100px] resize-none"
                   required
                 />
@@ -1195,7 +1334,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                 <textarea
                   value={newExample}
                   onChange={(e) => setNewExample(e.target.value)}
-                  placeholder={uiLang === 'zh' ? '给出一个使用的例子...' : 'Provide an example sentence...'}
+                  placeholder={uiLang === 'zh' ? '例：这家面馆的味道真的YYDS，每次路过都要吃。' : 'e.g. This noodle shop is YYDS, I eat here every time.'}
                   className="w-full bg-white/50 border border-white/50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500/50 min-h-[80px] resize-none"
                 />
                 <p className="text-xs text-gray-500 mt-1">
