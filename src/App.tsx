@@ -435,10 +435,25 @@ export default function App() {
     handleTranslate(e);
   };
 
+  const [previousSearchWord, setPreviousSearchWord] = useState<string | null>(null);
+
   const handleSearchWord = (word: string) => {
+    // 记住跳转前的词
+    if (inputText.trim() && inputText.trim() !== word) {
+      setPreviousSearchWord(inputText.trim());
+    }
     setInputText(word);
     addToHistory(word);
     handleTranslate(undefined, word);
+  };
+
+  const handleGoBack = () => {
+    if (!previousSearchWord) return;
+    const backTo = previousSearchWord;
+    setPreviousSearchWord(null);
+    setInputText(backTo);
+    addToHistory(backTo);
+    handleTranslate(undefined, backTo);
   };
 
   useEffect(() => {
@@ -805,6 +820,17 @@ export default function App() {
                         )}
                       </div>
                     )}
+
+                  {/* Back to original word */}
+                  {previousSearchWord && (
+                    <button
+                      onClick={handleGoBack}
+                      className="flex items-center gap-1.5 text-sm font-bold text-blue-600 hover:text-blue-700 transition-colors mb-3"
+                    >
+                      <ChevronRight className="w-4 h-4 rotate-180" />
+                      {uiLang === 'zh' ? `返回「${previousSearchWord}」` : `Back to "${previousSearchWord}"`}
+                    </button>
+                  )}
 
                   {/* Header: original word + pronunciation + save */}
                   <div className="flex items-center justify-between mb-4 gap-3">
