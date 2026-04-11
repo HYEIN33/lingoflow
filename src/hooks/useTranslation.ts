@@ -39,9 +39,10 @@ export function useTranslation({
   const [formalityLevel, setFormalityLevel] = useState<number>(50);
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleTranslate = async (e?: React.FormEvent) => {
+  const handleTranslate = async (e?: React.FormEvent, overrideText?: string) => {
     e?.preventDefault();
-    if (!inputText.trim() || isTranslating) return;
+    const textToTranslate = overrideText || inputText;
+    if (!textToTranslate.trim() || isTranslating) return;
 
     if (userProfile && !userProfile.isPro && userProfile.translationCount >= 10) {
       onPaymentNeeded('translation_limit');
@@ -53,7 +54,7 @@ export function useTranslation({
     setSlangInsights([]);
     markOnboardingStep('translate_word');
     try {
-      const result = await translateText(inputText, userProfile?.isPro ? formalityLevel : undefined);
+      const result = await translateText(textToTranslate, userProfile?.isPro ? formalityLevel : undefined);
       setTranslationResult(result);
       setSelectedUsageIndex(0);
 

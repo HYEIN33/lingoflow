@@ -129,6 +129,7 @@ export interface UsageDefinition {
   meaningZh: string;
   examples: Example[];
   synonyms?: string[];
+  antonyms?: string[];
   alternatives?: string[];
   conjugations?: Conjugations;
 }
@@ -230,7 +231,7 @@ export async function translateText(text: string, formalityLevel?: number): Prom
     1. Provide a label (e.g., "Most Common").
     2. Provide the meaning in English and Chinese.
     3. Provide 2-3 example sentences with translations specific to this usage.
-    4. Provide a list of synonyms and alternative translations.
+    4. Provide a list of synonyms, antonyms, and alternative translations.
     5. If the word is a verb, provide conjugations (past tense, past participle, present participle, present perfect example, third person singular) in 'conjugations'. For present perfect, provide a short example like "have/has + past participle". If the past tense and past participle are the same word, combine them into one entry labeled "Past Tense / Past Participle".
     6. If the word is a noun, provide plural form in 'conjugations'.
     7. If the word is an adjective, provide comparative and superlative in 'conjugations'.
@@ -257,6 +258,7 @@ export async function translateText(text: string, formalityLevel?: number): Prom
               meaning: { type: Type.STRING },
               meaningZh: { type: Type.STRING },
               synonyms: { type: Type.ARRAY, items: { type: Type.STRING } },
+              antonyms: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of antonyms" },
               alternatives: { type: Type.ARRAY, items: { type: Type.STRING } },
               conjugations: { type: Type.OBJECT, description: "Verb tenses, noun plurals, or adjective forms", properties: {
                 pastTense: { type: Type.STRING },

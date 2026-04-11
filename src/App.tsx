@@ -438,8 +438,7 @@ export default function App() {
   const handleSearchWord = (word: string) => {
     setInputText(word);
     addToHistory(word);
-    // Trigger translate after setting text
-    setTimeout(() => handleTranslate(), 50);
+    handleTranslate(undefined, word);
   };
 
   useEffect(() => {
@@ -897,7 +896,7 @@ export default function App() {
                                   </h3>
                                   <div className="flex flex-wrap gap-2">
                                     {translationResult.usages[selectedUsageIndex].synonyms.map((syn, i) => (
-                                      <button key={i} onClick={() => { setInputText(syn); handleTranslate(); }} className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-blue-100 hover:text-blue-600 transition-colors cursor-pointer">
+                                      <button key={i} onClick={() => handleSearchWord(syn)} className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-blue-100 hover:text-blue-600 transition-colors cursor-pointer">
                                         {syn}
                                       </button>
                                     ))}
@@ -912,8 +911,24 @@ export default function App() {
                                   </h3>
                                   <div className="flex flex-wrap gap-2">
                                     {translationResult.usages[selectedUsageIndex].alternatives.map((alt, i) => (
-                                      <button key={i} onClick={() => { setInputText(alt); handleTranslate(); }} className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-blue-100 hover:text-blue-700 transition-colors cursor-pointer">
+                                      <button key={i} onClick={() => handleSearchWord(alt)} className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-blue-100 hover:text-blue-700 transition-colors cursor-pointer">
                                         {alt}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Antonyms */}
+                              {(translationResult.usages[selectedUsageIndex] as any).antonyms && (translationResult.usages[selectedUsageIndex] as any).antonyms.length > 0 && (
+                                <div>
+                                  <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
+                                    {uiLang === 'zh' ? '反义词' : 'Antonyms'}
+                                  </h3>
+                                  <div className="flex flex-wrap gap-2">
+                                    {(translationResult.usages[selectedUsageIndex] as any).antonyms.map((ant: string, i: number) => (
+                                      <button key={i} onClick={() => handleSearchWord(ant)} className="bg-red-50 text-red-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-red-100 hover:text-red-700 transition-colors cursor-pointer">
+                                        {ant}
                                       </button>
                                     ))}
                                   </div>
@@ -956,7 +971,7 @@ export default function App() {
                                     </h3>
                                     <div className="flex flex-wrap gap-2">
                                       {entries.map(({ key, label, value }) => (
-                                        <button key={key} onClick={() => { setInputText(value.replace(/^have\/has\s+/, '')); handleTranslate(); }} className="bg-purple-50 text-purple-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors cursor-pointer border border-purple-100">
+                                        <button key={key} onClick={() => handleSearchWord(value.replace(/^have\/has\s+/, ''))} className="bg-purple-50 text-purple-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-purple-100 transition-colors cursor-pointer border border-purple-100">
                                           <span className="text-[10px] text-purple-400 mr-1.5 font-bold">{label}</span>
                                           {value}
                                         </button>
