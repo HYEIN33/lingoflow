@@ -762,7 +762,7 @@ export default function App() {
                   >
                     {/* Dual Column Translation */}
                     {(translationResult.authenticTranslation || translationResult.academicTranslation) && (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                         {/* Authentic Column */}
                         {translationResult.authenticTranslation && (
                           <div className="bg-blue-50/50 rounded-2xl p-6 border border-blue-100 relative overflow-hidden">
