@@ -20,12 +20,11 @@ import {
   MessageSquare,
   Zap,
   Trophy,
-  UserCircle,
-  Phone
+  UserCircle
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
-import { db, signIn, logOut, sendPhoneCode, ConfirmationResult } from './firebase';
+import { db, signIn, logOut, emailSignUp, emailSignIn, resetPassword } from './firebase';
 import {
   TranslationResult,
   checkGrammar,
@@ -134,41 +133,58 @@ import ReviewPage from './pages/ReviewPage';
 import WordbookPage from './pages/WordbookPage';
 
 function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
-  const [mode, setMode] = useState<'main' | 'phone'>('main');
-  const [phoneNumber, setPhoneNumber] = useState('+86 ');
-  const [verificationCode, setVerificationCode] = useState('');
-  const [confirmResult, setConfirmResult] = useState<ConfirmationResult | null>(null);
-  const [phoneError, setPhoneError] = useState('');
-  const [phoneSending, setPhoneSending] = useState(false);
+  const [mode, setMode] = useState<'main' | 'email'>('main');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
-  const handleSendCode = async () => {
-    setPhoneError('');
-    setPhoneSending(true);
-    try {
-      const cleaned = phoneNumber.replace(/\s/g, '');
-      if (cleaned.length < 8) {
-        setPhoneError(uiLang === 'zh' ? '请输入有效的手机号' : 'Please enter a valid phone number');
-        setPhoneSending(false);
-        return;
-      }
-      const result = await sendPhoneCode(cleaned, 'recaptcha-container');
-      setConfirmResult(result);
-    } catch (e: any) {
-      setPhoneError(e.message || 'Failed to send code');
+  const handleEmailAuth = async () => {
+    setError('');
+    if (!email || !password) {
+      setError(uiLang === 'zh' ? '请输入邮箱和密码' : 'Please enter email and password');
+      return;
     }
-    setPhoneSending(false);
+    if (password.length < 6) {
+      setError(uiLang === 'zh' ? '密码至少 6 位' : 'Password must be at least 6 characters');
+      return;
+    }
+    setLoading(true);
+    try {
+      if (isSignUp) {
+        await emailSignUp(email, password);
+      } else {
+        await emailSignIn(email, password);
+      }
+    } catch (e: any) {
+      const code = e.code || '';
+      if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
+        setError(uiLang === 'zh' ? '账号不存在或密码错误' : 'Account not found or wrong password');
+      } else if (code === 'auth/email-already-in-use') {
+        setError(uiLang === 'zh' ? '该邮箱已注册，请直接登录' : 'Email already registered, please sign in');
+      } else if (code === 'auth/invalid-email') {
+        setError(uiLang === 'zh' ? '邮箱格式不正确' : 'Invalid email format');
+      } else {
+        setError(e.message || 'Authentication failed');
+      }
+    }
+    setLoading(false);
   };
 
-  const handleVerifyCode = async () => {
-    if (!confirmResult) return;
-    setPhoneError('');
-    setPhoneSending(true);
-    try {
-      await confirmResult.confirm(verificationCode);
-    } catch (e: any) {
-      setPhoneError(uiLang === 'zh' ? '验证码错误，请重试' : 'Invalid code, please try again');
+  const handleReset = async () => {
+    if (!email) {
+      setError(uiLang === 'zh' ? '请先输入邮箱' : 'Please enter your email first');
+      return;
     }
-    setPhoneSending(false);
+    try {
+      await resetPassword(email);
+      setResetSent(true);
+      setError('');
+    } catch (e: any) {
+      setError(uiLang === 'zh' ? '发送失败，请检查邮箱' : 'Failed to send reset email');
+    }
   };
 
   return (
@@ -194,77 +210,77 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
               {uiLang === 'zh' ? 'Google 账号登录' : 'Sign in with Google'}
             </button>
             <button
-              onClick={() => setMode('phone')}
-              className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-green-200"
+              onClick={() => setMode('email')}
+              className="w-full bg-gray-800 hover:bg-gray-900 text-white font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-gray-200"
             >
-              <Phone className="w-5 h-5" />
-              {uiLang === 'zh' ? '手机号登录' : 'Sign in with Phone'}
+              <LogIn className="w-5 h-5" />
+              {uiLang === 'zh' ? '邮箱登录 / 注册' : 'Sign in with Email'}
             </button>
           </div>
         ) : (
           <div className="space-y-4 text-left">
-            <button onClick={() => { setMode('main'); setConfirmResult(null); setPhoneError(''); }} className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+            <button onClick={() => { setMode('main'); setError(''); setResetSent(false); }} className="text-sm text-blue-600 hover:text-blue-700 font-medium">
               ← {uiLang === 'zh' ? '返回' : 'Back'}
             </button>
 
-            {!confirmResult ? (
-              <>
-                <label className="block text-sm font-bold text-gray-700 mb-1">
-                  {uiLang === 'zh' ? '手机号码' : 'Phone Number'}
-                </label>
-                <input
-                  type="tel"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  placeholder="+86 13800138000"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-lg"
-                />
-                <p className="text-xs text-gray-400">
-                  {uiLang === 'zh' ? '请输入完整手机号（含国际区号）' : 'Include country code (e.g. +86)'}
-                </p>
-                <button
-                  onClick={handleSendCode}
-                  disabled={phoneSending}
-                  className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
-                >
-                  {phoneSending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  {uiLang === 'zh' ? '发送验证码' : 'Send Code'}
+            <h3 className="text-lg font-bold text-gray-900">
+              {isSignUp ? (uiLang === 'zh' ? '注册新账号' : 'Create Account') : (uiLang === 'zh' ? '邮箱登录' : 'Sign In')}
+            </h3>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{uiLang === 'zh' ? '邮箱' : 'Email'}</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{uiLang === 'zh' ? '密码' : 'Password'}</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={isSignUp ? (uiLang === 'zh' ? '至少 6 位' : 'At least 6 characters') : '••••••'}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                onKeyDown={(e) => e.key === 'Enter' && handleEmailAuth()}
+              />
+            </div>
+
+            <button
+              onClick={handleEmailAuth}
+              disabled={loading}
+              className="w-full bg-gray-800 hover:bg-gray-900 disabled:bg-gray-400 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
+            >
+              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+              {isSignUp ? (uiLang === 'zh' ? '注册' : 'Sign Up') : (uiLang === 'zh' ? '登录' : 'Sign In')}
+            </button>
+
+            <div className="flex items-center justify-between text-sm">
+              <button onClick={() => { setIsSignUp(!isSignUp); setError(''); }} className="text-blue-600 hover:text-blue-700 font-medium">
+                {isSignUp ? (uiLang === 'zh' ? '已有账号？登录' : 'Have an account? Sign in') : (uiLang === 'zh' ? '没有账号？注册' : 'No account? Sign up')}
+              </button>
+              {!isSignUp && (
+                <button onClick={handleReset} className="text-gray-500 hover:text-gray-700">
+                  {uiLang === 'zh' ? '忘记密码' : 'Forgot password'}
                 </button>
-              </>
-            ) : (
-              <>
-                <label className="block text-sm font-bold text-gray-700 mb-1">
-                  {uiLang === 'zh' ? '输入验证码' : 'Enter Verification Code'}
-                </label>
-                <input
-                  type="text"
-                  value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  placeholder="123456"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-lg tracking-widest text-center"
-                  maxLength={6}
-                />
-                <button
-                  onClick={handleVerifyCode}
-                  disabled={phoneSending || verificationCode.length < 6}
-                  className="w-full bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
-                >
-                  {phoneSending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  {uiLang === 'zh' ? '验证并登录' : 'Verify & Sign In'}
-                </button>
-                <button onClick={() => { setConfirmResult(null); setVerificationCode(''); }} className="w-full text-sm text-gray-500 hover:text-gray-700 py-2">
-                  {uiLang === 'zh' ? '重新发送' : 'Resend Code'}
-                </button>
-              </>
+              )}
+            </div>
+
+            {resetSent && (
+              <p className="text-sm text-green-600 bg-green-50 rounded-xl px-4 py-2">
+                {uiLang === 'zh' ? '重置邮件已发送，请查收' : 'Reset email sent, please check your inbox'}
+              </p>
             )}
 
-            {phoneError && (
-              <p className="text-sm text-red-500 bg-red-50 rounded-xl px-4 py-2">{phoneError}</p>
+            {error && (
+              <p className="text-sm text-red-500 bg-red-50 rounded-xl px-4 py-2">{error}</p>
             )}
           </div>
         )}
       </motion.div>
-      <div id="recaptcha-container"></div>
     </div>
   );
 }
@@ -431,15 +447,6 @@ export default function App() {
             >
               <UserCircle className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
-            {!userProfile?.isPro && (
-              <button 
-                onClick={handleUpgrade}
-                className="hidden xs:flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100"
-              >
-                <Zap className="w-3 h-3 fill-current" />
-                {t.upgradePro}
-              </button>
-            )}
             <button 
               onClick={() => setUiLang(uiLang === 'en' ? 'zh' : 'en')}
               className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 hover:bg-gray-50 rounded-lg transition-colors text-gray-500 text-xs sm:text-sm font-medium"
@@ -986,6 +993,23 @@ export default function App() {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
             >
+              {!userProfile?.isPro && (
+                <button
+                  onClick={() => { setPaymentTrigger('default'); setShowPayment(true); }}
+                  className="w-full mb-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl p-4 flex items-center justify-between shadow-lg shadow-blue-200 hover:from-blue-700 hover:to-indigo-700 transition-all"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                      <Zap className="w-5 h-5 fill-current" />
+                    </div>
+                    <div className="text-left">
+                      <div className="font-bold text-sm">{uiLang === 'zh' ? '升级 Pro' : 'Upgrade to Pro'}</div>
+                      <div className="text-xs text-blue-100">{uiLang === 'zh' ? '解锁无限翻译、复习系统、语气调节' : 'Unlimited translations, review & more'}</div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-blue-200" />
+                </button>
+              )}
               <UserProfileComponent
                 uid={user.uid}
                 userProfile={userProfile}
@@ -1009,11 +1033,18 @@ export default function App() {
               currentPlan={userProfile?.isPro ? 'pro' : 'free'}
               uiLang={uiLang}
               onClose={() => setShowPayment(false)}
-              onSuccess={() => {
+              onSuccess={async () => {
                 setShowPayment(false);
-                if (userProfile) {
-                  setUserProfile({ ...userProfile, isPro: true });
-                  updateDoc(doc(db, 'users', user.uid), { isPro: true });
+                if (userProfile && user) {
+                  const updated = { ...userProfile, isPro: true };
+                  setUserProfile(updated);
+                  try {
+                    await updateDoc(doc(db, 'users', user.uid), { isPro: true });
+                  } catch (e) {
+                    console.error('Failed to update Pro status:', e);
+                    // Force reload to sync
+                    window.location.reload();
+                  }
                 }
               }}
             />

@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, signOut, signInWithPhoneNumber, RecaptchaVerifier, ConfirmationResult } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getAnalytics, logEvent as firebaseLogEvent } from 'firebase/analytics';
@@ -20,7 +20,6 @@ export function logEvent(name: string, params?: Record<string, any>) {
 const isDev = import.meta.env.DEV;
 
 export const signIn = () => {
-  // Headless browser / QA test mode: skip popup, go straight to anonymous
   if (isDev && new URLSearchParams(window.location.search).has('qa')) {
     return signInAnonymously(auth);
   }
@@ -40,22 +39,19 @@ export const signIn = () => {
 };
 export const logOut = () => signOut(auth);
 
-// Phone auth
-let recaptchaVerifier: RecaptchaVerifier | null = null;
-
-export function getRecaptchaVerifier(containerId: string): RecaptchaVerifier {
-  if (recaptchaVerifier) {
-    recaptchaVerifier.clear();
-  }
-  recaptchaVerifier = new RecaptchaVerifier(auth, containerId, { size: 'invisible' });
-  return recaptchaVerifier;
-}
-
-export async function sendPhoneCode(phoneNumber: string, containerId: string): Promise<ConfirmationResult> {
-  const verifier = getRecaptchaVerifier(containerId);
-  const result = await signInWithPhoneNumber(auth, phoneNumber, verifier);
-  logEvent('phone_code_sent');
+// Email auth
+export async function emailSignUp(email: string, password: string) {
+  const result = await createUserWithEmailAndPassword(auth, email, password);
+  logEvent('login', { method: 'email_signup' });
   return result;
 }
 
-export type { ConfirmationResult };
+export async function emailSignIn(email: string, password: string) {
+  const result = await signInWithEmailAndPassword(auth, email, password);
+  logEvent('login', { method: 'email' });
+  return result;
+}
+
+export async function resetPassword(email: string) {
+  await sendPasswordResetEmail(auth, email);
+}
