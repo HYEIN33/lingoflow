@@ -120,12 +120,10 @@ export function useTranslation({
         createdAt: Timestamp.now()
       };
 
-      // Spaced Repetition fields for Pro users
-      if (userProfile?.isPro) {
-        wordData.nextReviewDate = Timestamp.now();
-        wordData.interval = 0;
-        wordData.easeFactor = 2.5;
-      }
+      // Spaced Repetition fields — always add so words are reviewable
+      wordData.nextReviewDate = Timestamp.now();
+      wordData.interval = 0;
+      wordData.easeFactor = 2.5;
 
       await addDoc(collection(db, 'words'), wordData);
 

@@ -10,9 +10,14 @@ export function useReview(user: User | null, userProfile: UserProfile | null, sa
   const [showReviewAnswer, setShowReviewAnswer] = useState(false);
 
   const dueWords = savedWords.filter(word => {
-    if (!word.nextReviewDate) return false;
-    const nextDate = word.nextReviewDate.toDate();
-    return nextDate <= new Date();
+    // Words without nextReviewDate are also due (legacy words before Pro)
+    if (!word.nextReviewDate) return true;
+    try {
+      const nextDate = word.nextReviewDate.toDate();
+      return nextDate <= new Date();
+    } catch {
+      return true;
+    }
   });
 
   const currentReviewWord = dueWords[reviewIndex];
