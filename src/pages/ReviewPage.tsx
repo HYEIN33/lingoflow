@@ -56,9 +56,11 @@ export default function ReviewPage(props: ReviewPageProps) {
   }, [chatMessages]);
 
   const handleChatSend = async () => {
-    if (!chatInput.trim() || chatLoading || !onAiChat || !currentReviewWord) return;
+    if (!chatInput.trim() || chatLoading || !onAiChat) return;
     const q = chatInput.trim();
-    const contextPrefix = `[用户正在复习单词 "${currentReviewWord.original}"（${currentReviewWord.usages[0]?.meaningZh || ''}）] `;
+    const contextPrefix = currentReviewWord
+      ? `[用户正在复习单词 "${currentReviewWord.original}"（${currentReviewWord.usages[0]?.meaningZh || ''}）] `
+      : '';
     const newMessages: { role: 'user' | 'ai'; text: string }[] = [...chatMessages, { role: 'user', text: q }];
     setChatMessages(newMessages);
     setChatInput('');
@@ -282,84 +284,6 @@ export default function ReviewPage(props: ReviewPageProps) {
               </AnimatePresence>
             </div>
 
-            {/* AI Chat integrated into review */}
-            {onAiChat && (
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <button
-                  onClick={() => setShowChat(!showChat)}
-                  className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-indigo-500" />
-                    <span className="text-sm font-bold text-gray-700">
-                      {uiLang === 'zh' ? 'AI 复习助手' : 'AI Review Assistant'}
-                    </span>
-                  </div>
-                  <span className="text-xs text-gray-400">
-                    {showChat ? (uiLang === 'zh' ? '收起' : 'Collapse') : (uiLang === 'zh' ? `关于「${currentReviewWord.original}」提问` : `Ask about "${currentReviewWord.original}"`)}
-                  </span>
-                </button>
-                {showChat && (
-                  <div className="border-t border-gray-100">
-                    {/* Quick action buttons */}
-                    {chatMessages.length === 0 && (
-                      <div className="p-3 flex flex-wrap gap-2">
-                        {[
-                          uiLang === 'zh' ? '怎么记住这个词？' : 'How to remember this?',
-                          uiLang === 'zh' ? '造几个句子' : 'Make some sentences',
-                          uiLang === 'zh' ? '有哪些易混词？' : 'Similar words?',
-                          uiLang === 'zh' ? '词根词缀分析' : 'Root/prefix analysis',
-                        ].map((q, i) => (
-                          <button
-                            key={i}
-                            onClick={() => { setChatInput(q); setTimeout(() => handleChatSend(), 50); }}
-                            className="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg font-medium hover:bg-indigo-100 transition-colors"
-                          >
-                            {q}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {/* Messages */}
-                    <div className="max-h-[40vh] overflow-y-auto p-4 space-y-3">
-                      {chatMessages.map((msg, i) => (
-                        <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                          <div className={`max-w-[85%] px-3.5 py-2 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
-                            {msg.role === 'ai' ? (
-                              <ReactMarkdown className="prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0 [&>p+p]:mt-2">{msg.text}</ReactMarkdown>
-                            ) : msg.text}
-                          </div>
-                        </div>
-                      ))}
-                      {chatLoading && (
-                        <div className="flex justify-start">
-                          <div className="bg-gray-100 px-3.5 py-2 rounded-2xl"><Loader2 className="w-4 h-4 animate-spin text-gray-400" /></div>
-                        </div>
-                      )}
-                      <div ref={chatEndRef} />
-                    </div>
-                    {/* Input */}
-                    <div className="border-t border-gray-100 p-3 flex gap-2">
-                      <input
-                        type="text"
-                        value={chatInput}
-                        onChange={(e) => setChatInput(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleChatSend()}
-                        placeholder={uiLang === 'zh' ? `关于「${currentReviewWord.original}」的问题...` : `Ask about "${currentReviewWord.original}"...`}
-                        className="flex-1 px-3.5 py-2 rounded-xl border border-gray-200 outline-none focus:border-indigo-400 text-sm"
-                      />
-                      <button
-                        onClick={handleChatSend}
-                        disabled={chatLoading || !chatInput.trim()}
-                        className="bg-indigo-600 text-white px-3.5 py-2 rounded-xl disabled:opacity-50 text-sm font-bold shrink-0"
-                      >
-                        <Send className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
           </>
           ) : reviewedCount > 0 ? (
             <div className="text-center py-16 bg-white rounded-3xl border border-gray-100 shadow-sm space-y-4">
@@ -380,6 +304,96 @@ export default function ReviewPage(props: ReviewPageProps) {
               <h3 className="text-lg font-bold text-gray-900 mb-2">{uiLang === 'zh' ? '太棒了！' : 'Well done!'}</h3>
               <p className="text-gray-400">{uiLang === 'zh' ? '目前没有需要复习的单词。' : 'No words due for review right now.'}</p>
               <p className="text-gray-300 text-sm mt-2">{uiLang === 'zh' ? '去翻译页面保存单词，系统会自动安排复习' : 'Save words from the Translate tab to start reviewing'}</p>
+            </div>
+          )}
+
+          {/* AI Chat — always visible in review tab */}
+          {onAiChat && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <button
+                onClick={() => setShowChat(!showChat)}
+                className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-500" />
+                  <span className="text-sm font-bold text-gray-700">
+                    {uiLang === 'zh' ? 'AI 复习助手' : 'AI Review Assistant'}
+                  </span>
+                </div>
+                <span className="text-xs text-gray-400">
+                  {showChat
+                    ? (uiLang === 'zh' ? '收起' : 'Collapse')
+                    : currentReviewWord
+                      ? (uiLang === 'zh' ? `关于「${currentReviewWord.original}」提问` : `Ask about "${currentReviewWord.original}"`)
+                      : (uiLang === 'zh' ? '自由提问语言学习问题' : 'Ask any language question')}
+                </span>
+              </button>
+              {showChat && (
+                <div className="border-t border-gray-100">
+                  {/* Quick action buttons */}
+                  {chatMessages.length === 0 && (
+                    <div className="p-3 flex flex-wrap gap-2">
+                      {(currentReviewWord ? [
+                        uiLang === 'zh' ? '怎么记住这个词？' : 'How to remember this?',
+                        uiLang === 'zh' ? '造几个句子' : 'Make some sentences',
+                        uiLang === 'zh' ? '有哪些易混词？' : 'Similar words?',
+                        uiLang === 'zh' ? '词根词缀分析' : 'Root/prefix analysis',
+                      ] : [
+                        uiLang === 'zh' ? '今天学什么好？' : 'What should I learn today?',
+                        uiLang === 'zh' ? '推荐一些高频词汇' : 'Recommend high-frequency words',
+                        uiLang === 'zh' ? '怎么提高英语口语？' : 'How to improve speaking?',
+                        uiLang === 'zh' ? '语法常见错误有哪些？' : 'Common grammar mistakes?',
+                      ]).map((q, i) => (
+                        <button
+                          key={i}
+                          onClick={() => { setChatInput(q); }}
+                          className="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg font-medium hover:bg-indigo-100 transition-colors"
+                        >
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {/* Messages */}
+                  <div className="max-h-[40vh] overflow-y-auto p-4 space-y-3">
+                    {chatMessages.map((msg, i) => (
+                      <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[85%] px-3.5 py-2 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
+                          {msg.role === 'ai' ? (
+                            <ReactMarkdown className="prose prose-sm max-w-none [&>p]:m-0 [&>ul]:m-0 [&>ol]:m-0 [&>p+p]:mt-2">{msg.text}</ReactMarkdown>
+                          ) : msg.text}
+                        </div>
+                      </div>
+                    ))}
+                    {chatLoading && (
+                      <div className="flex justify-start">
+                        <div className="bg-gray-100 px-3.5 py-2 rounded-2xl"><Loader2 className="w-4 h-4 animate-spin text-gray-400" /></div>
+                      </div>
+                    )}
+                    <div ref={chatEndRef} />
+                  </div>
+                  {/* Input */}
+                  <div className="border-t border-gray-100 p-3 flex gap-2">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleChatSend()}
+                      placeholder={currentReviewWord
+                        ? (uiLang === 'zh' ? `关于「${currentReviewWord.original}」的问题...` : `Ask about "${currentReviewWord.original}"...`)
+                        : (uiLang === 'zh' ? '问任何语言学习问题...' : 'Ask any language question...')}
+                      className="flex-1 px-3.5 py-2 rounded-xl border border-gray-200 outline-none focus:border-indigo-400 text-sm"
+                    />
+                    <button
+                      onClick={handleChatSend}
+                      disabled={chatLoading || !chatInput.trim()}
+                      className="bg-indigo-600 text-white px-3.5 py-2 rounded-xl disabled:opacity-50 text-sm font-bold shrink-0"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>
