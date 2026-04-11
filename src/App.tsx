@@ -766,7 +766,8 @@ export default function App() {
               {/* Translation Result */}
               {translationResult && (() => {
                 // Detect if input is a sentence/paragraph (not a single word)
-                const isSentence = inputText.trim().split(/\s+/).length > 3 || inputText.trim().length > 20;
+                const txt = (inputText || '').trim();
+                const isSentence = txt.split(/\s+/).length > 3 || txt.length > 20;
 
                 return (
                 <div className={cn("grid grid-cols-1 gap-8", !isSentence && "lg:grid-cols-3")}>

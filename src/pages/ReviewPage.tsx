@@ -81,7 +81,7 @@ export default function ReviewPage(props: ReviewPageProps) {
 
   return (
     <div className="space-y-6">
-      {!userProfile?.isPro && !userProfile?.hasCompletedOnboarding ? (
+      {!userProfile?.isPro ? (
         <div className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center space-y-6 max-w-md mx-auto mt-12">
           <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto">
             <BookOpen className="w-10 h-10 text-blue-500" />
@@ -91,20 +91,15 @@ export default function ReviewPage(props: ReviewPageProps) {
           </h3>
           <p className="text-gray-500">
             {uiLang === 'zh'
-              ? '基于 SM-2 算法的智能复习系统，帮助你将短期记忆转化为长期记忆。'
-              : 'Smart review system based on SM-2 algorithm to help you convert short-term memory into long-term memory.'}
+              ? '基于 SM-2 算法的智能复习系统，帮助你将短期记忆转化为长期记忆。升级 Pro 即可使用。'
+              : 'Smart review system based on SM-2 algorithm. Upgrade to Pro to unlock.'}
           </p>
-          <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4">
-            <p className="text-amber-800 font-bold mb-2">
-              {uiLang === 'zh' ? '完成首次梗百科贡献，解锁 7 天试用' : 'Complete your first Slang Dictionary contribution to unlock a 7-day trial'}
-            </p>
-            <button
-              onClick={onOpenOnboarding}
-              className="w-full bg-amber-500 text-white py-3 rounded-xl font-bold hover:bg-amber-600 transition-colors shadow-lg shadow-amber-200"
-            >
-              {uiLang === 'zh' ? '去贡献词条' : 'Contribute Now'}
-            </button>
-          </div>
+          <button
+            onClick={() => onOpenPayment('review')}
+            className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200"
+          >
+            {uiLang === 'zh' ? '升级 Pro' : 'Upgrade to Pro'}
+          </button>
         </div>
       ) : (
         <>
