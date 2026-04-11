@@ -87,6 +87,20 @@ export function useAuth() {
           }
         } catch (error) {
           console.error('Failed to sync user profile:', error);
+          // Fallback: create minimal profile from localStorage cache
+          const cachedPro = localStorage.getItem('memeflow_isPro') === 'true';
+          setUserProfile({
+            userId: firebaseUser.uid,
+            isPro: cachedPro,
+            translationCount: 0,
+            grammarCount: 0,
+            lastResetDate: new Date().toISOString().split('T')[0],
+            approvedSlangCount: 0,
+            currentStreak: 0,
+            reputationScore: 100,
+            l1PenaltyCount: 0,
+            hasCompletedOnboarding: cachedPro,
+          });
         }
 
         // Test connection

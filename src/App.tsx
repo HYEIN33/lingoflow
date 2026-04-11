@@ -1297,6 +1297,8 @@ export default function App() {
                   } catch (e) {
                     console.error('Failed to update Pro:', e);
                   }
+                  // Cache Pro status locally in case DB write fails (quota etc)
+                  localStorage.setItem('memeflow_isPro', 'true');
                 }
                 window.location.reload();
               }}
