@@ -38,13 +38,13 @@ export default function PaymentScreen({
   };
 
   const handlePay = () => {
-    if (!paymentMethod) return;
+    // Test mode: auto-succeed without real payment
     setIsProcessing(true);
     setTimeout(() => {
       setIsProcessing(false);
       setIsSuccess(true);
-      setTimeout(() => { onSuccess(); }, 2000);
-    }, 2000);
+      setTimeout(() => { onSuccess(); }, 1500);
+    }, 1000);
   };
 
   if (isSuccess) {
@@ -68,12 +68,13 @@ export default function PaymentScreen({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm overflow-y-auto">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/30 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="min-h-full flex items-start sm:items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-        className="bg-white rounded-3xl w-full max-w-4xl relative overflow-hidden border border-gray-200 shadow-2xl my-8"
+        className="bg-white rounded-3xl w-full max-w-4xl relative border border-gray-200 shadow-2xl my-4 sm:my-8"
       >
-        <button onClick={onClose} className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 bg-gray-50 rounded-full z-10 transition-colors">
+        <button onClick={onClose} className="sticky top-4 float-right mr-4 mt-4 p-2.5 text-gray-600 hover:text-gray-900 bg-white border border-gray-200 rounded-full z-20 transition-colors shadow-sm">
           <X className="w-5 h-5" />
         </button>
 
@@ -218,10 +219,14 @@ export default function PaymentScreen({
         </AnimatePresence>
 
         {/* Footer */}
-        <div className="p-4 text-center bg-gray-50 border-t border-gray-100">
+        <div className="p-4 text-center bg-gray-50 border-t border-gray-100 space-y-2">
           <p className="text-xs text-gray-400">{uiLang === 'zh' ? '贡献 1500 积分可兑换永久 Pro' : 'Earn 1500 points to redeem permanent Pro'}</p>
+          <button onClick={onClose} className="text-sm text-gray-500 hover:text-gray-700 font-medium py-1">
+            {uiLang === 'zh' ? '← 返回' : '← Back'}
+          </button>
         </div>
       </motion.div>
+      </div>
     </div>
   );
 }

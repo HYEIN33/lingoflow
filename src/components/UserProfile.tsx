@@ -332,7 +332,7 @@ export default function UserProfile({
     }
   };
 
-  const unlockedAchievements = ACHIEVEMENTS; // All achievements unlocked by default
+  const unlockedAchievements = ACHIEVEMENTS.filter(a => userProfile && a.condition(userProfile));
 
   return (
     <div className="space-y-6">
@@ -481,7 +481,7 @@ export default function UserProfile({
         <p className="text-[10px] text-gray-400 mb-3">{uiLang === 'zh' ? '点击勋章佩戴 / 取消佩戴' : 'Click a badge to equip / unequip'}</p>
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
           {ACHIEVEMENTS.map((achievement) => {
-            const unlocked = true;
+            const unlocked = userProfile ? achievement.condition(userProfile) : false;
             const isEquipped = equippedBadge === achievement.id;
             return (
               <button
@@ -495,6 +495,9 @@ export default function UserProfile({
                 <span className={`text-[10px] font-medium text-center leading-tight ${isEquipped ? 'text-blue-600 font-bold' : unlocked ? 'text-gray-700' : 'text-gray-400'}`}>
                   {uiLang === 'zh' ? achievement.name : achievement.nameEn}
                 </span>
+                {!unlocked && (
+                  <span className="text-[9px] text-gray-400 text-center leading-tight">{achievement.requirement}</span>
+                )}
                 {isEquipped && (
                   <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
                     <Check className="w-2.5 h-2.5 text-white" />

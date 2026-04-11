@@ -33,22 +33,29 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
     setIsLoading(true);
     const q = query(collection(db, 'users'), orderBy('approvedSlangCount', 'desc'), limit(20));
     const unsub = onSnapshot(q, (snap) => {
-      const users = snap.docs.map((d, index) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          username: data.displayName || (d.id === currentUserId ? (uiLang === 'zh' ? '你' : 'You') : 'Anonymous'),
-          weeklyScore: (data.approvedSlangCount || 0) * 10 + (data.currentStreak || 0) * 5,
-          weeklyCount: data.approvedSlangCount || 0,
-          totalScore: (data.approvedSlangCount || 0) * 10 + (data.reputationScore || 100),
-          totalCount: data.approvedSlangCount || 0,
-          avgQuality: data.reputationScore || 100,
-          monthlyCount: data.approvedSlangCount || 0,
-          likes: 0,
-          topEntries: [],
-          trend: data.currentStreak > 0 ? data.currentStreak : 0,
-        };
-      });
+      const users = snap.docs
+        .filter(d => {
+          const data = d.data();
+          // Only show real users: must have a display name or be current user
+          const isReal = data.displayName && data.displayName !== 'Anonymous';
+          return (isReal || d.id === currentUserId) && (data.approvedSlangCount || 0) > 0;
+        })
+        .map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            username: data.displayName || (d.id === currentUserId ? (uiLang === 'zh' ? '你' : 'You') : `${uiLang === 'zh' ? '用户' : 'User'} ${d.id.slice(0, 4)}`),
+            weeklyScore: (data.approvedSlangCount || 0) * 10 + (data.currentStreak || 0) * 5,
+            weeklyCount: data.approvedSlangCount || 0,
+            totalScore: (data.approvedSlangCount || 0) * 10 + (data.reputationScore || 100),
+            totalCount: data.approvedSlangCount || 0,
+            avgQuality: data.reputationScore || 100,
+            monthlyCount: data.approvedSlangCount || 0,
+            likes: 0,
+            topEntries: [],
+            trend: data.currentStreak > 0 ? data.currentStreak : 0,
+          };
+        });
       setGroupData(users.slice(0, 10));
       setGlobalData(users);
       setMonthlyData(users.slice(0, 5));

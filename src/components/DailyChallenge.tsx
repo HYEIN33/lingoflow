@@ -20,7 +20,7 @@ interface SlangMeaning {
 }
 
 export function DailyChallenge({ uiLang }: DailyChallengeProps) {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [slang, setSlang] = useState<SlangEntry | null>(null);
   const [meanings, setMeanings] = useState<SlangMeaning[]>([]);
   const [revealed, setRevealed] = useState(false);
@@ -33,6 +33,7 @@ export function DailyChallenge({ uiLang }: DailyChallengeProps) {
     // Check if already completed today
     if (localStorage.getItem(todayKey)) {
       setCompleted(true);
+      setIsExpanded(false);
       setLoading(false);
       return;
     }
@@ -79,9 +80,10 @@ export function DailyChallenge({ uiLang }: DailyChallengeProps) {
       console.error('Error fetching meanings:', error);
     }
 
-    // Mark as completed
+    // Mark as completed and auto-collapse after delay
     localStorage.setItem(todayKey, 'true');
     setCompleted(true);
+    setTimeout(() => setIsExpanded(false), 2000);
   };
 
   if (loading || (!slang && !completed)) return null;
