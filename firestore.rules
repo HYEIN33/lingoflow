@@ -125,7 +125,9 @@ service cloud.firestore {
         'titleLevel1',
         'titleLevel2',
         'titleLevel3',
-        'hasUploadedMedia'
+        'hasUploadedMedia',
+        'folders',
+        'wordFolderMap'
       ]);
     }
 
