@@ -1,40 +1,51 @@
 import { useState, useEffect } from 'react';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { UserProfile } from '../App';
+
+// Local-timezone YYYY-MM-DD (NOT UTC) — fixes daily-reset bug for non-UTC users
+function localDateStr(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// Calendar-day diff (not millisecond ceil) — fixes streak being broken at 24h+1min
+function calendarDayDiff(fromIsoDate: string, to: Date = new Date()): number {
+  const [fy, fm, fd] = fromIsoDate.split('-').map(Number);
+  if (!fy || !fm || !fd) return 0;
+  const a = new Date(fy, fm - 1, fd).getTime();
+  const b = new Date(to.getFullYear(), to.getMonth(), to.getDate()).getTime();
+  return Math.round((b - a) / 86400000);
+}
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
 
-  // Auto-login in QA test mode
   useEffect(() => {
     if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('qa')) {
-      import('firebase/auth').then(({ signInAnonymously }) => {
-        signInAnonymously(auth).catch(console.error);
-      });
+      signInAnonymously(auth).catch(console.error);
     }
   }, []);
 
-  // Auth Listener
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setUser(user);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser);
       setIsAuthReady(true);
-      if (user) {
-        // Create or update user profile
-        const userRef = doc(db, 'users', user.uid);
+      if (firebaseUser) {
+        const userRef = doc(db, 'users', firebaseUser.uid);
         try {
           const userDoc = await getDoc(userRef);
-          const today = new Date().toISOString().split('T')[0];
+          const today = localDateStr();
 
           if (!userDoc.exists()) {
-            const isAnonymous = user.isAnonymous;
             const newProfile: UserProfile = {
-              userId: user.uid,
-              isPro: isAnonymous,  // Beta testers (invite code) get Pro by default
+              userId: firebaseUser.uid,
+              isPro: false, // Pro is granted server-side only — no anonymous Pro
               translationCount: 0,
               grammarCount: 0,
               lastResetDate: today,
@@ -50,51 +61,49 @@ export function useAuth() {
             setUserProfile(newProfile);
           } else {
             const data = userDoc.data() as UserProfile;
-            let updates: any = {};
+            const updates: Partial<UserProfile> & Record<string, unknown> = {};
 
-            // Ensure required fields exist for older profiles
+            // Backfill required fields with safe defaults (prevents NaN propagation)
             if (data.isPro === undefined) updates.isPro = false;
-            if (data.translationCount === undefined) updates.translationCount = 0;
-            if (data.grammarCount === undefined) updates.grammarCount = 0;
+            if (data.translationCount === undefined || Number.isNaN(data.translationCount as number)) {
+              updates.translationCount = 0;
+            }
+            if (data.grammarCount === undefined || Number.isNaN(data.grammarCount as number)) {
+              updates.grammarCount = 0;
+            }
             if (data.lastResetDate === undefined) updates.lastResetDate = today;
 
-            // Reset daily limits
-            if (data.lastResetDate !== today && data.lastResetDate !== undefined) {
+            // Daily reset (local timezone)
+            if (data.lastResetDate !== undefined && data.lastResetDate !== today) {
               updates.translationCount = 0;
               updates.grammarCount = 0;
               updates.lastResetDate = today;
             }
 
-            // Handle streak logic
+            // Streak (calendar-day diff, not millisecond ceil)
             if (data.lastContributionDate) {
-              const lastDate = new Date(data.lastContributionDate);
-              const currentDate = new Date();
-              const diffTime = Math.abs(currentDate.getTime() - lastDate.getTime());
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-              if (diffDays > 1) {
-                // Streak broken
-                updates.currentStreak = 0;
-              }
+              const diffDays = calendarDayDiff(data.lastContributionDate);
+              if (diffDays > 1) updates.currentStreak = 0;
             }
 
             if (Object.keys(updates).length > 0) {
-              await updateDoc(userRef, updates);
-              setUserProfile({ ...data, ...updates });
+              await updateDoc(userRef, updates as Record<string, unknown>);
+              setUserProfile({ ...data, ...updates } as UserProfile);
             } else {
               setUserProfile(data);
             }
           }
         } catch (error) {
           console.error('Failed to sync user profile:', error);
-          // Fallback: create minimal profile from localStorage cache
+          // Fallback: minimal profile from localStorage cache
           const cachedPro = localStorage.getItem('memeflow_isPro') === 'true';
           setUserProfile({
             userId: firebaseUser.uid,
             isPro: cachedPro,
             translationCount: 0,
             grammarCount: 0,
-            lastResetDate: new Date().toISOString().split('T')[0],
+            lastResetDate: localDateStr(),
+            tabOrder: ['slang', 'translate', 'grammar', 'history', 'review'],
             approvedSlangCount: 0,
             currentStreak: 0,
             reputationScore: 100,
@@ -102,15 +111,6 @@ export function useAuth() {
             hasCompletedOnboarding: cachedPro,
           });
         }
-
-        // Test connection
-        import('firebase/firestore').then(({ getDocFromServer, doc }) => {
-          getDocFromServer(doc(db, '_connection_test_', 'ping')).catch(error => {
-            if (error.message?.includes('client is offline')) {
-              console.error("Firestore connection failed: client is offline. Check firebase-applet-config.json");
-            }
-          });
-        });
       } else {
         setUserProfile(null);
       }
