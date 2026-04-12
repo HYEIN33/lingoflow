@@ -14,8 +14,8 @@ const newApp = initializeApp({ credential: cert(newKey) }, 'new');
 
 // Old project: custom database ID
 const oldDb = getFirestore(oldApp, 'ai-studio-e4b5c619-e556-4bff-b9dc-4cd16b61ce62');
-// New project: default database
-const newDb = getFirestore(newApp);
+// New project: database ID is 'default' (not '(default)' — it's Firestore Enterprise)
+const newDb = getFirestore(newApp, 'default');
 
 async function migrateCollection(name) {
   console.log(`\n📦 ${name}`);

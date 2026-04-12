@@ -368,7 +368,7 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
 // ====== MAINTENANCE MODE ======
 // Set to true to show maintenance page to all users
 // You can bypass with ?admin in the URL
-const MAINTENANCE_MODE = true;
+const MAINTENANCE_MODE = false;
 
 function MaintenancePage() {
   return (
