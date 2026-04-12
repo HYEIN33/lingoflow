@@ -87,6 +87,15 @@ exports.apiGenerate = onRequest(
     const uid = decoded.uid;
 
     // Per-uid rate limit (Firestore-backed, survives across function instances)
+    //
+    // FAIL-OPEN on Firestore errors. Rationale:
+    // - Rate limit is a cost/abuse guardrail, not a security gate.
+    // - Auth (verifyIdToken above) is the actual security gate.
+    // - Gemini itself has its own daily/per-minute quota; GCP billing
+    //   alerts are the cost hard stop.
+    // - Previously fail-closed took the entire translate path down for
+    //   all users whenever the _rate_limits collection read glitched
+    //   (observed 2026-04-13: Firestore gRPC NOT_FOUND taking out /api/generate).
     try {
       const rl = await checkRateLimit(uid);
       if (!rl.allowed) {
@@ -97,10 +106,9 @@ exports.apiGenerate = onRequest(
         return;
       }
     } catch (e) {
-      console.error('Rate limit check failed:', e);
-      // Fail closed on rate limit errors to protect budget
-      res.status(503).json({ error: 'Rate limit service unavailable' });
-      return;
+      console.error('Rate limit check failed, failing OPEN:', e);
+      // fall through — allow this request; rely on Gemini quota as the
+      // ultimate backstop. Monitor via GCP logs for sustained failure.
     }
 
     const { model, contents, config } = req.body || {};
