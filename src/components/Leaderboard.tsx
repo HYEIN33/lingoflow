@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Trophy, Crown, ChevronUp, ChevronDown, Clock, Star, Flame, Loader2 } from 'lucide-react';

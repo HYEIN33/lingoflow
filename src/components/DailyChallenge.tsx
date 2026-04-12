@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, where, orderBy, limit as firestoreLimit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Zap, ChevronDown, ChevronUp, Eye } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface DailyChallengeProps {
   uiLang: 'en' | 'zh';

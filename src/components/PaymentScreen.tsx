@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { Check, X, CreditCard, ShieldCheck, Zap, Loader2 } from 'lucide-react';
 
 export default function PaymentScreen({

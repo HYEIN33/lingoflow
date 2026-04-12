@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle2, Loader2, Image as ImageIcon, Mic, ChevronRight, Sparkles, AlertCircle, Wand2, X } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { cn } from '../lib/utils';

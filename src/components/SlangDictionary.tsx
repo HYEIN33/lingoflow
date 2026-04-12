@@ -4,7 +4,7 @@ import { db, auth } from '../firebase';
 import { Search, Plus, ThumbsUp, AlertCircle, Loader2, MessageSquare, Volume2, Image as ImageIcon, Video, Film, X, Mic, Wand2, Flag, Share2, Send, ChevronDown } from 'lucide-react';
 import { validateSlangMeaning, generateSpeech, generateSlangExample, suggestSlangMeaning } from '../services/ai';
 import { cn } from '../lib/utils';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { SlangGuidelinesPanel } from './SlangGuidelines';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
