@@ -201,17 +201,57 @@ Configured via:
 
 ### Granting admin
 
-Admin is granted by setting a custom claim on a user's auth token:
+Two paths, both server-controlled. **Never edit `firestore.rules` or `admin.html` to add an email** — that's a single-account-takeover backdoor (see `docs/solutions/security-issues/hardcoded-admin-email-backdoor-in-rules-and-admin-page-2026-04-13.md`).
+
+**Path A — Firestore role field (Console click, instant)**
+
+1. Firebase Console → Firestore → `users` collection
+2. Find the doc with ID equal to the target user's UID (Authentication tab → copy UID)
+3. Add field: `role` (string) = `admin`
+4. Effective immediately, no token refresh needed.
+
+**Path B — Custom claim (Admin SDK, requires service account)**
 
 ```js
-// Run this from a Node script with Firebase Admin SDK
+// Node script with Firebase Admin SDK
 import { getAuth } from 'firebase-admin/auth';
 await getAuth().setCustomUserClaims(uid, { admin: true });
 // User must sign out + sign in again for the claim to refresh.
 ```
 
-Alternative short-cut: set `users/{uid}.role = 'admin'` in Firestore (the
-security rules also honor this field).
+The `isAdmin()` Firestore rule honors **either** path. To revoke admin: delete the `role` field, or call `setCustomUserClaims(uid, { admin: false })`.
+
+## Performance
+
+Local Lighthouse run against the production site:
+
+```bash
+npm run perf
+```
+
+Opens an HTML report. Targets: LCP < 2.5s, INP < 200ms, CLS < 0.1.
+For local dev profiling instead, build first then preview:
+
+```bash
+npm run build && npm run preview
+# then run lighthouse against http://localhost:4173
+```
+
+Bundle inspection (one-shot, no install):
+
+```bash
+npx vite-bundle-visualizer
+```
+
+## Knowledge store
+
+Past bugs, security findings, and architectural decisions are documented in `docs/solutions/`. Each entry has YAML frontmatter with `category`, `module`, `severity`, `tags`, `problem_type`. Grep before debugging an unfamiliar error or touching `firestore.rules` / `storage.rules` / auth / Cloud Functions:
+
+```bash
+grep -rln "your search term" docs/solutions/
+```
+
+Project conventions and the rationale behind the rules in this README are in `CLAUDE.md`.
 
 ## Testing
 

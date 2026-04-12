@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import * as Sentry from '@sentry/react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { Settings, Edit2, Camera, X, Bell, LogOut, Check, Loader2, Award, Flame, Star, MessageSquare } from 'lucide-react';
@@ -244,6 +245,8 @@ export default function UserProfile({
       await updateDoc(doc(db, 'users', user.uid), { equippedBadge: newBadge });
     } catch (e) {
       console.error('Failed to equip badge:', e);
+      toast.error(uiLang === 'zh' ? '装备徽章失败' : 'Failed to equip badge');
+      Sentry.captureException(e, { tags: { component: 'UserProfile', op: 'firestore.write', field: 'equippedBadge' } });
     }
   };
 
@@ -293,6 +296,7 @@ export default function UserProfile({
     } catch (error) {
       console.error('Avatar upload failed:', error);
       setErrorMsg(uiLang === 'zh' ? '头像上传失败，请重试' : 'Avatar upload failed, please try again');
+      Sentry.captureException(error, { tags: { component: 'UserProfile', op: 'storage.upload', field: 'photoURL' } });
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -310,6 +314,7 @@ export default function UserProfile({
     } catch (error) {
       console.error('Name update failed:', error);
       setErrorMsg(uiLang === 'zh' ? '用户名更新失败，请重试' : 'Name update failed, please try again');
+      Sentry.captureException(error, { tags: { component: 'UserProfile', op: 'firestore.write', field: 'displayName' } });
     } finally {
       setIsSavingName(false);
     }
@@ -330,6 +335,8 @@ export default function UserProfile({
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Export failed:', error);
+      toast.error(uiLang === 'zh' ? '导出失败' : 'Export failed');
+      Sentry.captureException(error, { tags: { component: 'UserProfile', op: 'firestore.read', purpose: 'export' } });
     }
   };
 

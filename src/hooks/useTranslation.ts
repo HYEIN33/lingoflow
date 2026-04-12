@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import * as Sentry from '@sentry/react';
 import { toast } from 'sonner';
 import { doc, updateDoc } from 'firebase/firestore';
 import { User } from 'firebase/auth';
@@ -91,6 +92,7 @@ export function useTranslation({
           await updateDoc(userRef, { translationCount: nextCount });
         } catch (e) {
           console.warn('Failed to sync translationCount:', e);
+          Sentry.captureException(e, { tags: { component: 'useTranslation', op: 'firestore.write', field: 'translationCount' } });
         }
         setUserProfile({ ...userProfile, translationCount: nextCount });
       }
@@ -147,6 +149,7 @@ export function useTranslation({
     } catch (error: any) {
       console.error('Save word failed:', error);
       toast.error(uiLang === 'zh' ? `保存失败：${error.message || '未知错误'}` : `Save failed: ${error.message || 'Unknown error'}`);
+      Sentry.captureException(error, { tags: { component: 'useTranslation', op: 'firestore.write', collection: 'words' } });
     } finally {
       setIsSaving(false);
     }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Component, ReactNode } from 'react';
+import React, { useState, useEffect, Component, ReactNode, lazy, Suspense } from 'react';
 import * as Sentry from '@sentry/react';
 import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
@@ -59,7 +59,10 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError
 
   componentDidCatch(error: any, errorInfo: any) {
     console.error("Uncaught error:", error, errorInfo);
-    Sentry.captureException(error);
+    Sentry.captureException(error, {
+      contexts: { react: { componentStack: errorInfo?.componentStack } },
+      tags: { component: 'error-boundary' },
+    });
   }
 
   render() {
@@ -135,16 +138,33 @@ export interface UserProfile {
   createdAt?: any;
 }
 
-import { SlangDictionary } from './components/SlangDictionary';
-import { SlangOnboarding } from './components/SlangOnboarding';
-import Leaderboard from './components/Leaderboard';
+// Eager: needed for first paint or auth gating
 import PaymentScreen from './components/PaymentScreen';
-import UserProfileComponent from './components/UserProfile';
 import { OnboardingChecklist } from './components/OnboardingChecklist';
-import GrammarPage from './pages/GrammarPage';
-import ReviewPage from './pages/ReviewPage';
-import WordbookPage from './pages/WordbookPage';
 import TranslateTab from './pages/TranslateTab';
+
+// Lazy: loaded on tab switch / drawer open. Cuts the initial bundle by
+// pulling SlangDictionary, UserProfile, Leaderboard, ReviewPage,
+// SlangOnboarding, GrammarPage, WordbookPage out of the main chunk.
+const SlangDictionary = lazy(() =>
+  import('./components/SlangDictionary').then(m => ({ default: m.SlangDictionary }))
+);
+const SlangOnboarding = lazy(() =>
+  import('./components/SlangOnboarding').then(m => ({ default: m.SlangOnboarding }))
+);
+const Leaderboard = lazy(() => import('./components/Leaderboard'));
+const UserProfileComponent = lazy(() => import('./components/UserProfile'));
+const GrammarPage = lazy(() => import('./pages/GrammarPage'));
+const ReviewPage = lazy(() => import('./pages/ReviewPage'));
+const WordbookPage = lazy(() => import('./pages/WordbookPage'));
+
+function LazyFallback() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+    </div>
+  );
+}
 
 function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
   const [mode, setMode] = useState<'main' | 'email' | 'guest'>('main');
@@ -531,6 +551,7 @@ export default function App() {
           await updateDoc(userRef, { grammarCount: nextCount });
         } catch (e) {
           console.warn('Failed to sync grammarCount:', e);
+          Sentry.captureException(e, { tags: { component: 'App', op: 'firestore.write', field: 'grammarCount' } });
         }
         setUserProfile({ ...userProfile, grammarCount: nextCount });
       }
@@ -553,6 +574,8 @@ export default function App() {
     } catch (error) {
       console.error('Failed to update tab order, rolling back:', error);
       setUserProfile({ ...userProfile, tabOrder: prevOrder });
+      toast.error(uiLang === 'zh' ? '保存失败已回滚' : 'Save failed, reverted');
+      Sentry.captureException(error, { tags: { component: 'App', op: 'firestore.write', field: 'tabOrder' } });
     }
   };
 
@@ -644,9 +667,17 @@ export default function App() {
             </button>
             <button
               onClick={() => {
-                if (window.confirm(uiLang === 'zh' ? '确定要退出登录吗？' : 'Are you sure you want to sign out?')) {
-                  logOut();
-                }
+                toast(uiLang === 'zh' ? '确定要退出登录吗？' : 'Sign out?', {
+                  action: {
+                    label: uiLang === 'zh' ? '退出' : 'Sign out',
+                    onClick: () => logOut(),
+                  },
+                  cancel: {
+                    label: uiLang === 'zh' ? '取消' : 'Cancel',
+                    onClick: () => {},
+                  },
+                  duration: 6000,
+                });
               }}
               aria-label={t.signOut}
               className="p-1.5 sm:p-2 hover:bg-gray-50 rounded-full transition-colors text-gray-400 hover:text-red-500"
@@ -682,7 +713,7 @@ export default function App() {
           ))}
         </div>
 
-        <>
+        <Suspense fallback={<LazyFallback />}>
           {activeTab === 'translate' ? (
             <TranslateTab
               inputText={inputText}
@@ -835,7 +866,7 @@ export default function App() {
               />
             </div>
           ) : null}
-        </>
+        </Suspense>
 
         {/* Payment Modal */}
         <AnimatePresence>
@@ -906,13 +937,15 @@ export default function App() {
         {/* Onboarding Modal */}
         <AnimatePresence>
           {showOnboarding && (
-            <SlangOnboarding 
-              uiLang={uiLang} 
-              onComplete={() => {
-                setActiveTab('slang');
-              }}
-              onClose={() => setShowOnboarding(false)} 
-            />
+            <Suspense fallback={<LazyFallback />}>
+              <SlangOnboarding
+                uiLang={uiLang}
+                onComplete={() => {
+                  setActiveTab('slang');
+                }}
+                onClose={() => setShowOnboarding(false)}
+              />
+            </Suspense>
           )}
         </AnimatePresence>
 

@@ -11,7 +11,8 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "perf": "npx -y lighthouse https://memeflow-16ecf.web.app/ --view --preset=desktop --quiet"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

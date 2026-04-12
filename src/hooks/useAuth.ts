@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import * as Sentry from '@sentry/react';
 import { onAuthStateChanged, User, signInAnonymously } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase';
@@ -28,7 +29,10 @@ export function useAuth() {
 
   useEffect(() => {
     if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('qa')) {
-      signInAnonymously(auth).catch(console.error);
+      signInAnonymously(auth).catch((e) => {
+        console.error(e);
+        Sentry.captureException(e, { tags: { component: 'useAuth', op: 'auth.anon' } });
+      });
     }
   }, []);
 
@@ -95,6 +99,10 @@ export function useAuth() {
           }
         } catch (error) {
           console.error('Failed to sync user profile:', error);
+          Sentry.captureException(error, {
+            tags: { component: 'useAuth', op: 'firestore.profile_sync' },
+            contexts: { user: { id: firebaseUser.uid } },
+          });
           // Fallback: minimal profile from localStorage cache
           const cachedPro = localStorage.getItem('memeflow_isPro') === 'true';
           setUserProfile({

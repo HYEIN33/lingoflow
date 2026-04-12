@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
+import * as Sentry from '@sentry/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle2, Loader2, Image as ImageIcon, Mic, ChevronRight, Sparkles, AlertCircle, Wand2, X } from 'lucide-react';
 import confetti from 'canvas-confetti';
@@ -180,6 +181,7 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
       } else {
         setReviewError(uiLang === 'zh' ? '提交失败，请重试' : 'Submission failed, please try again');
       }
+      Sentry.captureException(error, { tags: { component: 'SlangOnboarding', op: 'slang.submit' } });
     }
   };
 

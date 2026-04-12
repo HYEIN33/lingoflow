@@ -80,6 +80,58 @@ describe('firestore.rules — security audit', () => {
     // Prevents seeding new meaning with inflated vote count.
     expect(rules).toMatch(/request\.resource\.data\.upvotes\s*==\s*0/);
   });
+
+  it('isUserSelfUpdate whitelist contains user-editable fields and excludes sensitive ones', () => {
+    // Regression for the silent-write-failure bug: displayName and photoURL
+    // were missing from the hasOnly() whitelist, so the UserProfile UI
+    // edits silently failed at the rules layer. See
+    // docs/solutions/bugs/firestore-isuserselfupdate-whitelist-silent-write-failure-2026-04-13.md
+    const fnMatch = rules.match(/function isUserSelfUpdate\([\s\S]*?\n\s*\}/);
+    expect(fnMatch).toBeTruthy();
+    const body = fnMatch![0];
+    // Required user-editable fields
+    expect(body).toContain("'displayName'");
+    expect(body).toContain("'photoURL'");
+    expect(body).toContain("'tabOrder'");
+    expect(body).toContain("'hasCompletedOnboarding'");
+    // Sensitive fields MUST NOT be in the self-update whitelist
+    expect(body).not.toContain("'isPro'");
+    expect(body).not.toContain("'role'");
+    expect(body).not.toContain("'reputationScore'");
+    expect(body).not.toContain("'approvedSlangCount'");
+  });
+
+  it('users update is gated by isAdmin OR (isOwner AND isUserSelfUpdate)', () => {
+    const section = rules.match(/match\s*\/users\/\{userId\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toMatch(/allow update:\s*if isAdmin\(\)\s*\|\|\s*\(isOwner\(userId\)\s*&&\s*isUserSelfUpdate/);
+  });
+
+  it('slang_meanings counter update enforces single-step delta', () => {
+    // The upvote/downvote rule must require exactly +/-1 to prevent
+    // arbitrary vote count manipulation.
+    const fnMatch = rules.match(/function isValidCounterUpdate[\s\S]*?\n\s*\}\s*\n/);
+    expect(fnMatch).toBeTruthy();
+    expect(fnMatch![0]).toMatch(/math\.abs\([^)]*upvotes[^)]*\)\s*==\s*1/);
+    // Must check the slang_upvotes companion doc to prevent double-voting
+    expect(fnMatch![0]).toContain('slang_upvotes');
+  });
+
+  it('slang_upvotes create requires uid_meaningId composite path', () => {
+    // Path enforcement prevents one user from voting in another user's name.
+    const section = rules.match(/match\s*\/slang_upvotes\/\{upvoteId\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toMatch(/upvoteId\s*==\s*request\.auth\.uid\s*\+/);
+    expect(section![0]).toMatch(/request\.resource\.data\.userId\s*==\s*request\.auth\.uid/);
+  });
+
+  it('slang_searches create allows expireAt for TTL-based cleanup', () => {
+    // The TTL policy on slang_searches.expireAt requires this field to be
+    // writable. Without the rule guard, the field would be rejected.
+    const section = rules.match(/match\s*\/slang_searches\/\{searchId\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toContain('expireAt');
+  });
 });
 
 describe('storage.rules — security audit', () => {
@@ -145,6 +197,58 @@ describe('firebase.json — deployment config audit', () => {
   it('X-Content-Type-Options is nosniff', () => {
     const h = json.hosting.headers[0].headers.find((h: any) => h.key === 'X-Content-Type-Options');
     expect(h.value).toBe('nosniff');
+  });
+
+  it('CSP defines a default-src directive', () => {
+    const csp = json.hosting.headers[0].headers.find((h: any) => h.key === 'Content-Security-Policy');
+    expect(csp).toBeDefined();
+    expect(csp.value).toMatch(/default-src/);
+  });
+});
+
+describe('UX hygiene — no native dialogs in src/', () => {
+  // Project policy: use sonner toast or shadcn AlertDialog instead of
+  // window.alert / window.confirm. Native dialogs are inconsistent on
+  // mobile and break the design system.
+  function walkSrc(dir: string): string[] {
+    const out: string[] = [];
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'test' || entry.name === 'node_modules') continue;
+        out.push(...walkSrc(full));
+      } else if (/\.(ts|tsx)$/.test(entry.name)) {
+        out.push(full);
+      }
+    }
+    return out;
+  }
+
+  const files = walkSrc(join(ROOT, 'src'));
+
+  it('no window.alert calls in src/ (excluding tests)', () => {
+    const offenders: string[] = [];
+    for (const f of files) {
+      const content = readFileSync(f, 'utf-8');
+      // Match alert( but allow .alert (e.g. variable.alert) — also skip toast.error("alert ...")
+      if (/(?:^|[^.\w])alert\s*\(/.test(content)) {
+        offenders.push(f);
+      }
+    }
+    expect(offenders, `Replace alert() with sonner toast: ${offenders.join(', ')}`).toEqual([]);
+  });
+
+  it('no window.confirm calls in src/ (excluding tests)', () => {
+    const offenders: string[] = [];
+    for (const f of files) {
+      const content = readFileSync(f, 'utf-8');
+      if (/window\.confirm\s*\(/.test(content) || /(?:^|[^.\w])confirm\s*\(/.test(content)) {
+        offenders.push(f);
+      }
+    }
+    expect(offenders, `Replace window.confirm with sonner toast action: ${offenders.join(', ')}`).toEqual([]);
   });
 });
 
