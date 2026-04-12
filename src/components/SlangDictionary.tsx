@@ -176,109 +176,79 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
   const FEED_SIZE = 12;
   const FEED_INTERVAL = 30000; // 30 seconds
 
-  // Feed: load slangs, rotate every 30s, mix in user interests
+  // Feed: load slangs + meanings ONCE, then rotate purely in-memory every 30s.
+  // Previously both the feed effect and a separate cache effect each did full-collection
+  // scans on mount, and the feed effect re-ran on every feedPage tick — triggering a
+  // full re-fetch of slangs + slang_meanings every 30 seconds. This burned Firestore
+  // quota and caused the repeated quota exhaustion crashes. Now we fetch once, cache,
+  // and paginate the cached scored list.
   useEffect(() => {
-    const loadFeed = async () => {
+    let cancelled = false;
+    const loadOnce = async () => {
       try {
-        // Get all slangs
         const [allSnap, meaningsSnap] = await Promise.all([
           getDocs(collection(db, 'slangs')),
           getDocs(query(collection(db, 'slang_meanings'), where('status', '==', 'approved')))
         ]);
-        const allSlangs = allSnap.docs.map(d => ({ id: d.id, ...d.data() } as Slang)).filter(s => s.term && typeof s.term === 'string');
+        if (cancelled) return;
+        const allSlangs = allSnap.docs
+          .map(d => ({ id: d.id, ...d.data() } as Slang))
+          .filter(s => s.term && typeof s.term === 'string');
 
-        // Build meanings index by slangId
         const mIndex: Record<string, { meaning: string; upvotes: number }[]> = {};
         meaningsSnap.forEach(d => {
           const data = d.data();
           if (!mIndex[data.slangId]) mIndex[data.slangId] = [];
           mIndex[data.slangId].push({ meaning: data.meaning, upvotes: data.upvotes || 0 });
         });
-        // Sort each slang's meanings by upvotes desc
         Object.values(mIndex).forEach(arr => arr.sort((a, b) => b.upvotes - a.upvotes));
+        if (cancelled) return;
         setMeaningsBySlangId(mIndex);
-
         setAllSlangCache(allSlangs);
-        if (allSlangs.length === 0) { setRecentSlangs([]); return; }
-
-        // Get user search history for personalization
-        const HISTORY_KEY = 'memeflow_search_history';
-        let searchedTerms: string[] = [];
-        try {
-          const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-          searchedTerms = history.map((h: any) => h.term?.toLowerCase()).filter(Boolean);
-        } catch {}
-
-        // Score slangs: recently created + matching user interests get priority
-        const scored = allSlangs.map(s => {
-          let score = Math.random() * 10; // base randomness
-          // Boost if term relates to user's search history
-          const termLower = (s.term || '').toLowerCase();
-          if (searchedTerms.some(t => termLower.includes(t) || t.includes(termLower))) {
-            score += 20;
-          }
-          // Boost newer entries
-          if (s.createdAt?.toDate) {
-            const age = Date.now() - s.createdAt.toDate().getTime();
-            const dayAge = age / (1000 * 60 * 60 * 24);
-            if (dayAge < 7) score += 15;
-            else if (dayAge < 30) score += 5;
-          }
-          return { ...s, _score: score };
-        });
-
-        // Sort by score, paginate
-        scored.sort((a, b) => b._score - a._score);
-        const start = (feedPage * FEED_SIZE) % scored.length;
-        const page = [];
-        for (let i = 0; i < FEED_SIZE && i < scored.length; i++) {
-          page.push(scored[(start + i) % scored.length]);
-        }
-        setRecentSlangs(page);
       } catch (e) {
-        console.error('Feed load failed:', e);
+        console.error('Slang feed load failed:', e);
       }
     };
+    loadOnce();
+    return () => { cancelled = true; };
+  }, []);
 
-    loadFeed();
+  // Rotation effect: derive the visible page from cached slangs; no Firestore reads.
+  useEffect(() => {
+    if (allSlangCache.length === 0) { setRecentSlangs([]); return; }
+
+    const HISTORY_KEY = 'memeflow_search_history';
+    let searchedTerms: string[] = [];
+    try {
+      const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      searchedTerms = history.map((h: any) => h.term?.toLowerCase()).filter(Boolean);
+    } catch {}
+
+    const scored = allSlangCache.map(s => {
+      let score = Math.random() * 10;
+      const termLower = (s.term || '').toLowerCase();
+      if (searchedTerms.some(t => termLower.includes(t) || t.includes(termLower))) score += 20;
+      if (s.createdAt?.toDate) {
+        const age = Date.now() - s.createdAt.toDate().getTime();
+        const dayAge = age / 86400000;
+        if (dayAge < 7) score += 15;
+        else if (dayAge < 30) score += 5;
+      }
+      return { ...s, _score: score };
+    });
+    scored.sort((a, b) => b._score - a._score);
+    const start = (feedPage * FEED_SIZE) % scored.length;
+    const page: Slang[] = [];
+    for (let i = 0; i < FEED_SIZE && i < scored.length; i++) {
+      page.push(scored[(start + i) % scored.length]);
+    }
+    setRecentSlangs(page);
+  }, [feedPage, allSlangCache]);
+
+  // Rotation timer — in-memory only, no refetch
+  useEffect(() => {
     const timer = setInterval(() => setFeedPage(p => p + 1), FEED_INTERVAL);
     return () => clearInterval(timer);
-  }, [feedPage]);
-
-  // Ensure search cache is loaded on mount (separate from feed)
-  useEffect(() => {
-    if (allSlangCache.length > 0) return;
-    const loadCache = async () => {
-      try {
-        // Load slangs first (critical for search)
-        const sSnap = await getDocs(collection(db, 'slangs'));
-        const slangs = sSnap.docs
-          .map(d => ({ id: d.id, ...d.data() } as Slang))
-          .filter(s => s.term && typeof s.term === 'string');
-        setAllSlangCache(slangs);
-
-        // Then load meanings (for upvote sorting)
-        const mSnap = await getDocs(collection(db, 'slang_meanings'));
-        const idx: Record<string, { meaning: string; upvotes: number }[]> = {};
-        mSnap.forEach(d => {
-          const data = d.data();
-          if (!idx[data.slangId]) idx[data.slangId] = [];
-          idx[data.slangId].push({ meaning: data.meaning || '', upvotes: data.upvotes || 0 });
-        });
-        Object.values(idx).forEach(arr => arr.sort((a, b) => b.upvotes - a.upvotes));
-        setMeaningsBySlangId(idx);
-      } catch (e) {
-        console.error('Cache load failed:', e);
-        // Fallback: try slangs only without meanings
-        try {
-          const sSnap = await getDocs(collection(db, 'slangs'));
-          setAllSlangCache(sSnap.docs.map(d => ({ id: d.id, ...d.data() } as Slang)).filter(s => s.term && typeof s.term === 'string'));
-        } catch (e2) {
-          console.error('Slang cache fallback also failed:', e2);
-        }
-      }
-    };
-    loadCache();
   }, []);
 
   // Save search to local history for personalization
@@ -335,59 +305,70 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     loadTrending();
   }, [trendingRefresh]);
   
+  // Track the active meanings listener so re-searches don't leak subscriptions.
+  const initialMeaningsUnsubRef = useRef<(() => void) | null>(null);
   useEffect(() => {
-    if (initialSearchTerm) {
-      setSearchTerm(initialSearchTerm);
-      // Trigger search
-      const doSearch = async () => {
-        setIsSearching(true);
-        setCurrentSlang(null);
-        setMeanings([]);
-        setShowAddForm(false);
+    if (!initialSearchTerm) return;
+    setSearchTerm(initialSearchTerm);
 
-        try {
-          const q = query(collection(db, 'slangs'), where('term', '==', initialSearchTerm.trim().toLowerCase()), limit(1));
-          const snapshot = await getDocs(q);
-          
-          if (!snapshot.empty) {
-            const slangDoc = snapshot.docs[0];
-            const slangData = { id: slangDoc.id, ...slangDoc.data() } as Slang;
-            setCurrentSlang(slangData);
-            
-            // Fetch meanings
-            const meaningsQ = query(
-              collection(db, 'slang_meanings'), 
-              where('slangId', '==', slangData.id),
-              where('status', '==', 'approved'),
-              orderBy('upvotes', 'desc')
+    let cancelled = false;
+    const doSearch = async () => {
+      setIsSearching(true);
+      setCurrentSlang(null);
+      setMeanings([]);
+      setShowAddForm(false);
+
+      // Unsubscribe from previous search's meanings listener
+      initialMeaningsUnsubRef.current?.();
+      initialMeaningsUnsubRef.current = null;
+
+      try {
+        const q = query(collection(db, 'slangs'), where('term', '==', initialSearchTerm.trim().toLowerCase()), limit(1));
+        const snapshot = await getDocs(q);
+        if (cancelled) return;
+
+        if (!snapshot.empty) {
+          const slangDoc = snapshot.docs[0];
+          const slangData = { id: slangDoc.id, ...slangDoc.data() } as Slang;
+          setCurrentSlang(slangData);
+
+          const meaningsQ = query(
+            collection(db, 'slang_meanings'),
+            where('slangId', '==', slangData.id),
+            where('status', '==', 'approved'),
+            orderBy('upvotes', 'desc')
+          );
+          initialMeaningsUnsubRef.current = onSnapshot(meaningsQ, (meaningsSnapshot) => {
+            const fetchedMeanings = meaningsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SlangMeaning));
+            setMeanings(fetchedMeanings);
+          });
+
+          if (auth.currentUser) {
+            const upvotesQ = query(
+              collection(db, 'slang_upvotes'),
+              where('userId', '==', auth.currentUser.uid)
             );
-            
-            const unsubscribe = onSnapshot(meaningsQ, (meaningsSnapshot) => {
-              const fetchedMeanings = meaningsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SlangMeaning));
-              setMeanings(fetchedMeanings);
-            });
-            
-            // Check user upvotes
-            if (auth.currentUser) {
-              const upvotesQ = query(
-                collection(db, 'slang_upvotes'),
-                where('userId', '==', auth.currentUser.uid)
-              );
-              const upvotesSnapshot = await getDocs(upvotesQ);
+            const upvotesSnapshot = await getDocs(upvotesQ);
+            if (!cancelled) {
               const upvotedIds = new Set(upvotesSnapshot.docs.map(doc => doc.data().meaningId));
               setUpvotedMeanings(upvotedIds);
             }
-          } else {
-            setCurrentSlang(null);
           }
-        } catch (error) {
-          console.error("Error searching slang:", error);
-        } finally {
-          setIsSearching(false);
+        } else {
+          setCurrentSlang(null);
         }
-      };
-      doSearch();
-    }
+      } catch (error) {
+        console.error("Error searching slang:", error);
+      } finally {
+        if (!cancelled) setIsSearching(false);
+      }
+    };
+    doSearch();
+    return () => {
+      cancelled = true;
+      initialMeaningsUnsubRef.current?.();
+      initialMeaningsUnsubRef.current = null;
+    };
   }, [initialSearchTerm]);
   
   const [newMeaning, setNewMeaning] = useState('');
