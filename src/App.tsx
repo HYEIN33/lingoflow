@@ -686,10 +686,17 @@ export default function App() {
                 <input
                   type="text"
                   value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
+                  onChange={(e) => setInputText(e.target.value.slice(0, 2000))}
                   placeholder={t.inputPlaceholder}
+                  maxLength={2000}
                   className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-40 sm:pr-48 text-lg sm:text-xl shadow-xl shadow-gray-200/50 outline-none transition-all placeholder:text-gray-300"
                 />
+                {/* Character count (only visible when typing long text) */}
+                {inputText.length > 200 && (
+                  <div className="absolute -bottom-6 right-4 text-[10px] text-gray-400 font-mono">
+                    {inputText.length} / 2000
+                  </div>
+                )}
                 {/* Clear button */}
                 {inputText && (
                   <button
@@ -809,9 +816,28 @@ export default function App() {
 
               {/* Translation Result */}
               {translationResult && (() => {
-                // Detect if input is a sentence/paragraph (not a single word)
+                // Detect content length tier — affects layout, font size, and whether
+                // to show word-level details. Three tiers:
+                //   word      - single word/phrase, show full details + side panel
+                //   sentence  - short sentence (< 200 chars), compact single column
+                //   paragraph - long text (>= 200 chars), tightest fonts for readability
                 const txt = (inputText || '').trim();
-                const isSentence = txt.split(/\s+/).length > 3 || txt.length > 20;
+                const wordCount = txt.split(/\s+/).filter(Boolean).length;
+                const isSentence = wordCount > 3 || txt.length > 20;
+                const isParagraph = txt.length >= 200;
+                // Translation text font: paragraphs get the smallest font that still
+                // reads well on mobile. Sentences get a mid tier. Single words stay big.
+                const translationFontCls = isParagraph
+                  ? "text-xs sm:text-sm leading-relaxed"
+                  : isSentence
+                    ? "text-sm sm:text-base leading-relaxed"
+                    : "text-lg";
+                // In sentence/paragraph mode the Volume button sits below the text
+                // (no wasted right-side whitespace); in word mode it floats top-right.
+                const volumeBtnCls = isSentence
+                  ? "mt-3 inline-flex items-center gap-1 text-xs font-bold transition-colors"
+                  : "absolute top-4 right-4 p-2 transition-colors";
+                const textPadRight = isSentence ? "" : "pr-8";
 
                 return (
                 <div className={cn("grid grid-cols-1 gap-8", !isSentence && "lg:grid-cols-3")}>
@@ -830,17 +856,18 @@ export default function App() {
                               <Zap className="w-3 h-3 fill-current" />
                               {uiLang === 'zh' ? '地道表达 (Authentic)' : 'Authentic Expression'}
                             </h3>
-                            <p className={cn("text-gray-900 font-medium leading-relaxed break-words pr-8", isSentence ? "text-sm sm:text-base" : "text-lg")}>
+                            <p className={cn("text-gray-900 font-medium break-words", translationFontCls, textPadRight)}>
                               {translationResult.authenticTranslation}
                             </p>
-                            <button 
+                            <button
                               onClick={() => speak(translationResult.authenticTranslation!)}
-                              className="absolute top-4 right-4 p-2 text-blue-400 hover:text-blue-600 transition-colors"
+                              className={cn(volumeBtnCls, "text-blue-400 hover:text-blue-600")}
                             >
                               <Volume2 className="w-5 h-5" />
+                              {isSentence && <span>{uiLang === 'zh' ? '朗读' : 'Listen'}</span>}
                             </button>
 
-                            <button 
+                            <button
                               onClick={() => handleSaveWord('authentic')}
                               disabled={isSaving}
                               className="mt-4 flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors"
@@ -858,17 +885,18 @@ export default function App() {
                               <BookOpen className="w-3 h-3" />
                               {uiLang === 'zh' ? '学术表达 (Academic)' : 'Academic Expression'}
                             </h3>
-                            <p className={cn("text-gray-900 font-medium leading-relaxed break-words pr-8", isSentence ? "text-sm sm:text-base" : "text-lg")}>
+                            <p className={cn("text-gray-900 font-medium break-words", translationFontCls, textPadRight)}>
                               {translationResult.academicTranslation}
                             </p>
-                            <button 
+                            <button
                               onClick={() => speak(translationResult.academicTranslation!)}
-                              className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                              className={cn(volumeBtnCls, "text-gray-400 hover:text-gray-600")}
                             >
                               <Volume2 className="w-5 h-5" />
+                              {isSentence && <span>{uiLang === 'zh' ? '朗读' : 'Listen'}</span>}
                             </button>
 
-                            <button 
+                            <button
                               onClick={() => handleSaveWord('academic')}
                               disabled={isSaving}
                               className="mt-4 flex items-center gap-1 text-xs font-bold text-gray-500 hover:text-gray-700 transition-colors"
@@ -881,13 +909,15 @@ export default function App() {
                       </div>
                     )}
 
-                  {/* Sentence mode: show original text */}
+                  {/* Sentence mode: show original text with matching font tier */}
                   {isSentence && (
                     <div className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100">
                       <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
                         {uiLang === 'zh' ? '原文' : 'Original'}
                       </h3>
-                      <p className="text-gray-700 leading-relaxed break-words">{translationResult.original}</p>
+                      <p className={cn("text-gray-700 break-words whitespace-pre-wrap", translationFontCls)}>
+                        {translationResult.original}
+                      </p>
                     </div>
                   )}
 
