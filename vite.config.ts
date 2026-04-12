@@ -15,9 +15,27 @@ export default defineConfig(({mode}) => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      chunkSizeWarningLimit: 700,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'firebase-auth': ['firebase/auth'],
+            'firebase-firestore': ['firebase/firestore'],
+            'firebase-storage': ['firebase/storage'],
+            'firebase-analytics': ['firebase/analytics'],
+            'firebase-app': ['firebase/app'],
+            'vendor-react': ['react', 'react-dom'],
+            'vendor-motion': ['motion', 'motion/react'],
+            'vendor-markdown': ['react-markdown'],
+            'vendor-sentry': ['@sentry/react'],
+            'vendor-genai': ['@google/genai'],
+            'vendor-icons': ['lucide-react'],
+          },
+        },
+      },
+    },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       proxy: {
         '/api': 'http://localhost:3100',
