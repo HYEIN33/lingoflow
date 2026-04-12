@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import * as Sentry from '@sentry/react';
 import { toast } from 'sonner';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, orderBy, limit, serverTimestamp, onSnapshot, getDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
@@ -92,6 +93,8 @@ function CommentSection({ slangId, meaningId, uiLang }: { slangId: string; meani
       setCommentText('');
     } catch (err) {
       console.error('Error submitting comment:', err);
+      toast.error(uiLang === 'zh' ? '评论发送失败' : 'Failed to send comment');
+      Sentry.captureException(err, { tags: { component: 'SlangDictionary', op: 'firestore.write', collection: 'slang_comments' } });
     } finally {
       setIsSubmitting(false);
     }
@@ -208,6 +211,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
         setAllSlangCache(allSlangs);
       } catch (e) {
         console.error('Slang feed load failed:', e);
+        Sentry.captureException(e, { tags: { component: 'SlangDictionary', op: 'firestore.read', purpose: 'feed' } });
       }
     };
     loadOnce();
@@ -279,7 +283,9 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
       });
       setTrendingRefresh(n => n + 1);
     } catch (e) {
-      // Silent fail
+      // Non-critical background telemetry — don't toast the user, but do
+      // capture so we notice if the collection is permanently broken.
+      Sentry.captureException(e, { tags: { component: 'SlangDictionary', op: 'firestore.write', collection: 'slang_searches', severity: 'low' } });
     }
   }, []);
 
@@ -306,6 +312,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
         setTrendingTerms(sorted);
       } catch (e) {
         console.error('Failed to load trending:', e);
+        Sentry.captureException(e, { tags: { component: 'SlangDictionary', op: 'firestore.read', purpose: 'trending' } });
       }
     };
     loadTrending();
@@ -520,6 +527,8 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
       showToast(uiLang === 'zh' ? '举报已提交，感谢反馈' : 'Report submitted, thank you');
     } catch (err) {
       console.error('Error submitting report:', err);
+      toast.error(uiLang === 'zh' ? '举报提交失败' : 'Failed to submit report');
+      Sentry.captureException(err, { tags: { component: 'SlangDictionary', op: 'firestore.write', collection: 'slang_reports' } });
     }
     setReportingMeaningId(null);
     setReportReason('spam');
@@ -549,15 +558,32 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     saveSearchHistory(slangData.term);
 
     try {
+      // Two equality filters + no orderBy → only needs default single-field
+      // indexes (no composite). Previously this used `orderBy('upvotes', 'desc')`
+      // which required a composite index that was never created, causing
+      // listener errors silently and the "search does nothing" bug.
+      // We now sort in memory below, which is fine because we're not paginating.
       const meaningsQ = query(
         collection(db, 'slang_meanings'),
         where('slangId', '==', slangData.id),
-        where('status', '==', 'approved'),
-        orderBy('upvotes', 'desc')
+        where('status', '==', 'approved')
       );
-      const unsubscribe = onSnapshot(meaningsQ, (meaningsSnapshot) => {
-        setMeanings(meaningsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as SlangMeaning)));
-      });
+      const unsubscribe = onSnapshot(
+        meaningsQ,
+        (meaningsSnapshot) => {
+          const unsorted = meaningsSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as SlangMeaning));
+          unsorted.sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0));
+          setMeanings(unsorted);
+        },
+        (error) => {
+          console.error('meanings onSnapshot error:', error);
+          toast.error(uiLang === 'zh' ? '加载词义失败，请刷新重试' : 'Failed to load meanings, please refresh');
+          Sentry.captureException(error, {
+            tags: { component: 'SlangDictionary', op: 'firestore.listen', collection: 'slang_meanings' },
+            contexts: { slang: { id: slangData.id, term: slangData.term } },
+          });
+        }
+      );
       if (auth.currentUser) {
         const upvotesQ = query(collection(db, 'slang_upvotes'), where('userId', '==', auth.currentUser.uid));
         const upvotesSnapshot = await getDocs(upvotesQ);
@@ -565,8 +591,13 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
       }
     } catch (error) {
       console.error("Error loading meanings:", error);
+      toast.error(uiLang === 'zh' ? '加载词义失败' : 'Failed to load meanings');
+      Sentry.captureException(error, {
+        tags: { component: 'SlangDictionary', op: 'firestore.read', purpose: 'meanings_initial' },
+        contexts: { slang: { id: slangData.id, term: slangData.term } },
+      });
     }
-  }, [trackSearch, saveSearchHistory]);
+  }, [trackSearch, saveSearchHistory, uiLang]);
 
   const doSearch = useCallback(async (termToSearch: string) => {
     if (!termToSearch.trim()) return;
@@ -631,15 +662,27 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
         const slangData = { id: slangDoc.id, ...slangDoc.data() } as Slang;
         await selectSlang(slangData);
       } else {
-        // Not found
+        // Not found — show user feedback instead of silently returning.
+        // Previously this left the UI unchanged and looked like the
+        // search button did nothing.
         setCurrentSlang(null);
+        toast.info(
+          uiLang === 'zh'
+            ? `没找到 "${termToSearch}"，换个词试试`
+            : `No matches for "${termToSearch}". Try a different term.`
+        );
       }
     } catch (error) {
       console.error("Error searching slang:", error);
+      toast.error(uiLang === 'zh' ? '搜索失败，请重试' : 'Search failed, please retry');
+      Sentry.captureException(error, {
+        tags: { component: 'SlangDictionary', op: 'firestore.read', purpose: 'search' },
+        contexts: { search: { term: termToSearch } },
+      });
     } finally {
       setIsSearching(false);
     }
-  }, [trackSearch]);
+  }, [trackSearch, uiLang]);
 
   const handleSearch = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -889,6 +932,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
       } else {
         setSubmitError(uiLang === 'zh' ? '提交失败，请重试' : 'Failed to submit, please try again');
       }
+      Sentry.captureException(error, { tags: { component: 'SlangDictionary', op: 'slang.submit', collection: 'slang_meanings' } });
     } finally {
       setIsSubmitting(false);
       setIsUploading(false);
@@ -918,6 +962,8 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
       setUpvotedMeanings(prev => new Set(prev).add(meaningId));
     } catch (error) {
       console.error("Error upvoting:", error);
+      toast.error(uiLang === 'zh' ? '点赞失败' : 'Upvote failed');
+      Sentry.captureException(error, { tags: { component: 'SlangDictionary', op: 'firestore.write', collection: 'slang_upvotes' } });
     }
   };
 

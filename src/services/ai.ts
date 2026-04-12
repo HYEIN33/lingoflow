@@ -87,7 +87,13 @@ async function callGeminiProxy(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || `Proxy error: ${res.status}`);
+    // Attach status so geminiGenerate's 503/429 fallback chain can detect it.
+    // Without this, a 503 from the proxy propagates as an opaque error and
+    // the fallback model chain never triggers — user sees "翻译失败" instead
+    // of the automatic retry on the next Gemini model.
+    const error: any = new Error(err.error || `Proxy error: ${res.status}`);
+    error.status = res.status;
+    throw error;
   }
 
   const data = await res.json();

@@ -69,21 +69,39 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError
     if (this.state.hasError) {
       const msg = this.state.error?.message || String(this.state.error);
       const isQuota = msg.includes('Quota') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED');
+      // Class component can't consume React context; localStorage is the
+      // cross-cutting way to share uiLang with the global ErrorBoundary.
+      let uiLang: 'en' | 'zh' = 'zh';
+      try {
+        const stored = localStorage.getItem('memeflow_uiLang');
+        if (stored === 'en' || stored === 'zh') uiLang = stored;
+      } catch {}
+      const copy = uiLang === 'zh'
+        ? {
+            quotaTitle: '数据库配额已用完',
+            genericTitle: '页面出错了',
+            quotaBody: '今日免费数据库请求次数已达上限，请稍后再试（通常在几小时内重置）。',
+            retry: '刷新重试',
+          }
+        : {
+            quotaTitle: 'Database quota exceeded',
+            genericTitle: 'Something went wrong',
+            quotaBody: "Today's free database request limit was reached. Please try again in a few hours.",
+            retry: 'Reload',
+          };
       return (
         <div className="p-8 text-center bg-red-50 min-h-screen flex flex-col items-center justify-center">
           <h1 className="text-2xl font-bold text-red-600 mb-4">
-            {isQuota ? '数据库配额已用完' : 'Something went wrong'}
+            {isQuota ? copy.quotaTitle : copy.genericTitle}
           </h1>
           <p className="text-gray-600 mb-4 max-w-md">
-            {isQuota
-              ? '今日免费数据库请求次数已达上限，请稍后再试（通常在几小时内重置）。'
-              : msg}
+            {isQuota ? copy.quotaBody : msg}
           </p>
           <button
             onClick={() => window.location.reload()}
             className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
           >
-            刷新重试
+            {copy.retry}
           </button>
         </div>
       );
@@ -456,11 +474,38 @@ export default function App() {
     e.target.value = '';
   };
 
-  const [uiLang, setUiLang] = useState<Language>(
-    typeof navigator !== 'undefined' && navigator.language.startsWith('zh') ? 'zh' : 'en'
-  );
+  const [uiLang, setUiLang] = useState<Language>(() => {
+    // Prefer user's last explicit choice; fall back to browser locale.
+    // ErrorBoundary (class component) reads this key too — keep in sync.
+    try {
+      const stored = localStorage.getItem('memeflow_uiLang');
+      if (stored === 'en' || stored === 'zh') return stored;
+    } catch {}
+    return typeof navigator !== 'undefined' && navigator.language.startsWith('zh') ? 'zh' : 'en';
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem('memeflow_uiLang', uiLang); } catch {}
+  }, [uiLang]);
 
   const t = translations[uiLang];
+
+  // Shared logout confirmation — bound to both the header icon button and
+  // the UserProfile page's red "Sign out" button. Using toast.warning so
+  // the icon + color make it impossible to miss vs the default variant.
+  const confirmLogout = () => {
+    toast.warning(uiLang === 'zh' ? '确定要退出登录吗？' : 'Sign out of MemeFlow?', {
+      action: {
+        label: uiLang === 'zh' ? '退出' : 'Sign out',
+        onClick: () => logOut(),
+      },
+      cancel: {
+        label: uiLang === 'zh' ? '取消' : 'Cancel',
+        onClick: () => {},
+      },
+      duration: 8000,
+    });
+  };
 
   // AI Chat state
   const [aiMessages, setAiMessages] = useState<{ role: 'user' | 'ai'; text: string }[]>([]);
@@ -666,19 +711,7 @@ export default function App() {
               <span className="hidden xs:inline">{uiLang === 'zh' ? '手机端' : 'Mobile'}</span>
             </button>
             <button
-              onClick={() => {
-                toast(uiLang === 'zh' ? '确定要退出登录吗？' : 'Sign out?', {
-                  action: {
-                    label: uiLang === 'zh' ? '退出' : 'Sign out',
-                    onClick: () => logOut(),
-                  },
-                  cancel: {
-                    label: uiLang === 'zh' ? '取消' : 'Cancel',
-                    onClick: () => {},
-                  },
-                  duration: 6000,
-                });
-              }}
+              onClick={confirmLogout}
               aria-label={t.signOut}
               className="p-1.5 sm:p-2 hover:bg-gray-50 rounded-full transition-colors text-gray-400 hover:text-red-500"
               title={t.signOut}
@@ -822,7 +855,10 @@ export default function App() {
                     // Optional: mark onboarding as completed when dismissed
                     if (user) {
                       const userRef = doc(db, 'users', user.uid);
-                      updateDoc(userRef, { hasCompletedOnboarding: true }).catch(console.error);
+                      updateDoc(userRef, { hasCompletedOnboarding: true }).catch((e) => {
+                        console.error(e);
+                        Sentry.captureException(e, { tags: { component: 'App', op: 'firestore.write', field: 'hasCompletedOnboarding' } });
+                      });
                       setUserProfile(prev => prev ? { ...prev, hasCompletedOnboarding: true } : prev);
                     }
                   }}
@@ -862,7 +898,7 @@ export default function App() {
                   setShowPayment(true);
                 }}
                 onOpenOnboarding={() => setShowOnboarding(true)}
-                onLogout={logOut}
+                onLogout={confirmLogout}
               />
             </div>
           ) : null}
@@ -882,6 +918,12 @@ export default function App() {
                     await updateDoc(doc(db, 'users', user.uid), { isPro: true });
                   } catch (e) {
                     console.error('Failed to update Pro:', e);
+                    // Critical: Pro purchased but not persisted server-side.
+                    // Tag as P1 so this stands out in Sentry even among
+                    // other firestore writes. Local cache below is the
+                    // safety net, but server truth must be reconciled.
+                    Sentry.captureException(e, { tags: { component: 'App', op: 'firestore.write', field: 'isPro', severity: 'P1' } });
+                    toast.error(uiLang === 'zh' ? 'Pro 已激活但同步失败,请联系支持' : 'Pro activated but sync failed, contact support');
                   }
                   // Cache Pro status locally in case DB write fails (quota etc)
                   localStorage.setItem('memeflow_isPro', 'true');

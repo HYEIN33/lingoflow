@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import * as Sentry from '@sentry/react';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import { db } from '../firebase';
@@ -56,6 +57,7 @@ export function useReview(user: User | null, userProfile: UserProfile | null, sa
       });
     } catch (error) {
       console.error('Failed to update review:', error);
+      Sentry.captureException(error, { tags: { component: 'useReview', op: 'firestore.write', collection: 'words' } });
     }
   };
 

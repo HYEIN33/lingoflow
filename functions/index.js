@@ -44,7 +44,11 @@ async function checkRateLimit(uid) {
     if (lastMinute >= MAX_PER_MINUTE) return { allowed: false, reason: 'minute' };
     if (calls.length >= MAX_PER_DAY) return { allowed: false, reason: 'day' };
     calls.push(now);
-    tx.set(ref, { calls }, { merge: true });
+    // Hard cap array length so that future tuning (e.g. raising MAX_PER_DAY)
+    // cannot cause unbounded document growth. Transaction atomicity guards
+    // against lost updates between concurrent invocations.
+    const trimmed = calls.slice(-MAX_PER_DAY);
+    tx.set(ref, { calls: trimmed }, { merge: true });
     return { allowed: true };
   });
 }

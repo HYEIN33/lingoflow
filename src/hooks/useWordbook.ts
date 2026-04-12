@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import * as Sentry from '@sentry/react';
 import { collection, query, where, onSnapshot, deleteDoc, doc, updateDoc } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import { auth, db } from '../firebase';
@@ -19,12 +20,15 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
       userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
     },
     operationType,
     path
   };
   console.error('Firestore Error: ', JSON.stringify(errInfo));
+  Sentry.captureException(error, {
+    tags: { component: 'useWordbook', op: `firestore.${operationType}`, path: path || 'unknown' },
+    contexts: { firestore: errInfo },
+  });
   throw new Error(JSON.stringify(errInfo));
 }
 
@@ -78,7 +82,10 @@ export function useWordbook(user: User | null) {
           setWordFolderMap(data.wordFolderMap);
         }
         lastSyncedRef.current = JSON.stringify({ folders: data.folders || [], wordFolderMap: data.wordFolderMap || {} });
-      }).catch((e) => console.warn('folders initial load failed:', e));
+      }).catch((e) => {
+        console.warn('folders initial load failed:', e);
+        Sentry.captureException(e, { tags: { component: 'useWordbook', op: 'firestore.read', purpose: 'folders_load' } });
+      });
     });
     return () => { cancelled = true; };
   }, [user]);
@@ -93,7 +100,10 @@ export function useWordbook(user: User | null) {
       const userRef = doc(db, 'users', user.uid);
       updateDoc(userRef, { folders, wordFolderMap }).then(() => {
         lastSyncedRef.current = next;
-      }).catch((e) => console.warn('folders sync failed:', e));
+      }).catch((e) => {
+        console.warn('folders sync failed:', e);
+        Sentry.captureException(e, { tags: { component: 'useWordbook', op: 'firestore.write', purpose: 'folders_sync' } });
+      });
     }, 500);
     return () => { if (syncTimerRef.current) clearTimeout(syncTimerRef.current); };
   }, [folders, wordFolderMap, user]);
