@@ -510,7 +510,8 @@ export default function App() {
     e?.preventDefault();
     if (!grammarInput.trim() || isCheckingGrammar) return;
 
-    if (userProfile && !userProfile.isPro && userProfile.grammarCount >= 10) {
+    const currentCount = userProfile?.grammarCount ?? 0;
+    if (userProfile && !userProfile.isPro && currentCount >= 10) {
       setPaymentTrigger('translation_limit');
       setShowPayment(true);
       return;
@@ -522,11 +523,14 @@ export default function App() {
       setGrammarResult(result);
 
       if (userProfile && !userProfile.isPro) {
+        const nextCount = currentCount + 1;
         const userRef = doc(db, 'users', userProfile.userId);
-        await updateDoc(userRef, {
-          grammarCount: userProfile.grammarCount + 1
-        });
-        setUserProfile({ ...userProfile, grammarCount: userProfile.grammarCount + 1 });
+        try {
+          await updateDoc(userRef, { grammarCount: nextCount });
+        } catch (e) {
+          console.warn('Failed to sync grammarCount:', e);
+        }
+        setUserProfile({ ...userProfile, grammarCount: nextCount });
       }
     } catch (error: any) {
       console.error(error);
@@ -539,12 +543,14 @@ export default function App() {
 
   const handleTabOrderChange = async (newOrder: string[]) => {
     if (!user || !userProfile) return;
+    const prevOrder = userProfile.tabOrder;
     setUserProfile({ ...userProfile, tabOrder: newOrder });
     const userRef = doc(db, 'users', user.uid);
     try {
       await updateDoc(userRef, { tabOrder: newOrder });
     } catch (error) {
-      console.error('Failed to update tab order:', error);
+      console.error('Failed to update tab order, rolling back:', error);
+      setUserProfile({ ...userProfile, tabOrder: prevOrder });
     }
   };
 

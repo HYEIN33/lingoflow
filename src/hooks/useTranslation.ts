@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { doc, updateDoc } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import { db } from '../firebase';
@@ -38,17 +38,25 @@ export function useTranslation({
   const [showDetails, setShowDetails] = useState(false);
   const [formalityLevel, setFormalityLevel] = useState<number>(50);
   const [isSaving, setIsSaving] = useState(false);
+  // Ref-based guard — survives async gap between parallel clicks, which setIsTranslating cannot
+  const inFlightRef = useRef(false);
 
   const handleTranslate = async (e?: React.FormEvent, overrideText?: string) => {
     e?.preventDefault();
     const textToTranslate = overrideText || inputText;
     if (!textToTranslate.trim()) return;
 
-    if (userProfile && !userProfile.isPro && userProfile.translationCount >= 10) {
+    // H3: guard against parallel calls (double-click / rapid submit)
+    if (inFlightRef.current) return;
+
+    // ?? 0 — never compare against undefined/NaN (legacy profile safety)
+    const currentCount = userProfile?.translationCount ?? 0;
+    if (userProfile && !userProfile.isPro && currentCount >= 10) {
       onPaymentNeeded('translation_limit');
       return;
     }
 
+    inFlightRef.current = true;
     setIsTranslating(true);
     setTranslationResult(null);
     setShowDetails(false);
@@ -76,11 +84,14 @@ export function useTranslation({
       }
 
       if (userProfile && !userProfile.isPro) {
+        const nextCount = currentCount + 1;
         const userRef = doc(db, 'users', userProfile.userId);
-        await updateDoc(userRef, {
-          translationCount: userProfile.translationCount + 1
-        });
-        setUserProfile({ ...userProfile, translationCount: userProfile.translationCount + 1 });
+        try {
+          await updateDoc(userRef, { translationCount: nextCount });
+        } catch (e) {
+          console.warn('Failed to sync translationCount:', e);
+        }
+        setUserProfile({ ...userProfile, translationCount: nextCount });
       }
     } catch (error: any) {
       console.error(error);
@@ -97,6 +108,7 @@ export function useTranslation({
       alert(message);
     } finally {
       setIsTranslating(false);
+      inFlightRef.current = false;
     }
   };
 
