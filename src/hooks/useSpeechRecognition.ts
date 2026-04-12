@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { toast } from 'sonner';
 import { Language } from '../i18n';
 
 interface UseSpeechRecognitionParams {
@@ -29,12 +30,12 @@ export function useSpeechRecognition({
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Speech recognition is not supported in this browser.');
+      toast.error(uiLang === 'zh' ? '此浏览器不支持语音识别' : 'Speech recognition is not supported in this browser.');
       return;
     }
 
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      alert(uiLang === 'zh' ? '您的浏览器不支持麦克风访问。' : 'Your browser does not support microphone access.');
+      toast.error(uiLang === 'zh' ? '您的浏览器不支持麦克风访问' : 'Your browser does not support microphone access.');
       return;
     }
 
@@ -43,11 +44,11 @@ export function useSpeechRecognition({
     } catch (err: any) {
       console.error('Microphone access denied:', err);
       if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        alert(uiLang === 'zh' ? '未找到麦克风设备，请检查您的设备连接。' : 'No microphone found. Please check your device connection.');
+        toast.error(uiLang === 'zh' ? '未找到麦克风设备，请检查您的设备连接' : 'No microphone found. Please check your device connection.');
       } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        alert(uiLang === 'zh' ? '请在浏览器设置中允许麦克风访问。' : 'Please allow microphone access in your browser settings.');
+        toast.error(uiLang === 'zh' ? '请在浏览器设置中允许麦克风访问' : 'Please allow microphone access in your browser settings.');
       } else {
-        alert(uiLang === 'zh' ? '无法访问麦克风：' + err.message : 'Could not access microphone: ' + err.message);
+        toast.error(uiLang === 'zh' ? '无法访问麦克风：' + err.message : 'Could not access microphone: ' + err.message);
       }
       return;
     }
@@ -66,9 +67,9 @@ export function useSpeechRecognition({
     recognition.onerror = (event: any) => {
       console.error('Speech recognition error:', event.error);
       if (event.error === 'not-allowed') {
-        alert(uiLang === 'zh' ? '请允许麦克风访问。' : 'Please allow microphone access.');
+        toast.error(uiLang === 'zh' ? '请允许麦克风访问' : 'Please allow microphone access.');
       } else if (event.error === 'network') {
-        alert(uiLang === 'zh' ? '网络连接错误。' : 'Network connection error.');
+        toast.error(uiLang === 'zh' ? '网络连接错误' : 'Network connection error.');
       }
       setIsListening(false);
     };

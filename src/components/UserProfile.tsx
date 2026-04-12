@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { Settings, Edit2, Camera, X, Bell, LogOut, Check, Loader2, Award, Flame, Star, MessageSquare } from 'lucide-react';
 import { doc, updateDoc, collection, query, where, orderBy, onSnapshot, getDocs } from 'firebase/firestore';
@@ -275,7 +276,7 @@ export default function UserProfile({
     const file = e.target.files?.[0];
     if (!file || !user) return;
     if (file.size > 2 * 1024 * 1024) {
-      alert(uiLang === 'zh' ? '图片不能超过 2MB' : 'Image must be less than 2MB');
+      toast.error(uiLang === 'zh' ? '图片不能超过 2MB' : 'Image must be less than 2MB');
       return;
     }
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { toast } from 'sonner';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, orderBy, limit, serverTimestamp, onSnapshot, getDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { Search, Plus, ThumbsUp, AlertCircle, Loader2, MessageSquare, Volume2, Image as ImageIcon, Video, Film, X, Mic, Wand2, Flag, Share2, Send, ChevronDown } from 'lucide-react';
@@ -262,14 +263,19 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     } catch {}
   }, []);
 
-  // Track search in Firestore for global trending
+  // Track search in Firestore for global trending.
+  // Each doc carries expireAt = now + 7d so Firestore TTL policy can
+  // garbage-collect old rows automatically. The trending query only
+  // looks at the last 7 days anyway, so everything past that is waste.
   const trackSearch = useCallback(async (term: string) => {
     if (!auth.currentUser) return;
     try {
+      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
       await addDoc(collection(db, 'slang_searches'), {
         term: term.toLowerCase(),
         userId: auth.currentUser.uid,
         createdAt: serverTimestamp(),
+        expireAt: Timestamp.fromMillis(Date.now() + sevenDaysMs),
       });
       setTrendingRefresh(n => n + 1);
     } catch (e) {
@@ -425,7 +431,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 10 * 1024 * 1024) {
-        alert(uiLang === 'zh' ? '文件不能超过10MB' : 'File size must be less than 10MB');
+        toast.error(uiLang === 'zh' ? '文件不能超过 10MB' : 'File size must be less than 10MB');
         return;
       }
       setMediaFile(file);
@@ -456,7 +462,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
-        alert(uiLang === 'zh' ? '音频文件不能超过5MB' : 'Audio file size must be less than 5MB');
+        toast.error(uiLang === 'zh' ? '音频文件不能超过 5MB' : 'Audio file size must be less than 5MB');
         return;
       }
       setAudioFile(file);

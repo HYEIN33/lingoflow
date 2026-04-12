@@ -1,5 +1,6 @@
 import React, { useState, useEffect, Component, ReactNode } from 'react';
 import * as Sentry from '@sentry/react';
+import { toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import {
   Search,
@@ -535,8 +536,8 @@ export default function App() {
       }
     } catch (error: any) {
       console.error(error);
-      const message = error.message || (uiLang === 'zh' ? '语法检查失败，请重试。' : 'Grammar check failed. Please try again.');
-      alert(message);
+      const message = error.message || (uiLang === 'zh' ? '语法检查失败，请重试' : 'Grammar check failed. Please try again.');
+      toast.error(message);
     } finally {
       setIsCheckingGrammar(false);
     }

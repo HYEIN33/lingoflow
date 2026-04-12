@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { toast } from 'sonner';
 import { doc, updateDoc } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import { db } from '../firebase';
@@ -105,7 +106,7 @@ export function useTranslation({
       } else {
         message = uiLang === 'zh' ? '翻译失败，请重试' : 'Translation failed. Please try again.';
       }
-      alert(message);
+      toast.error(message);
     } finally {
       setIsTranslating(false);
       inFlightRef.current = false;
@@ -116,7 +117,7 @@ export function useTranslation({
     if (!user || !translationResult || isSaving) return;
 
     if (userProfile && !userProfile.isPro && savedWords.length >= 50) {
-      alert(uiLang === 'zh' ? '免费用户限存50个单词，请升级Pro。' : 'Free users are limited to 50 saved words. Please upgrade to Pro.');
+      toast.error(uiLang === 'zh' ? '免费用户限存 50 个单词，请升级 Pro' : 'Free users are limited to 50 saved words. Please upgrade to Pro.');
       return;
     }
 
@@ -139,13 +140,13 @@ export function useTranslation({
 
       await addDoc(collection(db, 'words'), wordData);
 
-      alert(uiLang === 'zh' ? '已成功保存到单词本' : 'Successfully saved to wordbook');
+      toast.success(uiLang === 'zh' ? '已保存到单词本 ✓' : 'Saved to wordbook ✓');
       setTranslationResult(null);
       setInputText('');
       setShowDetails(false);
     } catch (error: any) {
       console.error('Save word failed:', error);
-      alert(uiLang === 'zh' ? `保存失败: ${error.message || '未知错误'}` : `Failed to save: ${error.message || 'Unknown error'}`);
+      toast.error(uiLang === 'zh' ? `保存失败：${error.message || '未知错误'}` : `Save failed: ${error.message || 'Unknown error'}`);
     } finally {
       setIsSaving(false);
     }

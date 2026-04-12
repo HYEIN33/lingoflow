@@ -1,5 +1,21 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
+import * as Sentry from "@sentry/react";
 import { auth } from "../firebase";
+
+// Record a Gemini-related event to Sentry as a breadcrumb. Only runs when
+// Sentry is actually initialized (PROD). In DEV it's a cheap no-op.
+function aiBreadcrumb(message: string, data?: Record<string, unknown>) {
+  try {
+    Sentry.addBreadcrumb({
+      category: 'ai.gemini',
+      level: 'info',
+      message,
+      data,
+    });
+  } catch {
+    // Sentry not initialized — ignore.
+  }
+}
 
 export type AIProvider = 'gemini';
 
@@ -100,6 +116,7 @@ async function geminiGenerate(opts: {
     try {
       if (USE_PROXY) {
         const result = await callGeminiProxy(models[i], opts.contents, opts.config);
+        aiBreadcrumb('generate.success', { model: models[i], path: 'proxy', attempt: i + 1 });
         return result.text;
       }
       const ai = getGeminiAI();
@@ -108,27 +125,44 @@ async function geminiGenerate(opts: {
         contents: opts.contents as any,
         config: opts.config as any,
       });
+      aiBreadcrumb('generate.success', { model: models[i], path: 'sdk', attempt: i + 1 });
       return response.text;
     } catch (e: any) {
       const msg = e?.message || String(e);
       const status = e?.status || msg.match(/(\d{3})/)?.[1];
 
+      aiBreadcrumb('generate.error', {
+        model: models[i],
+        attempt: i + 1,
+        status: String(status || 'unknown'),
+        error: msg.substring(0, 200),
+      });
+
       // Location restriction or FAILED_PRECONDITION — try proxy fallback
       if (msg.includes('location is not supported') || msg.includes('FAILED_PRECONDITION') || status == 400) {
         console.warn(`Direct API blocked (${msg.substring(0, 80)}), trying proxy...`);
+        aiBreadcrumb('generate.region_fallback_to_proxy', { model: models[i] });
         try {
           const result = await callGeminiProxy(models[i], opts.contents, opts.config);
+          aiBreadcrumb('generate.proxy_fallback_success', { model: models[i] });
           return result.text;
         } catch (proxyErr: any) {
-          // Proxy also failed — throw user-friendly error
+          aiBreadcrumb('generate.proxy_fallback_failed', { model: models[i], error: (proxyErr?.message || String(proxyErr)).substring(0, 200) });
           throw new Error('翻译服务暂时不可用，请稍后重试');
         }
       }
 
       if ((status == 503 || status == 429) && i < models.length - 1) {
         console.warn(`${models[i]} unavailable (${status}), falling back to ${models[i + 1]}`);
+        aiBreadcrumb('generate.model_fallback', { from: models[i], to: models[i + 1], status: String(status) });
         continue;
       }
+
+      // Exhausted all fallbacks — escalate to Sentry with full context
+      Sentry.captureException(e, {
+        tags: { component: 'ai.gemini', model: models[i], status: String(status || 'unknown') },
+        level: 'error',
+      });
 
       // Friendly error messages
       if (status == 503 || status == 429) {

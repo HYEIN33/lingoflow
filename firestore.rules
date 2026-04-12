@@ -120,8 +120,16 @@ service cloud.firestore {
     // Fields a user is allowed to mutate on their own profile.
     // Sensitive fields (isPro, reputationScore, penalty fields, approvedSlangCount)
     // can only be written by isAdmin() or by Cloud Functions (admin SDK bypasses rules).
+    //
+    // displayName + photoURL are user-editable via the UserProfile UI so they
+    // show up on the leaderboard and slang meaning cards. 2026-04-13 audit
+    // unblocked these — previously UserProfile.tsx was trying to write them
+    // but the rule silently rejected, leaving stale data everywhere the
+    // leaderboard / profile header read from Firestore.
     function isUserSelfUpdate(before, after) {
       return after.diff(before).affectedKeys().hasOnly([
+        'displayName',
+        'photoURL',
         'tabOrder',
         'lastContributionDate',
         'currentStreak',
@@ -196,13 +204,18 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && upvoteId.matches('^' + request.auth.uid + '_.*');
     }
 
+    // slang_searches is append-only high-churn data. Rows carry expireAt
+    // so the Firestore TTL policy (configured on the `expireAt` field)
+    // garbage-collects 7-day-old rows automatically — prevents unbounded
+    // growth of this collection and keeps the trending query fast.
     match /slang_searches/{searchId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() &&
                     request.resource.data.term is string &&
                     request.resource.data.term.size() > 0 &&
                     request.resource.data.userId == request.auth.uid &&
-                    (request.resource.data.createdAt is timestamp || request.resource.data.createdAt == request.time);
+                    (request.resource.data.createdAt is timestamp || request.resource.data.createdAt == request.time) &&
+                    (!('expireAt' in request.resource.data) || request.resource.data.expireAt is timestamp);
     }
 
     // Comments on slang meanings — anyone authed can read, anyone authed can
