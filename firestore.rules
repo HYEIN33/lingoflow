@@ -110,6 +110,25 @@ service cloud.firestore {
              (!('reputationScore' in data) || data.reputationScore is number);
     }
 
+    // Fields a user is allowed to mutate on their own profile.
+    // Sensitive fields (isPro, reputationScore, penalty fields, approvedSlangCount)
+    // can only be written by isAdmin() or by Cloud Functions (admin SDK bypasses rules).
+    function isUserSelfUpdate(before, after) {
+      return after.diff(before).affectedKeys().hasOnly([
+        'tabOrder',
+        'lastContributionDate',
+        'currentStreak',
+        'hasCompletedOnboarding',
+        'translationCount',
+        'grammarCount',
+        'lastResetDate',
+        'titleLevel1',
+        'titleLevel2',
+        'titleLevel3',
+        'hasUploadedMedia'
+      ]);
+    }
+
     function isValidCounterUpdate(docId) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['upvotes']) &&
              math.abs(request.resource.data.upvotes - resource.data.upvotes) == 1 &&
@@ -124,7 +143,7 @@ service cloud.firestore {
     }
 
     match /test_connection/{uid} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isOwner(uid);
     }
 
     match /words/{wordId} {
@@ -136,21 +155,27 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId) && isValidUserProfile(request.resource.data);
-      allow update: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserProfile(request.resource.data) && request.resource.data.isPro == false;
+      allow update: if isAdmin() || (isOwner(userId) && isUserSelfUpdate(resource.data, request.resource.data));
     }
 
     match /slangs/{slangId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidSlang(request.resource.data);
-      allow update, delete: if isAuthenticated();
+      // Only admins can mutate or delete shared slang terms — protects the public corpus
+      allow update, delete: if isAdmin();
     }
 
     match /slang_meanings/{meaningId} {
       allow read: if isAuthenticated();
       allow create: if isAuthenticated() && isValidSlangMeaning(request.resource.data) && request.resource.data.upvotes == 0;
-      allow update: if isAuthenticated() && isValidCounterUpdate(meaningId);
-      allow delete: if isAuthenticated();
+      // Counter (upvote/downvote) updates: anyone authed; full edits: author or admin
+      allow update: if isAuthenticated() && (
+        isValidCounterUpdate(meaningId) ||
+        isAdmin() ||
+        (resource.data.authorId == request.auth.uid && isValidSlangMeaning(request.resource.data))
+      );
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.authorId == request.auth.uid);
     }
 
     match /slang_upvotes/{upvoteId} {

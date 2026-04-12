@@ -166,7 +166,7 @@
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-app.js';
-import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-auth.js';
 import { getFirestore, collection, doc, addDoc, getDocs, deleteDoc, query, where, orderBy, serverTimestamp, writeBatch } from 'https://www.gstatic.com/firebasejs/11.6.0/firebase-firestore.js';
 
 const config = {
@@ -179,6 +179,8 @@ const config = {
 };
 const DB_ID = "default";
 
+const ADMIN_EMAIL = 'caizewei11@gmail.com';
+
 const app = initializeApp(config);
 const auth = getAuth(app);
 const db = getFirestore(app, DB_ID);
@@ -189,16 +191,35 @@ let uid = '';
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
 async function init() {
+  // Require Google sign-in as the admin user. Anonymous users cannot pass.
+  document.getElementById('authStatus').textContent = '需要登录...';
   try {
-    const cred = await signInAnonymously(auth);
-    uid = cred.user.uid;
-    document.getElementById('authStatus').textContent = `已连接 (${uid.slice(0,8)}...)`;
-    document.getElementById('dbInfo').textContent = `数据库: ${DB_ID.slice(0,24)}...`;
-    await loadAllData();
-  } catch(e) {
-    document.getElementById('authStatus').textContent = '连接失败: ' + e.message;
-    console.error(e);
+    await signInWithPopup(auth, new GoogleAuthProvider());
+  } catch (e) {
+    document.getElementById('authStatus').textContent = '登录失败: ' + e.message;
+    return;
   }
+  onAuthStateChanged(auth, async (u) => {
+    if (!u) {
+      document.getElementById('authStatus').textContent = '未登录';
+      return;
+    }
+    if (u.email !== ADMIN_EMAIL || !u.emailVerified) {
+      document.getElementById('authStatus').textContent = '⛔ 拒绝访问：仅管理员可用 (' + (u.email || '匿名') + ')';
+      await signOut(auth);
+      document.body.innerHTML = '<div style="padding:48px;text-align:center;font-family:system-ui;color:#dc2626;font-size:18px">⛔ 此页面仅限管理员访问<br><br><a href="/">返回首页</a></div>';
+      return;
+    }
+    uid = u.uid;
+    document.getElementById('authStatus').textContent = `✓ 管理员 ${u.email}`;
+    document.getElementById('dbInfo').textContent = `数据库: ${DB_ID}`;
+    try {
+      await loadAllData();
+    } catch (e) {
+      console.error(e);
+      document.getElementById('authStatus').textContent = '加载失败: ' + e.message;
+    }
+  });
 }
 
 async function loadAllData() {
