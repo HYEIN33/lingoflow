@@ -248,7 +248,7 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
             </button>
             <button
               onClick={() => setMode('email')}
-              className="w-full bg-gray-800 hover:bg-gray-900 text-white font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-gray-200"
+              className="w-full bg-white hover:bg-blue-50 text-blue-600 border-2 border-blue-200 hover:border-blue-400 font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3"
             >
               <LogIn className="w-5 h-5" />
               {uiLang === 'zh' ? '邮箱登录 / 注册' : 'Sign in with Email'}
@@ -641,7 +641,11 @@ export default function App() {
               <span className="hidden xs:inline">{uiLang === 'zh' ? '手机端' : 'Mobile'}</span>
             </button>
             <button
-              onClick={logOut}
+              onClick={() => {
+                if (window.confirm(uiLang === 'zh' ? '确定要退出登录吗？' : 'Are you sure you want to sign out?')) {
+                  logOut();
+                }
+              }}
               aria-label={t.signOut}
               className="p-1.5 sm:p-2 hover:bg-gray-50 rounded-full transition-colors text-gray-400 hover:text-red-500"
               title={t.signOut}
@@ -1118,7 +1122,7 @@ export default function App() {
                           {t.examples}
                         </h3>
                         <div className="space-y-4">
-                          {(translationResult.usages[selectedUsageIndex]?.examples || []).map((ex, i) => (
+                          {(translationResult.usages?.[selectedUsageIndex]?.examples || []).map((ex, i) => (
                             <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 space-y-3 group/ex hover:border-blue-200 transition-colors overflow-hidden">
                               <div className="flex items-start justify-between gap-4">
                                 <div className="flex gap-4 min-w-0 flex-1">

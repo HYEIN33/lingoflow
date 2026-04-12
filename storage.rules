@@ -1,0 +1,63 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // ===================================================================
+    // Helpers
+    // ===================================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+    function isVideo() {
+      return request.resource.contentType.matches('video/.*');
+    }
+    function isAudio() {
+      return request.resource.contentType.matches('audio/.*');
+    }
+    function sizeUnder(mb) {
+      return request.resource.size < mb * 1024 * 1024;
+    }
+
+    // ===================================================================
+    // User avatars — /users/{uid}/avatar/*
+    // Only the owner can upload; reads are public (avatars are shown to
+    // other users on the leaderboard / meanings list).
+    // ===================================================================
+    match /users/{uid}/avatar/{file} {
+      allow read: if true;
+      allow write: if isOwner(uid) && isImage() && sizeUnder(5);
+    }
+
+    // ===================================================================
+    // Slang media — /slangs/{slangId}/{file}
+    // Any authenticated user can upload media tied to a meaning they
+    // submit. Size caps keep bucket costs bounded.
+    // ===================================================================
+    match /slangs/{slangId}/media/{file} {
+      allow read: if true;
+      allow write: if isAuthenticated() && (
+        (isImage() && sizeUnder(10)) ||
+        (isVideo() && sizeUnder(30)) ||
+        (isAudio() && sizeUnder(10))
+      );
+    }
+
+    // User-recorded audio attached to a meaning — /slangs/{slangId}/audio/{uid}/{file}
+    match /slangs/{slangId}/audio/{uid}/{file} {
+      allow read: if true;
+      allow write: if isOwner(uid) && isAudio() && sizeUnder(10);
+    }
+
+    // ===================================================================
+    // Everything else — deny
+    // ===================================================================
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

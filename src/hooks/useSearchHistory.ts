@@ -12,7 +12,16 @@ export function useSearchHistory() {
   const [history, setHistory] = useState<SearchHistoryItem[]>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      return stored ? JSON.parse(stored) : [];
+      if (!stored) return [];
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .map((item: any) => {
+          if (typeof item === 'string') return { text: item, timestamp: 0 };
+          if (item && typeof item.text === 'string') return { text: item.text, timestamp: Number(item.timestamp) || 0 };
+          return null;
+        })
+        .filter((x): x is SearchHistoryItem => x !== null);
     } catch { return []; }
   });
 

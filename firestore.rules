@@ -52,11 +52,18 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
+    // Admin is determined by a custom claim on the auth token OR the
+    // user's Firestore profile `role` field. NEVER hardcode emails — if
+    // the email account is phished, hardcoding leaks admin to an attacker.
+    // Custom claims are set server-side via a Cloud Function using the
+    // Admin SDK (which bypasses these rules). The role field is kept as
+    // a secondary path so existing admins via Firestore profile still work.
     function isAdmin() {
-      return isAuthenticated() &&
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          (request.auth.token.email == "caizewei11@gmail.com" && request.auth.token.email_verified == true));
+      return isAuthenticated() && (
+        request.auth.token.admin == true ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
     }
 
     function isValidWord(data) {
@@ -196,6 +203,35 @@ service cloud.firestore {
                     request.resource.data.term.size() > 0 &&
                     request.resource.data.userId == request.auth.uid &&
                     (request.resource.data.createdAt is timestamp || request.resource.data.createdAt == request.time);
+    }
+
+    // Comments on slang meanings — anyone authed can read, anyone authed can
+    // create their own comment. Author / admin can delete. Text is capped.
+    match /slang_comments/{commentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+                    request.resource.data.authorId == request.auth.uid &&
+                    request.resource.data.text is string &&
+                    request.resource.data.text.size() > 0 &&
+                    request.resource.data.text.size() < 1000 &&
+                    request.resource.data.meaningId is string &&
+                    request.resource.data.slangId is string &&
+                    (request.resource.data.createdAt is timestamp || request.resource.data.createdAt == request.time);
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.authorId == request.auth.uid);
+    }
+
+    // Reports on slang meanings — any authed user can create a report on
+    // someone else's meaning. Only admins can read/delete (so the public
+    // can't see who reported what).
+    match /slang_reports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() &&
+                    request.resource.data.reporterId == request.auth.uid &&
+                    request.resource.data.meaningId is string &&
+                    request.resource.data.reason is string &&
+                    request.resource.data.reason.size() < 500 &&
+                    (request.resource.data.createdAt is timestamp || request.resource.data.createdAt == request.time);
+      allow update, delete: if isAdmin();
     }
   }
 }
