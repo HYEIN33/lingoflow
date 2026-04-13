@@ -506,6 +506,12 @@ export default function WordbookPage(props: WordbookPageProps) {
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
+                      {word.interval != null && (
+                        <span className={cn(
+                          "w-2 h-2 rounded-full shrink-0",
+                          word.interval > 21 ? "bg-green-400" : word.interval > 0 ? "bg-yellow-400" : "bg-red-400"
+                        )} title={word.interval > 21 ? (uiLang === 'zh' ? '已掌握' : 'Mastered') : word.interval > 0 ? (uiLang === 'zh' ? '学习中' : 'Learning') : (uiLang === 'zh' ? '该复习了' : 'Due for review')} />
+                      )}
                       <h3 className="text-base font-bold text-gray-900 truncate">{word.original}</h3>
                       {word.styleTag && word.styleTag !== 'standard' && (
                         <span className={cn(
@@ -517,6 +523,9 @@ export default function WordbookPage(props: WordbookPageProps) {
                       )}
                     </div>
                     <p className="text-sm text-gray-500 truncate mt-0.5">{word.usages?.[0]?.meaningZh || ''}</p>
+                    {(word.authenticTranslation || word.academicTranslation) && (
+                      <p className="text-xs text-gray-400 truncate mt-0.5">→ {(word.authenticTranslation || word.academicTranslation || '').slice(0, 60)}</p>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button

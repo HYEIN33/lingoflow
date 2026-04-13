@@ -776,7 +776,7 @@ export default function App() {
 
       {/* Header */}
       <header className="bg-white/40 backdrop-blur-md border-b border-white/50 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
+        <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-lg sm:rounded-xl flex items-center justify-center">
               <Languages className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
@@ -849,7 +849,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 relative z-10">
+      <main className="max-w-2xl lg:max-w-5xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 relative z-10">
         {/* Tabs — Pro users can long-press + drag to reorder */}
         <DndContext
           sensors={tabSensors}
@@ -918,7 +918,7 @@ export default function App() {
               user={user}
             />
           ) : activeTab === 'grammar' ? (
-            <div>
+            <div className="max-w-3xl mx-auto">
               <GrammarPage
                 grammarInput={grammarInput}
                 setGrammarInput={setGrammarInput}
@@ -931,7 +931,7 @@ export default function App() {
               />
             </div>
           ) : activeTab === 'review' ? (
-            <div>
+            <div className="max-w-3xl mx-auto">
               <ReviewPage
                 userProfile={userProfile}
                 uiLang={uiLang}
@@ -952,7 +952,7 @@ export default function App() {
               />
             </div>
           ) : activeTab === 'history' ? (
-            <div>
+            <div className="max-w-3xl mx-auto">
               <WordbookPage
                 savedWords={savedWords}
                 filteredWords={filteredWords}
@@ -981,7 +981,7 @@ export default function App() {
               />
             </div>
           ) : activeTab === 'slang' ? (
-            <div>
+            <div className="max-w-3xl mx-auto">
               {userProfile && !userProfile.hasCompletedOnboarding && (userProfile.approvedSlangCount || 0) < 3 && (
                 <OnboardingChecklist
                   uiLang={uiLang}
@@ -998,7 +998,7 @@ export default function App() {
                   }}
                 />
               )}
-              <SlangDictionary uiLang={uiLang} initialSearchTerm={searchQuery} />
+              <SlangDictionary uiLang={uiLang} initialSearchTerm={searchQuery} onTryTranslate={(term) => { setInputText(term); setActiveTab('translate'); }} />
             </div>
           ) : activeTab === 'leaderboard' ? (
             <div>

@@ -12,6 +12,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { storage } from '../firebase';
 import { UserProfile } from '../App';
 import { DailyChallenge } from './DailyChallenge';
+import { trackEvent } from '../utils/analytics';
 import { markOnboardingStep } from './OnboardingChecklist';
 
 interface Slang {
@@ -162,7 +163,7 @@ const REPORT_REASONS = [
   { value: 'other', labelZh: '其他', labelEn: 'Other' },
 ];
 
-export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 'zh', initialSearchTerm?: string }) {
+export function SlangDictionary({ uiLang, initialSearchTerm, onTryTranslate }: { uiLang: 'en' | 'zh', initialSearchTerm?: string, onTryTranslate?: (term: string) => void }) {
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
   const [currentSlang, setCurrentSlang] = useState<Slang | null>(null);
   const [meanings, setMeanings] = useState<SlangMeaning[]>([]);
@@ -1176,15 +1177,25 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
             <h2 className="text-3xl font-black text-gray-900 tracking-tight">
               {currentSlang.term}
             </h2>
-            {!showAddForm && (
-              <button
-                onClick={() => setShowAddForm(true)}
-                className="flex items-center gap-1 text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                {uiLang === 'zh' ? '补充解释' : 'Add Meaning'}
-              </button>
-            )}
+            <div className="flex items-center gap-2">
+              {onTryTranslate && (
+                <button
+                  onClick={() => { trackEvent('cross_tab_navigate', { from: 'slang', to: 'translate', term: currentSlang.term }); onTryTranslate(currentSlang.term); }}
+                  className="flex items-center gap-1 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                >
+                  {uiLang === 'zh' ? '造句试试' : 'Try translating'}
+                </button>
+              )}
+              {!showAddForm && (
+                <button
+                  onClick={() => setShowAddForm(true)}
+                  className="flex items-center gap-1 text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  {uiLang === 'zh' ? '补充解释' : 'Add Meaning'}
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="space-y-4">

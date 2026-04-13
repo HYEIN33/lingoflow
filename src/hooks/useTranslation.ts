@@ -228,7 +228,11 @@ export function useTranslation({
         usages: translationResult.usages,
         userId: user.uid,
         styleTag,
-        createdAt: Timestamp.now()
+        createdAt: Timestamp.now(),
+        authenticTranslation: translationResult.authenticTranslation || '',
+        academicTranslation: translationResult.academicTranslation || '',
+        pronunciation: translationResult.pronunciation || '',
+        slangTerms: translationResult.slangTerms || [],
       };
 
       // Spaced Repetition fields — always add so words are reviewable

@@ -48,6 +48,7 @@ import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import * as Sentry from '@sentry/react';
 import { toast } from 'sonner';
 import { trackEvent } from '../utils/analytics';
+import { TranslationSkeleton, SlangInsightSkeleton } from '../components/Skeleton';
 
 interface SearchHistoryItem {
   text: string;
@@ -174,6 +175,7 @@ export default function TranslateTab({
   const [feedbackReason, setFeedbackReason] = useState('');
   const [showFeedbackReason, setShowFeedbackReason] = useState(false);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [suggestedTranslation, setSuggestedTranslation] = useState('');
 
   // Reset feedback state when a new translation arrives
   useEffect(() => {
@@ -181,6 +183,7 @@ export default function TranslateTab({
     setFeedbackReason('');
     setShowFeedbackReason(false);
     setIsSubmittingFeedback(false);
+    setSuggestedTranslation('');
   }, [translationResult?.original]);
 
   // Check if current translation is already saved
@@ -440,6 +443,11 @@ export default function TranslateTab({
         {translationResult ? (uiLang === 'zh' ? '翻译完成' : 'Translation complete') : ''}
       </div>
 
+      {/* Translation Loading Skeleton */}
+      {isTranslating && !translationResult && (
+        <TranslationSkeleton />
+      )}
+
       {/* Translation Result */}
       {translationResult && (() => {
         // Detect content length tier — affects layout, font size, and whether
@@ -544,6 +552,28 @@ export default function TranslateTab({
                 </div>
               )}
 
+              {/* Inline Slang Chips — visible in sentence/paragraph mode where sidebar is hidden */}
+              {isSentence && slangInsights.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    {uiLang === 'zh' ? '检测到俚语：' : 'Slang detected:'}
+                  </span>
+                  {slangInsights.map((insight) => (
+                    <button
+                      key={insight.term}
+                      onClick={() => { trackEvent('slang_chip_click', { term: insight.term }); onViewSlangEntry(insight.term); }}
+                      className="px-2.5 py-1 text-xs font-medium bg-indigo-50 text-indigo-600 rounded-lg border border-indigo-100 hover:bg-indigo-100 transition-colors focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
+                      title={insight.meaning}
+                    >
+                      {insight.term}
+                    </button>
+                  ))}
+                  {isFetchingSlang && (
+                    <Loader2 className="w-3 h-3 animate-spin text-indigo-400" />
+                  )}
+                </div>
+              )}
+
               {/* Translation Feedback 👍/👎 */}
               {user && (
                 <div className="flex items-center gap-3">
@@ -576,24 +606,52 @@ export default function TranslateTab({
                   </button>
                   {showFeedbackReason && (
                     <form
-                      className="flex items-center gap-2 flex-1"
-                      onSubmit={(e) => { e.preventDefault(); submitFeedback('down', feedbackReason); }}
+                      className="flex flex-col gap-2 flex-1"
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        // Submit suggestion to translation_suggestions if provided
+                        if (suggestedTranslation.trim() && user && translationResult) {
+                          try {
+                            await addDoc(collection(db, 'translation_suggestions'), {
+                              uid: user.uid,
+                              query: translationResult.original,
+                              originalResult: translationResult.authenticTranslation || '',
+                              suggestion: suggestedTranslation.trim(),
+                              timestamp: Timestamp.now(),
+                            });
+                            trackEvent('translation_suggestion_submit');
+                          } catch (err) {
+                            Sentry.captureException(err, { tags: { component: 'TranslateTab' } });
+                          }
+                        }
+                        submitFeedback('down', feedbackReason);
+                      }}
                     >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={feedbackReason}
+                          onChange={(e) => setFeedbackReason(e.target.value)}
+                          placeholder={uiLang === 'zh' ? '哪里不好？(选填)' : 'What went wrong? (optional)'}
+                          maxLength={500}
+                          className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-400"
+                        />
+                        <button
+                          type="submit"
+                          disabled={isSubmittingFeedback}
+                          className="text-xs font-bold text-blue-600 hover:text-blue-700 disabled:opacity-50 shrink-0"
+                        >
+                          {uiLang === 'zh' ? '提交' : 'Submit'}
+                        </button>
+                      </div>
                       <input
                         type="text"
-                        value={feedbackReason}
-                        onChange={(e) => setFeedbackReason(e.target.value)}
-                        placeholder={uiLang === 'zh' ? '哪里不好？(选填)' : 'What went wrong? (optional)'}
+                        value={suggestedTranslation}
+                        onChange={(e) => setSuggestedTranslation(e.target.value)}
+                        placeholder={uiLang === 'zh' ? '更好的翻译是？(选填，帮助我们改进)' : 'Better translation? (optional, helps us improve)'}
                         maxLength={500}
-                        className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-400"
+                        className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-400"
                       />
-                      <button
-                        type="submit"
-                        disabled={isSubmittingFeedback}
-                        className="text-xs font-bold text-blue-600 hover:text-blue-700 disabled:opacity-50"
-                      >
-                        {uiLang === 'zh' ? '提交' : 'Submit'}
-                      </button>
                     </form>
                   )}
                 </div>
@@ -855,12 +913,7 @@ export default function TranslateTab({
                   <div className="h-px bg-white/20 mb-4" />
 
                   {isFetchingSlang ? (
-                    <div className="flex flex-col items-center py-8 gap-3">
-                      <Loader2 className="w-8 h-8 animate-spin text-blue-200" />
-                      <p className="text-xs text-blue-200 animate-pulse">
-                        {uiLang === 'zh' ? '正在解析文化背景...' : 'Decoding cultural context...'}
-                      </p>
-                    </div>
+                    <SlangInsightSkeleton />
                   ) : slangInsights.length > 0 ? (
                     <div className="space-y-6">
                       {slangInsights.map((insight, idx) => (
