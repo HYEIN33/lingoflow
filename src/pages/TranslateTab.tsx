@@ -173,6 +173,7 @@ export default function TranslateTab({
   const [feedbackGiven, setFeedbackGiven] = useState<'up' | 'down' | null>(null);
   const [feedbackReason, setFeedbackReason] = useState('');
   const [showFeedbackReason, setShowFeedbackReason] = useState(false);
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
   // Check if current translation is already saved
   const isAlreadySaved = (styleTag: string) => {
@@ -180,9 +181,8 @@ export default function TranslateTab({
     return savedWords.some(w => w.original === translationResult.original && w.styleTag === styleTag);
   };
 
-  const handleFeedback = async (rating: 'up' | 'down', reason?: string) => {
-    if (!user || !translationResult || feedbackGiven) return;
-    setFeedbackGiven(rating);
+  const handleFeedback = async (rating: 'up' | 'down') => {
+    if (!user || !translationResult || feedbackGiven || isSubmittingFeedback) return;
     if (rating === 'down') {
       setShowFeedbackReason(true);
       return; // wait for reason submission
@@ -191,7 +191,8 @@ export default function TranslateTab({
   };
 
   const submitFeedback = async (rating: 'up' | 'down', reason?: string) => {
-    if (!user || !translationResult) return;
+    if (!user || !translationResult || isSubmittingFeedback) return;
+    setIsSubmittingFeedback(true);
     try {
       await addDoc(collection(db, 'feedback'), {
         uid: user.uid,
@@ -202,6 +203,7 @@ export default function TranslateTab({
         reason: reason || null,
         timestamp: Timestamp.now(),
       });
+      setFeedbackGiven(rating);
       trackEvent('feedback_submit', { rating, has_reason: !!reason });
       toast.success(uiLang === 'zh' ? '感谢反馈！' : 'Thanks for your feedback!');
       setShowFeedbackReason(false);
@@ -209,6 +211,8 @@ export default function TranslateTab({
       console.error('Feedback write failed:', e);
       Sentry.captureException(e, { tags: { component: 'TranslateTab', op: 'feedback.write' } });
       toast.error(uiLang === 'zh' ? '反馈提交失败' : 'Feedback failed');
+    } finally {
+      setIsSubmittingFeedback(false);
     }
   };
 
@@ -255,6 +259,7 @@ export default function TranslateTab({
             disabled={isExtractingPhoto}
             className="p-3 sm:p-4 rounded-2xl transition-all hover:scale-105 active:scale-95 shadow-lg cursor-pointer bg-blue-100 text-blue-600 shadow-blue-100"
             title={uiLang === 'zh' ? '拍照翻译' : 'Photo Translate'}
+            aria-label={uiLang === 'zh' ? '拍照翻译' : 'Photo Translate'}
           >
             {isExtractingPhoto
               ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" />
@@ -270,6 +275,8 @@ export default function TranslateTab({
             title={autoTranslateEnabled
               ? (uiLang === 'zh' ? '输入即译：开' : 'Auto-translate: On')
               : (uiLang === 'zh' ? '输入即译：关' : 'Auto-translate: Off')}
+            aria-label={uiLang === 'zh' ? '输入即译' : 'Auto-translate'}
+            aria-pressed={autoTranslateEnabled}
           >
             {autoTranslateEnabled ? <Zap className="w-4 h-4 fill-current" /> : <ZapOff className="w-4 h-4" />}
           </button>
@@ -280,6 +287,8 @@ export default function TranslateTab({
               "p-2 rounded-xl transition-all cursor-pointer",
               isListening ? "bg-red-500 text-white" : "text-gray-300 hover:text-gray-400"
             )}
+            aria-label={isListening ? (uiLang === 'zh' ? '停止录音' : 'Stop recording') : (uiLang === 'zh' ? '语音输入' : 'Voice input')}
+            aria-pressed={isListening}
           >
             {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
           </button>
@@ -287,6 +296,7 @@ export default function TranslateTab({
             type="submit"
             disabled={isTranslating || !inputText.trim()}
             className="bg-blue-600 text-white p-3 sm:p-4 rounded-2xl disabled:opacity-50 transition-all hover:scale-105 active:scale-95 shadow-lg shadow-blue-200"
+            aria-label={uiLang === 'zh' ? '翻译' : 'Translate'}
           >
             {isTranslating ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" /> : <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />}
           </button>
@@ -325,6 +335,13 @@ export default function TranslateTab({
           className="w-full h-2 bg-gray-200 rounded-lg appearance-none accent-blue-600"
         />
       </div>
+
+      {/* Auto-translate progress indicator */}
+      {isTranslating && (
+        <div className="h-0.5 bg-blue-100 rounded-full overflow-hidden -mt-4">
+          <div className="h-full bg-blue-500 rounded-full animate-pulse w-full" />
+        </div>
+      )}
 
       {/* Scene Switcher — free for all users */}
       <div className="flex items-center gap-2">
@@ -490,23 +507,25 @@ export default function TranslateTab({
                   </span>
                   <button
                     onClick={() => handleFeedback('up')}
-                    disabled={!!feedbackGiven}
+                    disabled={!!feedbackGiven || isSubmittingFeedback}
                     className={cn(
                       "p-1.5 rounded-lg transition-all",
                       feedbackGiven === 'up' ? "text-green-600 bg-green-50" : "text-gray-300 hover:text-green-500 hover:bg-green-50",
                       feedbackGiven && feedbackGiven !== 'up' && "opacity-30"
                     )}
+                    aria-label={uiLang === 'zh' ? '翻译质量好' : 'Good translation'}
                   >
-                    <ThumbsUp className="w-4 h-4" />
+                    {isSubmittingFeedback && !feedbackGiven ? <Loader2 className="w-4 h-4 animate-spin" /> : <ThumbsUp className="w-4 h-4" />}
                   </button>
                   <button
                     onClick={() => handleFeedback('down')}
-                    disabled={!!feedbackGiven}
+                    disabled={!!feedbackGiven || isSubmittingFeedback}
                     className={cn(
                       "p-1.5 rounded-lg transition-all",
                       feedbackGiven === 'down' ? "text-red-500 bg-red-50" : "text-gray-300 hover:text-red-400 hover:bg-red-50",
                       feedbackGiven && feedbackGiven !== 'down' && "opacity-30"
                     )}
+                    aria-label={uiLang === 'zh' ? '翻译质量差' : 'Poor translation'}
                   >
                     <ThumbsDown className="w-4 h-4" />
                   </button>
@@ -520,11 +539,13 @@ export default function TranslateTab({
                         value={feedbackReason}
                         onChange={(e) => setFeedbackReason(e.target.value)}
                         placeholder={uiLang === 'zh' ? '哪里不好？(选填)' : 'What went wrong? (optional)'}
+                        maxLength={500}
                         className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-400"
                       />
                       <button
                         type="submit"
-                        className="text-xs font-bold text-blue-600 hover:text-blue-700"
+                        disabled={isSubmittingFeedback}
+                        className="text-xs font-bold text-blue-600 hover:text-blue-700 disabled:opacity-50"
                       >
                         {uiLang === 'zh' ? '提交' : 'Submit'}
                       </button>

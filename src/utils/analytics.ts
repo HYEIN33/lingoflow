@@ -6,5 +6,9 @@ import { logEvent } from '../firebase';
  * No-op when analytics is unavailable (SSR, test, etc.).
  */
 export function trackEvent(name: string, params?: Record<string, string | number | boolean>) {
-  logEvent(name, params);
+  try {
+    logEvent(name, params);
+  } catch {
+    // Analytics unavailable (SSR, privacy blockers, etc.) — never crash the app.
+  }
 }

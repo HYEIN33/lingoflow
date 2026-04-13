@@ -60,6 +60,8 @@ export function useTranslation({
   const lastTranslatedRef = useRef<string>('');
   // Auto-translate rate limiter: max 6 per minute
   const autoCountRef = useRef<number[]>([]);
+  // Debounce timer ref — cleared on manual submit to prevent race
+  const autoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const toggleAutoTranslate = useCallback((enabled: boolean) => {
     setAutoTranslateEnabled(enabled);
@@ -74,6 +76,12 @@ export function useTranslation({
 
     // H3: guard against parallel calls (double-click / rapid submit)
     if (inFlightRef.current) return;
+
+    // Cancel pending auto-translate debounce to prevent race
+    if (autoTimerRef.current) {
+      clearTimeout(autoTimerRef.current);
+      autoTimerRef.current = null;
+    }
 
     // ?? 0 — never compare against undefined/NaN (legacy profile safety)
     const currentCount = userProfile?.translationCount ?? 0;
@@ -165,6 +173,7 @@ export function useTranslation({
     } finally {
       setIsTranslating(false);
       inFlightRef.current = false;
+      abortControllerRef.current = null;
     }
   };
 
@@ -180,12 +189,18 @@ export function useTranslation({
     autoCountRef.current = autoCountRef.current.filter(t => now - t < 60000);
     if (autoCountRef.current.length >= 6) return;
 
-    const timer = setTimeout(() => {
+    autoTimerRef.current = setTimeout(() => {
+      autoTimerRef.current = null;
       autoCountRef.current.push(Date.now());
       handleTranslate(undefined, text, true);
     }, 500);
 
-    return () => clearTimeout(timer);
+    return () => {
+      if (autoTimerRef.current) {
+        clearTimeout(autoTimerRef.current);
+        autoTimerRef.current = null;
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputText, autoTranslateEnabled]);
 
