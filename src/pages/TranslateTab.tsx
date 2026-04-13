@@ -460,9 +460,14 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                 <div className={cn("grid grid-cols-1 gap-4", !isSentence && "lg:grid-cols-2")}>
                   {/* Authentic Column */}
                   {translationResult.authenticTranslation && (
-                    <div className="bg-blue-50/50 rounded-2xl p-4 sm:p-6 border border-blue-100 relative overflow-hidden">
-                      <h3 className="text-xs font-black text-blue-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                        <Zap className="w-3 h-3 fill-current" />
+                    <motion.div
+                      initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ delay: 0.1, duration: 0.4, ease: 'easeOut' }}
+                      className="bg-gradient-to-br from-blue-50 to-indigo-50/30 rounded-2xl p-4 sm:p-6 border border-blue-100/80 relative overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+                    >
+                      <h3 className="text-xs font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <Zap className="w-3 h-3 text-blue-500 fill-current" />
                         {uiLang === 'zh' ? '地道表达 (Authentic)' : 'Authentic Expression'}
                       </h3>
                       <p className={cn("text-gray-900 font-medium break-words", translationFontCls, textPadRight)}>
@@ -488,13 +493,18 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                           {uiLang === 'zh' ? (isAlreadySaved('authentic') ? '已收藏' : '收藏') : (isAlreadySaved('authentic') ? 'Saved' : 'Save')}
                         </button>
                       </div>
-                    </div>
+                    </motion.div>
                   )}
                   {/* Academic Column */}
                   {translationResult.academicTranslation && (
-                    <div className="bg-gray-50 rounded-2xl p-4 sm:p-6 border border-gray-200 relative overflow-hidden">
-                      <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                        <BookOpen className="w-3 h-3" />
+                    <motion.div
+                      initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ delay: 0.25, duration: 0.4, ease: 'easeOut' }}
+                      className="bg-gradient-to-br from-slate-50 to-purple-50/20 rounded-2xl p-4 sm:p-6 border border-gray-200/80 relative overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+                    >
+                      <h3 className="text-xs font-black text-transparent bg-clip-text bg-gradient-to-r from-gray-600 to-purple-600 uppercase tracking-widest mb-3 flex items-center gap-2">
+                        <BookOpen className="w-3 h-3 text-gray-500" />
                         {uiLang === 'zh' ? '学术表达 (Academic)' : 'Academic Expression'}
                       </h3>
                       <p className={cn("text-gray-900 font-medium break-words", translationFontCls, textPadRight)}>
@@ -520,7 +530,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                           {uiLang === 'zh' ? (isAlreadySaved('academic') ? '已收藏' : '收藏') : (isAlreadySaved('academic') ? 'Saved' : 'Save')}
                         </button>
                       </div>
-                    </div>
+                    </motion.div>
                   )}
                 </div>
               )}
