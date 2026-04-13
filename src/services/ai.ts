@@ -124,7 +124,7 @@ async function geminiGenerate(opts: {
   // Per-model timeout: abort after 10s and try next model
   const makeSignal = (parentSignal?: AbortSignal) => {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10000);
+    const timer = setTimeout(() => controller.abort(), 15000);
     if (parentSignal) parentSignal.addEventListener('abort', () => controller.abort());
     return { signal: controller.signal, clear: () => clearTimeout(timer) };
   };
