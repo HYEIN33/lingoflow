@@ -279,6 +279,7 @@ export default function TranslateTab({
             aria-pressed={autoTranslateEnabled}
           >
             {autoTranslateEnabled ? <Zap className="w-4 h-4 fill-current" /> : <ZapOff className="w-4 h-4" />}
+            <span className="text-[10px] leading-none">{uiLang === 'zh' ? '即译' : 'Auto'}</span>
           </button>
           <button
             type="button"

@@ -226,7 +226,17 @@ export default function ReviewPage(props: ReviewPageProps) {
                                 try {
                                   const hint = await onGetHint(currentReviewWord.original, currentReviewWord.usages[0]?.meaningZh || '');
                                   setAiHint(hint);
-                                } catch { setAiHint(uiLang === 'zh' ? '获取提示失败' : 'Failed to get hint'); }
+                                } catch (err: any) {
+                                  console.error('AI hint failed:', err);
+                                  const msg = err?.message || '';
+                                  if (msg.includes('location') || msg.includes('PRECONDITION')) {
+                                    setAiHint(uiLang === 'zh' ? 'AI 服务在当前地区不可用，请使用 VPN 或稍后重试' : 'AI service unavailable in your region');
+                                  } else if (msg.includes('繁忙') || msg.includes('不可用')) {
+                                    setAiHint(msg);
+                                  } else {
+                                    setAiHint(uiLang === 'zh' ? '获取提示失败，请重试' : 'Failed to get hint, please retry');
+                                  }
+                                }
                                 setAiHintLoading(false);
                               }}
                               disabled={aiHintLoading}

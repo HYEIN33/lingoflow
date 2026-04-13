@@ -48,8 +48,8 @@ export function useTranslation({
   // Auto-translate state
   const [autoTranslateEnabled, setAutoTranslateEnabled] = useState(() => {
     try {
-      return localStorage.getItem('memeflow_auto_translate') !== 'false';
-    } catch { return true; }
+      return localStorage.getItem('memeflow_auto_translate') === 'true';
+    } catch { return false; }
   });
 
   // Ref-based guard — survives async gap between parallel clicks, which setIsTranslating cannot
@@ -193,7 +193,7 @@ export function useTranslation({
       autoTimerRef.current = null;
       autoCountRef.current.push(Date.now());
       handleTranslate(undefined, text, true);
-    }, 500);
+    }, 350);
 
     return () => {
       if (autoTimerRef.current) {
