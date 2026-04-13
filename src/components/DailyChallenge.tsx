@@ -116,7 +116,7 @@ export function DailyChallenge({ uiLang }: DailyChallengeProps) {
             exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden"
           >
-            <div className="bg-white/60 backdrop-blur-md border border-amber-100 rounded-2xl p-5 mt-2 shadow-sm">
+            <div className="bg-white/60 backdrop-blur-md border border-amber-100 rounded-3xl p-5 sm:p-8 mt-2 shadow-xl">
               {completed && !slang ? (
                 <p className="text-center text-amber-700 text-sm">
                   {uiLang === 'zh' ? '今日挑战已完成，明天再来！' : "Today's challenge is done. Come back tomorrow!"}

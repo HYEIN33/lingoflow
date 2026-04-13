@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, CheckCircle, Volume2, Loader2, RotateCcw, Sparkles, Send, MessageSquare } from 'lucide-react';
+import { BookOpen, CheckCircle, Volume2, Loader2, RotateCcw, Sparkles, Send, MessageSquare, XCircle, HelpCircle, ThumbsUp, Zap } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -151,53 +151,89 @@ export default function ReviewPage(props: ReviewPageProps) {
 
           {currentReviewWord ? (
           <>
-            <div className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center space-y-8">
-              {/* Card number */}
-              <div className="text-xs font-bold text-gray-300">
-                {reviewIndex + 1} / {dueWords.length}
-              </div>
+            {/* 3D Flip Card */}
+            <div className="[perspective:1000px]">
+              <motion.div
+                animate={{ rotateY: showReviewAnswer ? 180 : 0 }}
+                transition={{ duration: 0.5, type: 'spring', stiffness: 260, damping: 20 }}
+                className="relative [transform-style:preserve-3d]"
+              >
+                {/* Front face — question */}
+                <div className={cn(
+                  "bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 text-center [backface-visibility:hidden]",
+                  showReviewAnswer && "invisible"
+                )}>
+                  <div className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-6">
+                    {reviewIndex + 1} / {dueWords.length}
+                  </div>
 
-              <div className="space-y-3">
-                <h3 className="text-4xl font-black text-gray-900 tracking-tight">{currentReviewWord.original}</h3>
-                {currentReviewWord.pronunciation && (
-                  <p className="text-blue-500 font-mono text-sm">{currentReviewWord.pronunciation}</p>
-                )}
-                {currentReviewWord.styleTag && currentReviewWord.styleTag !== 'standard' && (
-                  <span className={cn(
-                    "inline-block px-2 py-1 rounded text-[10px] font-black uppercase tracking-widest",
-                    currentReviewWord.styleTag === 'authentic' ? "bg-blue-100 text-blue-600" : "bg-purple-100 text-purple-600"
-                  )}>
-                    {currentReviewWord.styleTag === 'authentic' ? t.styleAuthentic : t.styleAcademic}
-                  </span>
-                )}
-                {/* Audio button */}
-                {onSpeak && (
-                  <button
-                    onClick={() => onSpeak(currentReviewWord.original)}
-                    disabled={loadingAudioText === currentReviewWord.original}
-                    className="mx-auto flex items-center gap-2 text-blue-500 hover:text-blue-600 transition-colors mt-2"
-                  >
-                    {loadingAudioText === currentReviewWord.original ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <Volume2 className="w-5 h-5" />
+                  <div className="space-y-3 py-8">
+                    <h3 className="text-3xl sm:text-4xl font-black text-gray-900 tracking-tight">{currentReviewWord.original}</h3>
+                    {currentReviewWord.pronunciation && (
+                      <p className="text-blue-500 font-mono text-sm">{currentReviewWord.pronunciation}</p>
                     )}
-                  </button>
-                )}
-              </div>
+                    {currentReviewWord.styleTag && currentReviewWord.styleTag !== 'standard' && (
+                      <span className={cn(
+                        "inline-block px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest",
+                        currentReviewWord.styleTag === 'authentic' ? "bg-blue-50 text-blue-600 border border-blue-100" : "bg-purple-50 text-purple-600 border border-purple-100"
+                      )}>
+                        {currentReviewWord.styleTag === 'authentic' ? t.styleAuthentic : t.styleAcademic}
+                      </span>
+                    )}
+                    {onSpeak && (
+                      <button
+                        onClick={() => onSpeak(currentReviewWord.original)}
+                        disabled={loadingAudioText === currentReviewWord.original}
+                        className="mx-auto flex items-center gap-2 text-blue-500 hover:text-blue-600 transition-colors mt-2 p-2 rounded-xl hover:bg-blue-50"
+                        aria-label={uiLang === 'zh' ? '朗读' : 'Read aloud'}
+                      >
+                        {loadingAudioText === currentReviewWord.original ? (
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <Volume2 className="w-5 h-5" />
+                        )}
+                      </button>
+                    )}
+                  </div>
 
-              <AnimatePresence mode="wait">
-                {showReviewAnswer ? (
+                  <div className="py-6">
+                    <motion.button
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => setShowReviewAnswer(true)}
+                      className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-blue-700 transition-colors shadow-xl shadow-blue-200/50"
+                    >
+                      {uiLang === 'zh' ? '查看答案' : 'Show Answer'}
+                    </motion.button>
+                  </div>
+                </div>
+
+                {/* Back face — answer + rating */}
+                {showReviewAnswer && (
                   <motion.div
-                    key="answer"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="space-y-6 pt-6 border-t border-gray-100"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ delay: 0.25 }}
+                    className="bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 [transform:rotateY(180deg)] [backface-visibility:hidden]"
                   >
-                    <div className="space-y-4">
+                    <div className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 text-center">
+                      {reviewIndex + 1} / {dueWords.length}
+                    </div>
+
+                    {/* Word at top of answer */}
+                    <h3 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight text-center mb-6">{currentReviewWord.original}</h3>
+
+                    {/* Meanings */}
+                    <div className="space-y-3 mb-6">
                       {(currentReviewWord.usages || []).map((usage: any, idx: number) => (
-                        <div key={idx} className="text-left bg-gray-50 rounded-2xl p-4 space-y-2">
-                          <p className="font-bold text-blue-600">{usage.meaningZh}</p>
+                        <motion.div
+                          key={idx}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.3 + idx * 0.1 }}
+                          className="text-left bg-gray-50 rounded-2xl p-4 sm:p-5 space-y-2 border border-gray-100"
+                        >
+                          <p className="font-bold text-blue-600 text-base">{usage.meaningZh}</p>
                           <p className="text-sm text-gray-700">{usage.meaning}</p>
                           {usage.examples && usage.examples.length > 0 && (
                             <div className="pt-2 border-t border-gray-100">
@@ -205,13 +241,13 @@ export default function ReviewPage(props: ReviewPageProps) {
                               <p className="text-xs text-gray-400 mt-1">{usage.examples[0].translation}</p>
                             </div>
                           )}
-                        </div>
+                        </motion.div>
                       ))}
                     </div>
 
                     {/* AI Memory Hint */}
                     {onGetHint && (
-                      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-4 border border-indigo-100">
+                      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-4 border border-indigo-100 mb-6">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
                             <Sparkles className="w-4 h-4 text-indigo-500" />
@@ -258,15 +294,21 @@ export default function ReviewPage(props: ReviewPageProps) {
                       </div>
                     )}
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {/* SM-2 Rating Buttons — game-style with icons and colors */}
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] text-center mb-3">
+                      {uiLang === 'zh' ? '你记住了吗？' : 'HOW WELL DID YOU KNOW?'}
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
                       {[
-                        { q: 1, label: uiLang === 'zh' ? '忘记' : 'Forgot', color: 'bg-red-500', hint: uiLang === 'zh' ? '1天后' : 'in 1d' },
-                        { q: 3, label: uiLang === 'zh' ? '模糊' : 'Hard', color: 'bg-orange-500', hint: uiLang === 'zh' ? '~3天' : '~3d' },
-                        { q: 4, label: uiLang === 'zh' ? '记得' : 'Good', color: 'bg-green-500', hint: uiLang === 'zh' ? '~1周' : '~1w' },
-                        { q: 5, label: uiLang === 'zh' ? '秒杀' : 'Easy', color: 'bg-blue-500', hint: uiLang === 'zh' ? '~2周' : '~2w' }
+                        { q: 1, label: uiLang === 'zh' ? '忘记' : 'Forgot', icon: XCircle, color: 'from-red-500 to-red-600', shadow: 'shadow-red-200/60', hint: uiLang === 'zh' ? '1天后' : 'in 1d' },
+                        { q: 3, label: uiLang === 'zh' ? '模糊' : 'Hard', icon: HelpCircle, color: 'from-orange-400 to-orange-500', shadow: 'shadow-orange-200/60', hint: uiLang === 'zh' ? '~3天' : '~3d' },
+                        { q: 4, label: uiLang === 'zh' ? '记得' : 'Good', icon: ThumbsUp, color: 'from-green-400 to-green-600', shadow: 'shadow-green-200/60', hint: uiLang === 'zh' ? '~1周' : '~1w' },
+                        { q: 5, label: uiLang === 'zh' ? '秒杀' : 'Easy', icon: Zap, color: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-200/60', hint: uiLang === 'zh' ? '~2周' : '~2w' }
                       ].map((btn) => (
-                        <button
+                        <motion.button
                           key={btn.q}
+                          whileHover={{ scale: 1.05, y: -2 }}
+                          whileTap={{ scale: 0.9 }}
                           onClick={() => {
                             onReview(currentReviewWord.id, btn.q);
                             setShowReviewAnswer(false);
@@ -279,29 +321,20 @@ export default function ReviewPage(props: ReviewPageProps) {
                             }
                           }}
                           className={cn(
-                            "py-3 rounded-xl text-white font-bold transition-transform active:scale-95 shadow-lg flex flex-col items-center",
-                            btn.color
+                            "py-3.5 sm:py-4 rounded-2xl text-white font-bold shadow-lg flex flex-col items-center gap-1 bg-gradient-to-b transition-all",
+                            `${btn.color} ${btn.shadow}`
                           )}
                         >
-                          <span className="text-xs">{btn.label}</span>
-                          <span className="text-[10px] opacity-70 mt-0.5">{btn.hint}</span>
-                        </button>
+                          <btn.icon className="w-5 h-5" />
+                          <span className="text-xs font-bold">{btn.label}</span>
+                          <span className="text-[10px] opacity-70">{btn.hint}</span>
+                        </motion.button>
                       ))}
                     </div>
                   </motion.div>
-                ) : (
-                  <motion.div key="question" className="py-12">
-                    <button
-                      onClick={() => setShowReviewAnswer(true)}
-                      className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-200"
-                    >
-                      {uiLang === 'zh' ? '查看答案' : 'Show Answer'}
-                    </button>
-                  </motion.div>
                 )}
-              </AnimatePresence>
+              </motion.div>
             </div>
-
           </>
           ) : reviewedCount > 0 ? (
             <div className="text-center py-16 bg-white rounded-3xl border border-gray-100 shadow-sm space-y-4">

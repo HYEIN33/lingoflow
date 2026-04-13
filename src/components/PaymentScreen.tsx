@@ -102,7 +102,7 @@ export default function PaymentScreen({
           {/* Free Plan */}
           <div
             onClick={() => setSelectedPlan('free')}
-            className={`rounded-2xl p-6 border-2 transition-all cursor-pointer ${
+            className={`rounded-3xl p-5 sm:p-8 border-2 transition-all cursor-pointer ${
               selectedPlan === 'free' ? 'bg-gray-50 border-gray-300' : 'bg-white border-gray-100 hover:border-gray-200'
             }`}
           >
@@ -123,9 +123,9 @@ export default function PaymentScreen({
           {/* Pro Plan */}
           <div
             onClick={() => setSelectedPlan('pro')}
-            className={`rounded-2xl p-6 border-2 relative transition-all cursor-pointer ${
+            className={`rounded-3xl p-5 sm:p-8 border-2 relative transition-all cursor-pointer ${
               selectedPlan === 'pro'
-                ? 'bg-blue-50 border-blue-400 shadow-lg shadow-blue-100'
+                ? 'bg-blue-50 border-blue-400 shadow-xl shadow-blue-100'
                 : 'bg-white border-gray-100 hover:border-blue-200'
             }`}
           >

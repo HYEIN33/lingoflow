@@ -1173,108 +1173,153 @@ export function SlangDictionary({ uiLang, initialSearchTerm, onTryTranslate }: {
 
       {currentSlang && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <h2 className="text-3xl font-black text-gray-900 tracking-tight">
-              {currentSlang.term}
-            </h2>
-            <div className="flex items-center gap-2">
-              {onTryTranslate && (
-                <button
-                  onClick={() => { trackEvent('cross_tab_navigate', { from: 'slang', to: 'translate', term: currentSlang.term }); onTryTranslate(currentSlang.term); }}
-                  className="flex items-center gap-1 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                >
-                  {uiLang === 'zh' ? '造句试试' : 'Try translating'}
-                </button>
-              )}
-              {!showAddForm && (
-                <button
-                  onClick={() => setShowAddForm(true)}
-                  className="flex items-center gap-1 text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  {uiLang === 'zh' ? '补充解释' : 'Add Meaning'}
-                </button>
-              )}
+          {/* Magazine-style hero header */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 relative overflow-hidden"
+          >
+            {/* Decorative gradient accent */}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-2">
+                <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
+                  {uiLang === 'zh' ? '梗百科' : 'MEME WIKI'}
+                </p>
+                <h2 className="text-3xl sm:text-4xl font-black text-gray-900 tracking-tight">
+                  {currentSlang.term}
+                </h2>
+                <p className="text-xs text-gray-400">
+                  {meanings.length} {uiLang === 'zh' ? '条释义' : 'definitions'}
+                  {meanings.reduce((sum, m) => sum + m.upvotes, 0) > 0 && (
+                    <span className="ml-2">
+                      · {meanings.reduce((sum, m) => sum + m.upvotes, 0)} {uiLang === 'zh' ? '次点赞' : 'upvotes'}
+                    </span>
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {onTryTranslate && (
+                  <button
+                    onClick={() => { trackEvent('cross_tab_navigate', { from: 'slang', to: 'translate', term: currentSlang.term }); onTryTranslate(currentSlang.term); }}
+                    className="flex items-center gap-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105 active:scale-95"
+                  >
+                    {uiLang === 'zh' ? '造句试试' : 'Try it'}
+                  </button>
+                )}
+                {!showAddForm && (
+                  <button
+                    onClick={() => setShowAddForm(true)}
+                    className="flex items-center gap-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105 active:scale-95"
+                  >
+                    <Plus className="w-4 h-4" />
+                    {uiLang === 'zh' ? '补充' : 'Add'}
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
+          </motion.div>
 
-          <div className="space-y-4">
+          {/* Section label */}
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] px-1">
+            {uiLang === 'zh' ? '释义' : 'DEFINITIONS'}
+          </p>
+
+          <div className="space-y-5">
             {meanings.map((meaning, index) => (
-              <motion.div 
+              <motion.div
                 key={meaning.id}
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-                className="bg-white/60 backdrop-blur-md border border-white/60 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow"
+                transition={{ delay: index * 0.08, duration: 0.4 }}
+                className="bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 hover:shadow-2xl transition-shadow group"
               >
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-sm">
-                      {meaning.authorName ? meaning.authorName.charAt(0).toUpperCase() : 'A'}
+                {/* Top row: number badge + author + quality score */}
+                <div className="flex items-center justify-between mb-5">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-white font-black text-sm shadow-lg shadow-blue-200/50">
+                      {index + 1}
                     </div>
-                    <div>
-                      <p className="text-sm font-bold text-gray-900">{meaning.authorName || 'Anonymous'}</p>
-                      {meaning.authorTitle && (
-                        <p className="text-xs text-blue-600 font-medium">{meaning.authorTitle}</p>
-                      )}
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 font-bold text-xs">
+                        {meaning.authorName ? meaning.authorName.charAt(0).toUpperCase() : 'A'}
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-gray-900 leading-tight">{meaning.authorName || 'Anonymous'}</p>
+                        {meaning.authorTitle && (
+                          <p className="text-[10px] text-blue-600 font-bold">{meaning.authorTitle}</p>
+                        )}
+                      </div>
                     </div>
                   </div>
                   {meaning.qualityScore && (
-                    <div className="flex items-center gap-1 bg-green-50 text-green-700 px-2 py-1 rounded-lg text-xs font-bold">
-                      <span>AI 评分</span>
-                      <span>{meaning.qualityScore}</span>
+                    <div className="flex items-center gap-1 bg-green-50 text-green-700 px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider">
+                      <span>AI</span>
+                      <span className="text-green-600 text-xs">{meaning.qualityScore}</span>
                     </div>
                   )}
                 </div>
-                
-                <p className="text-gray-900 text-lg mb-4 leading-relaxed whitespace-pre-wrap">
+
+                {/* Meaning text — largest visual weight */}
+                <p className="text-gray-900 text-lg sm:text-xl font-medium mb-5 leading-relaxed whitespace-pre-wrap">
                   {meaning.meaning}
                 </p>
-                
+
+                {/* Media */}
                 {meaning.mediaUrl && (
-                  <div className="mb-4 rounded-xl overflow-hidden border border-gray-100">
+                  <div className="mb-5 rounded-2xl overflow-hidden border border-gray-100">
                     {meaning.mediaType === 'image' || meaning.mediaType === 'gif' ? (
-                      <img 
-                        src={meaning.mediaUrl} 
-                        alt="Slang media" 
+                      <img
+                        src={meaning.mediaUrl}
+                        alt="Slang media"
                         className="w-full h-auto max-h-[400px] object-contain bg-gray-50"
                         referrerPolicy="no-referrer"
                       />
                     ) : meaning.mediaType === 'video' ? (
-                      <video 
-                        src={meaning.mediaUrl} 
-                        controls 
+                      <video
+                        src={meaning.mediaUrl}
+                        controls
                         className="w-full h-auto max-h-[400px] bg-black"
                       />
                     ) : null}
                   </div>
                 )}
 
-                <div className="bg-gray-50/50 rounded-xl p-4 mb-4 border border-gray-100/50">
-                  <p className="text-gray-600 italic text-sm">
-                    "{meaning.example}"
-                  </p>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <button
+                {/* Example sentence with accent bar */}
+                {meaning.example && (
+                  <div className="bg-gray-50 rounded-2xl p-4 sm:p-5 mb-5 border-l-4 border-indigo-400">
+                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-2">
+                      {uiLang === 'zh' ? '示例' : 'EXAMPLE'}
+                    </p>
+                    <p className="text-gray-700 italic text-sm sm:text-base leading-relaxed">
+                      "{meaning.example}"
+                    </p>
+                  </div>
+                )}
+
+                {/* Action bar — upvote is the hero, other actions secondary */}
+                <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+                  <div className="flex items-center gap-1.5">
+                    {/* Upvote — primary action, bigger */}
+                    <motion.button
+                      whileTap={{ scale: 0.9 }}
                       onClick={() => handleUpvote(meaning.id, meaning.upvotes)}
                       disabled={upvotedMeanings.has(meaning.id)}
                       className={cn(
-                        "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                        "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
                         upvotedMeanings.has(meaning.id)
-                          ? "bg-blue-100 text-blue-700"
-                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                          ? "bg-blue-100 text-blue-700 shadow-sm"
+                          : "bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600"
                       )}
                     >
                       <ThumbsUp className={cn("w-4 h-4", upvotedMeanings.has(meaning.id) && "fill-current")} />
-                      {meaning.upvotes}
-                    </button>
-                    {/* Report/Flag button */}
+                      <span>{meaning.upvotes}</span>
+                    </motion.button>
+                    {/* Report */}
                     <div className="relative">
                       <button
                         onClick={() => setReportingMeaningId(reportingMeaningId === meaning.id ? null : meaning.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-red-50"
+                        className="p-2 text-gray-300 hover:text-red-500 transition-colors rounded-xl hover:bg-red-50"
                         title={uiLang === 'zh' ? '举报' : 'Report'}
                       >
                         <Flag className="w-4 h-4" />
@@ -1319,19 +1364,20 @@ export function SlangDictionary({ uiLang, initialSearchTerm, onTryTranslate }: {
                         )}
                       </AnimatePresence>
                     </div>
-                    {/* Share button */}
+                    {/* Share */}
                     <button
                       onClick={() => handleShare(currentSlang!.term, meaning.meaning)}
-                      className="p-1.5 text-gray-400 hover:text-green-600 transition-colors rounded-lg hover:bg-green-50"
+                      className="p-2 text-gray-300 hover:text-green-600 transition-colors rounded-xl hover:bg-green-50"
                       title={uiLang === 'zh' ? '分享' : 'Share'}
                     >
                       <Share2 className="w-4 h-4" />
                     </button>
                   </div>
+                  {/* Audio */}
                   <button
                     onClick={() => handlePlayAudio(meaning)}
                     disabled={playingAudioId === meaning.id}
-                    className="p-2 text-gray-400 hover:text-blue-600 transition-colors disabled:opacity-50"
+                    className="p-2 text-gray-300 hover:text-blue-600 transition-all rounded-xl hover:bg-blue-50 disabled:opacity-50"
                     title={uiLang === 'zh' ? '朗读' : 'Read aloud'}
                   >
                     {playingAudioId === meaning.id ? (

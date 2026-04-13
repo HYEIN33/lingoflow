@@ -169,7 +169,7 @@ export default function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
                 onKeyDown={(e) => e.key === 'Enter' && handleEmailAuth()} />
             </div>
             <button onClick={handleEmailAuth} disabled={loading}
-              className="w-full bg-gray-800 hover:bg-gray-900 disabled:bg-gray-400 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2">
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2">
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               {isSignUp ? (uiLang === 'zh' ? '注册' : 'Sign Up') : (uiLang === 'zh' ? '登录' : 'Sign In')}
             </button>

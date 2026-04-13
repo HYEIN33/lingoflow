@@ -59,10 +59,12 @@ describe('firestore.rules — security audit', () => {
     expect(rules).toMatch(/match\s*\/slang_reports\/\{/);
   });
 
-  it('feedback collection exists and is admin-read-only', () => {
+  it('feedback collection read gated to admin or own uid', () => {
     const section = rules.match(/match\s*\/feedback\/\{[^}]*\}[\s\S]*?\n\s*\}/);
     expect(section).toBeTruthy();
+    // Admins can read all; users can read their own feedback (for dedup)
     expect(section![0]).toMatch(/allow read:\s*if isAdmin\(\)/);
+    expect(section![0]).toMatch(/resource\.data\.uid\s*==\s*request\.auth\.uid/);
     expect(section![0]).toMatch(/allow create:\s*if isAuthenticated\(\)/);
     // Must NOT allow update or delete by users
     expect(section![0]).toMatch(/allow update,\s*delete:\s*if false/);

@@ -250,7 +250,8 @@ service cloud.firestore {
     // Translation quality feedback — users rate translations 👍/👎.
     // Only admins can read (analytics). Users can create, not update/delete.
     match /feedback/{feedbackId} {
-      allow read: if isAdmin();
+      // Admins can read all; users can read their own (needed for dedup check)
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.uid == request.auth.uid);
       allow create: if isAuthenticated() &&
                     request.resource.data.uid == request.auth.uid &&
                     request.resource.data.keys().hasOnly(['uid', 'query', 'result', 'scene', 'rating', 'reason', 'timestamp']) &&

@@ -181,19 +181,24 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
       // Dedup: check if user already submitted feedback for this exact query in the last hour
       const q = translationResult.original;
       const oneHourAgo = new Date(Date.now() - 3600_000);
-      const existing = await import('firebase/firestore').then(m =>
-        m.getDocs(m.query(
-          collection(db, 'feedback'),
-          m.where('uid', '==', user.uid),
-          m.where('query', '==', q),
-          m.where('timestamp', '>', Timestamp.fromDate(oneHourAgo)),
-          m.limit(1),
-        ))
-      );
-      if (!existing.empty) {
-        toast(uiLang === 'zh' ? '你已经反馈过了' : 'Already submitted feedback');
-        setFeedbackGiven(rating);
-        return;
+      try {
+        const existing = await import('firebase/firestore').then(m =>
+          m.getDocs(m.query(
+            collection(db, 'feedback'),
+            m.where('uid', '==', user.uid),
+            m.where('query', '==', q),
+            m.where('timestamp', '>', Timestamp.fromDate(oneHourAgo)),
+            m.limit(1),
+          ))
+        );
+        if (!existing.empty) {
+          toast(uiLang === 'zh' ? '你已经反馈过了' : 'Already submitted feedback');
+          setFeedbackGiven(rating);
+          return;
+        }
+      } catch (dedupErr) {
+        // Dedup check failed (e.g. missing index) — proceed with write anyway
+        console.warn('Feedback dedup check failed, proceeding:', dedupErr);
       }
 
       await addDoc(collection(db, 'feedback'), {
