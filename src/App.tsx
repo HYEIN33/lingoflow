@@ -467,14 +467,14 @@ export default function App() {
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-300/30 rounded-full blur-3xl pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-300/30 rounded-full blur-3xl pointer-events-none"></div>
 
-      {/* Header */}
-      <header className="bg-white/40 backdrop-blur-md border-b border-white/50 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
+      {/* Header — glass morphism with refined brand presence */}
+      <header className="glass-card border-b border-white/40 sticky top-0 z-10">
+        <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0">
-              <Languages className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
+            <div className="w-8 h-8 sm:w-9 sm:h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-blue-500/20">
+              <Languages className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
-            <span className="text-lg sm:text-xl font-bold text-gray-900 tracking-tight truncate">{t.appName}</span>
+            <span className="text-lg sm:text-xl font-extrabold text-gray-900 tracking-tight truncate">{t.appName}</span>
             <span
               className="hidden sm:inline text-[10px] text-gray-400 font-mono tabular-nums"
               title={`Environment: ${APP_ENV}`}
@@ -482,61 +482,61 @@ export default function App() {
               v{APP_VERSION}
             </span>
             {userProfile?.isPro && (
-              <span className="ml-2 px-2 py-0.5 bg-gradient-to-r from-amber-400 to-orange-500 text-white text-[10px] font-black rounded-full shadow-sm uppercase tracking-wider">
+              <span className="ml-1 px-2 py-0.5 bg-gradient-to-r from-amber-400 to-orange-500 text-white text-[9px] font-black rounded-full shadow-sm shadow-amber-300/30 uppercase tracking-wider">
                 {t.proBadge}
               </span>
             )}
             {IS_STAGING && (
-              <span className="ml-2 px-2 py-0.5 bg-yellow-400 text-yellow-900 text-[10px] font-black rounded shadow-sm uppercase tracking-wider" title="Staging preview build">
+              <span className="ml-1 px-2 py-0.5 bg-yellow-400 text-yellow-900 text-[10px] font-black rounded shadow-sm uppercase tracking-wider" title="Staging preview build">
                 STAGING
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1 sm:gap-2">
+          <div className="flex items-center gap-0.5 sm:gap-1">
             <button
               onClick={() => setActiveTab('leaderboard')}
               aria-label={uiLang === 'zh' ? '排行榜' : 'Leaderboard'}
               className={cn(
-                "p-1.5 sm:p-2 rounded-full transition-colors",
-                activeTab === 'leaderboard' ? "bg-amber-100 text-amber-600" : "hover:bg-gray-50 text-gray-400 hover:text-amber-500"
+                "p-2 rounded-xl transition-all",
+                activeTab === 'leaderboard' ? "bg-amber-50 text-amber-600 shadow-sm" : "hover:bg-white/50 text-gray-400 hover:text-amber-500"
               )}
               title={uiLang === 'zh' ? '排行榜' : 'Leaderboard'}
             >
-              <Trophy className="w-4 h-4 sm:w-5 sm:h-5" />
+              <Trophy className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
             </button>
             <button
               onClick={() => setActiveTab('profile')}
               aria-label={uiLang === 'zh' ? '我的' : 'Profile'}
               className={cn(
-                "p-1.5 sm:p-2 rounded-full transition-colors",
-                activeTab === 'profile' ? "bg-blue-100 text-blue-600" : "hover:bg-gray-50 text-gray-400 hover:text-blue-500"
+                "p-2 rounded-xl transition-all",
+                activeTab === 'profile' ? "bg-blue-50 text-blue-600 shadow-sm" : "hover:bg-white/50 text-gray-400 hover:text-blue-500"
               )}
               title={uiLang === 'zh' ? '我的' : 'Profile'}
             >
-              <UserCircle className="w-4 h-4 sm:w-5 sm:h-5" />
+              <UserCircle className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
             </button>
             <button
               onClick={() => setUiLang(uiLang === 'en' ? 'zh' : 'en')}
-              className="flex items-center gap-1 px-2 py-1.5 hover:bg-gray-50 rounded-lg transition-colors text-gray-500 text-xs font-medium"
+              className="flex items-center gap-1 px-2.5 py-1.5 hover:bg-white/50 rounded-xl transition-all text-gray-500 text-xs font-semibold"
             >
               <Globe className="w-3.5 h-3.5" />
               <span>{uiLang === 'en' ? '中文' : 'EN'}</span>
             </button>
             <button
               onClick={() => setShowQrCode(true)}
-              className="hidden sm:flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 hover:bg-gray-50 rounded-lg transition-colors text-blue-500 text-xs sm:text-sm font-medium"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 hover:bg-white/50 rounded-xl transition-all text-blue-600 text-xs font-semibold"
               title={uiLang === 'zh' ? '在手机上使用' : 'Use on Mobile'}
             >
-              <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <Globe className="w-3.5 h-3.5" />
               <span>{uiLang === 'zh' ? '手机端' : 'Mobile'}</span>
             </button>
             <button
               onClick={confirmLogout}
               aria-label={t.signOut}
-              className="p-1.5 sm:p-2 hover:bg-gray-50 rounded-full transition-colors text-gray-400 hover:text-red-500"
+              className="p-2 hover:bg-red-50 rounded-xl transition-all text-gray-400 hover:text-red-500"
               title={t.signOut}
             >
-              <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
+              <LogOut className="w-4 h-4 sm:w-[18px] sm:h-[18px]" />
             </button>
           </div>
         </div>
@@ -553,7 +553,7 @@ export default function App() {
             items={tabs.map((t) => t.id)}
             strategy={horizontalListSortingStrategy}
           >
-            <div className="flex bg-white/30 backdrop-blur-sm border border-white/50 p-1 rounded-2xl mb-6 sm:mb-8 overflow-x-auto no-scrollbar shadow-inner sm:[mask-image:none] [mask-image:linear-gradient(to_right,black_90%,transparent)] [-webkit-mask-image:linear-gradient(to_right,black_90%,transparent)]">
+            <div className="flex glass-card p-1 rounded-2xl mb-6 sm:mb-8 overflow-x-auto no-scrollbar sm:[mask-image:none] [mask-image:linear-gradient(to_right,black_90%,transparent)] [-webkit-mask-image:linear-gradient(to_right,black_90%,transparent)]">
               {tabs.map((tab) => (
                 <SortableTab
                   key={tab.id}
