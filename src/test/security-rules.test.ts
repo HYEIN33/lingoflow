@@ -195,6 +195,39 @@ describe('storage.rules — security audit', () => {
   });
 });
 
+describe('translation_suggestions rules — security audit', () => {
+  const rules = readFileSync(firestoreRulesPath, 'utf-8');
+
+  it('translation_suggestions collection exists and is admin-read-only', () => {
+    const section = rules.match(/match\s*\/translation_suggestions\/\{[^}]*\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toMatch(/allow read:\s*if isAdmin\(\)/);
+    expect(section![0]).toMatch(/allow create:\s*if isAuthenticated\(\)/);
+  });
+
+  it('translation_suggestions enforces field whitelist via hasOnly', () => {
+    const section = rules.match(/match\s*\/translation_suggestions\/\{[^}]*\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toContain("'uid'");
+    expect(section![0]).toContain("'query'");
+    expect(section![0]).toContain("'suggestion'");
+    expect(section![0]).toContain("'timestamp'");
+  });
+
+  it('translation_suggestions enforces suggestion size constraints', () => {
+    const section = rules.match(/match\s*\/translation_suggestions\/\{[^}]*\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toMatch(/suggestion\.size\(\)\s*>\s*0/);
+    expect(section![0]).toMatch(/suggestion\.size\(\)\s*<=\s*500/);
+  });
+
+  it('translation_suggestions blocks update and delete', () => {
+    const section = rules.match(/match\s*\/translation_suggestions\/\{[^}]*\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toMatch(/allow update,\s*delete:\s*if false/);
+  });
+});
+
 describe('firebase.json — deployment config audit', () => {
   const json = JSON.parse(readFileSync(firebaseJsonPath, 'utf-8'));
 

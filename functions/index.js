@@ -15,8 +15,14 @@ function firestoreDb() {
 }
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const MAX_PER_MINUTE = 15;
-const MAX_PER_DAY = 200;
+// Rate limits: Pro users get generous limits, free users get tighter ones
+const PRO_PER_MINUTE = 15;
+const PRO_PER_DAY = 200;
+const FREE_PER_MINUTE = 10;
+const FREE_PER_DAY = 50;
+// Legacy aliases used by checkRateLimit
+let MAX_PER_MINUTE = PRO_PER_MINUTE;
+let MAX_PER_DAY = PRO_PER_DAY;
 
 // Allowed origins — anything else gets a hard CORS reject
 const ALLOWED_ORIGINS = new Set([
@@ -96,6 +102,19 @@ exports.apiGenerate = onRequest(
       return;
     }
     const uid = decoded.uid;
+
+    // Server-side Pro verification — read Firestore, don't trust the client
+    let isPro = false;
+    try {
+      const userSnap = await firestoreDb().collection('users').doc(uid).get();
+      isPro = userSnap.exists && userSnap.data()?.isPro === true;
+    } catch (e) {
+      // If Firestore read fails, default to free tier (fail-safe)
+      console.warn('Pro status check failed, defaulting to free tier:', e.message);
+    }
+    // Apply tier-based rate limits
+    MAX_PER_MINUTE = isPro ? PRO_PER_MINUTE : FREE_PER_MINUTE;
+    MAX_PER_DAY = isPro ? PRO_PER_DAY : FREE_PER_DAY;
 
     // Per-uid rate limit (Firestore-backed, survives across function instances).
     // Previously this was fail-OPEN as a temporary measure because admin.firestore()

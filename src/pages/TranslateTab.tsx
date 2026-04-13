@@ -17,7 +17,7 @@
  *   - Pro upsell card (non-Pro users only)
  *   - Back button for synonym/antonym navigation
  */
-import React, { useRef, useState, useEffect } from 'react';
+import React, { memo, useRef, useState, useEffect } from 'react';
 import {
   Plus,
   BookOpen,
@@ -127,7 +127,7 @@ interface TranslateTabProps {
   user: User | null;
 }
 
-export default function TranslateTab(props?: Partial<TranslateTabProps>) {
+function TranslateTab(props?: Partial<TranslateTabProps>) {
   // Use context if available (production), fall back to props (tests)
   const ctxRaw = (() => { try { return useTranslateContext(); } catch { return null; } })();
   const {
@@ -941,3 +941,5 @@ export default function TranslateTab(props?: Partial<TranslateTabProps>) {
     </div>
   );
 }
+
+export default memo(TranslateTab);
