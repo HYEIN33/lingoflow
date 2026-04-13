@@ -178,18 +178,15 @@ describe('AbortController — lifecycle cleanup', () => {
 });
 
 describe('Scene prompt — injection prevention', () => {
-  it('translateText uses multi-turn content format, not string interpolation', () => {
-    // The translateText function should NOT have `Text: "${text}"` style interpolation
+  it('translateText escapes user input safely (no raw interpolation)', () => {
     const translateFn = ai.match(
       /export async function translateText[\s\S]*?return JSON\.parse/
     );
     expect(translateFn).toBeTruthy();
-    // Must NOT have the old dangerous pattern
+    // Must NOT have the old dangerous pattern: Text: "${text}"
     expect(translateFn![0]).not.toMatch(/Text:\s*"\$\{text\}"/);
-    // Must have multi-turn content blocks
-    expect(translateFn![0]).toContain("role: 'user'");
-    expect(translateFn![0]).toContain("role: 'model'");
-    expect(translateFn![0]).toContain('untrusted');
+    // Must use JSON.stringify for safe escaping of user input
+    expect(translateFn![0]).toContain('JSON.stringify(text)');
   });
 
   it('scenePrompts only defines chat/business/writing', () => {

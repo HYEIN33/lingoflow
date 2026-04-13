@@ -65,7 +65,7 @@ async function checkRateLimit(uid) {
 }
 
 exports.apiGenerate = onRequest(
-  { secrets: ['GEMINI_API_KEY'], cors: false },
+  { secrets: ['GEMINI_API_KEY'], cors: false, minInstances: 1, timeoutSeconds: 60 },
   async (req, res) => {
     const corsOk = applyCors(req, res);
     if (req.method === 'OPTIONS') {

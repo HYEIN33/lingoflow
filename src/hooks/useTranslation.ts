@@ -127,19 +127,18 @@ export function useTranslation({
 
       trackEvent('translate_result', { success: true, duration_ms: Date.now() - startTime });
 
-      // Fetch slang insights if terms are found
+      // Fetch slang insights in background — don't block the translation result
       if (result.slangTerms && result.slangTerms.length > 0) {
         setIsFetchingSlang(true);
-        try {
-          const insights = await Promise.all(
-            result.slangTerms.slice(0, 3).map(term => explainSlang(term))
-          );
+        Promise.all(
+          result.slangTerms.slice(0, 3).map(term => explainSlang(term))
+        ).then(insights => {
           setSlangInsights(insights);
-        } catch (err) {
+        }).catch(err => {
           console.error("Error fetching slang insights:", err);
-        } finally {
+        }).finally(() => {
           setIsFetchingSlang(false);
-        }
+        });
       }
 
       if (userProfile && !userProfile.isPro) {
