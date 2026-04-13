@@ -285,14 +285,22 @@ export default function TranslateTab({
           </button>
           <button
             type="button"
-            onClick={() => toggleAutoTranslate(!autoTranslateEnabled)}
+            onClick={() => {
+              const next = !autoTranslateEnabled;
+              toggleAutoTranslate(next);
+              // First-time explanation
+              if (next && !localStorage.getItem('memeflow_auto_translate_explained')) {
+                toast(uiLang === 'zh' ? '输入即译已开启：打字停顿后自动翻译，无需点提交' : 'Auto-translate on: translates automatically as you type');
+                try { localStorage.setItem('memeflow_auto_translate_explained', '1'); } catch {}
+              }
+            }}
             className={cn(
-              "p-2 rounded-xl transition-all cursor-pointer",
+              "p-2 rounded-xl transition-all cursor-pointer relative group",
               autoTranslateEnabled ? "text-amber-500 hover:text-amber-600" : "text-gray-300 hover:text-gray-400"
             )}
             title={autoTranslateEnabled
-              ? (uiLang === 'zh' ? '输入即译：开' : 'Auto-translate: On')
-              : (uiLang === 'zh' ? '输入即译：关' : 'Auto-translate: Off')}
+              ? (uiLang === 'zh' ? '输入即译：开（打字自动翻译）' : 'Auto-translate: On')
+              : (uiLang === 'zh' ? '输入即译：关（点击开启自动翻译）' : 'Auto-translate: Off (click to enable)')}
             aria-label={uiLang === 'zh' ? '输入即译' : 'Auto-translate'}
             aria-pressed={autoTranslateEnabled}
           >
