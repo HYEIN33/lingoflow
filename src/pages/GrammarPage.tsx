@@ -33,7 +33,7 @@ export default function GrammarPage(props: GrammarPageProps) {
           onChange={(e) => setGrammarInput(e.target.value)}
           placeholder={t.grammarPlaceholder}
           rows={4}
-          className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-28 sm:pr-32 text-lg shadow-xl shadow-gray-200/50 outline-none transition-all placeholder:text-gray-300 resize-none"
+          className="w-full glass-card border-2 border-transparent focus:border-blue-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-28 sm:pr-32 text-lg shadow-[var(--shadow-card)] focus:shadow-[var(--shadow-card-hover)] outline-none transition-all placeholder:text-gray-300 resize-none"
         />
         {grammarInput && (
           <button
@@ -79,7 +79,7 @@ export default function GrammarPage(props: GrammarPageProps) {
               <button
                 key={ex}
                 onClick={() => setGrammarInput(ex)}
-                className="px-3 py-1.5 bg-gray-50 hover:bg-blue-50 text-gray-500 hover:text-blue-600 text-xs rounded-lg transition-colors"
+                className="px-4 py-2 glass-card hover:bg-blue-50 text-gray-500 hover:text-blue-600 text-xs font-medium rounded-xl transition-all hover:scale-[1.03] active:scale-[0.97] hover:shadow-sm"
               >
                 {ex}
               </button>

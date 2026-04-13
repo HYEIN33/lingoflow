@@ -321,6 +321,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm, onTryTranslate }: {
   
   // Track the active meanings listener so re-searches don't leak subscriptions.
   const initialMeaningsUnsubRef = useRef<(() => void) | null>(null);
+  const selectSlangUnsubRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     if (!initialSearchTerm) return;
     setSearchTerm(initialSearchTerm);
@@ -558,12 +559,11 @@ export function SlangDictionary({ uiLang, initialSearchTerm, onTryTranslate }: {
     trackSearch(slangData.term);
     saveSearchHistory(slangData.term);
 
+    // Unsubscribe from previous selectSlang's meanings listener to avoid leaks
+    selectSlangUnsubRef.current?.();
+    selectSlangUnsubRef.current = null;
+
     try {
-      // Two equality filters + no orderBy → only needs default single-field
-      // indexes (no composite). Previously this used `orderBy('upvotes', 'desc')`
-      // which required a composite index that was never created, causing
-      // listener errors silently and the "search does nothing" bug.
-      // We now sort in memory below, which is fine because we're not paginating.
       const meaningsQ = query(
         collection(db, 'slang_meanings'),
         where('slangId', '==', slangData.id),
@@ -585,6 +585,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm, onTryTranslate }: {
           });
         }
       );
+      selectSlangUnsubRef.current = unsubscribe;
       if (auth.currentUser) {
         const upvotesQ = query(collection(db, 'slang_upvotes'), where('userId', '==', auth.currentUser.uid));
         const upvotesSnapshot = await getDocs(upvotesQ);

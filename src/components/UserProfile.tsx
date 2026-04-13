@@ -345,7 +345,7 @@ export default function UserProfile({
   return (
     <div className="space-y-6">
       {/* Profile Header Card */}
-      <div className="bg-white/60 backdrop-blur-md border border-white/60 rounded-3xl p-6 shadow-sm">
+      <div className="glass-card rounded-3xl p-5 sm:p-8 shadow-[var(--shadow-card)]">
         <div className="flex items-start gap-5">
           {/* Avatar */}
           <div className="relative group">
@@ -480,7 +480,7 @@ export default function UserProfile({
       </div>
 
       {/* Achievement Badges */}
-      <div className="bg-white/60 backdrop-blur-md border border-white/60 rounded-3xl p-6 shadow-sm">
+      <div className="glass-card rounded-3xl p-5 sm:p-8 shadow-[var(--shadow-card)]">
         <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
           <Award className="w-4 h-4 text-amber-500" />
           {uiLang === 'zh' ? '成就勋章' : 'Achievements'}
@@ -522,7 +522,7 @@ export default function UserProfile({
       </div>
 
       {/* Tabs */}
-      <div className="bg-white/60 backdrop-blur-md border border-white/60 rounded-3xl shadow-sm overflow-hidden">
+      <div className="glass-card rounded-3xl shadow-[var(--shadow-card)] overflow-hidden">
         <div className="flex border-b border-gray-100">
           {[
             { id: 'entries', label: uiLang === 'zh' ? '我的词条' : 'My Entries' },

@@ -504,7 +504,10 @@ export default function WordbookPage(props: WordbookPageProps) {
               <motion.div
                 layout
                 key={word.id}
-                className="bg-white rounded-3xl border border-gray-100 hover:border-blue-200 transition-all shadow-xl hover:shadow-2xl"
+                className={cn(
+                  "bg-white rounded-3xl border border-gray-100 hover:border-blue-200 transition-all shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] overflow-hidden border-l-4",
+                  word.styleTag === 'authentic' ? "border-l-blue-500" : word.styleTag === 'academic' ? "border-l-purple-500" : "border-l-gray-200"
+                )}
               >
                 <div
                   onClick={() => batchMode ? toggleWordSelection(word.id) : setSelectedWordbookItem(word)}
