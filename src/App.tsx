@@ -177,6 +177,7 @@ export interface UserProfile {
 import PaymentScreen from './components/PaymentScreen';
 import { OnboardingChecklist } from './components/OnboardingChecklist';
 import TranslateTab from './pages/TranslateTab';
+import { TranslateProvider } from './contexts/TranslateContext';
 
 // Sortable tab — Pro users can long-press + drag to reorder. Non-Pro
 // users get a normal button (no drag listeners attached). Listeners are
@@ -876,47 +877,24 @@ export default function App() {
 
         <Suspense fallback={<LazyFallback />}>
           {activeTab === 'translate' ? (
-            <TranslateTab
-              inputText={inputText}
-              setInputText={setInputText}
-              isTranslating={isTranslating}
-              translationResult={translationResult}
-              selectedUsageIndex={selectedUsageIndex}
-              setSelectedUsageIndex={setSelectedUsageIndex}
-              showDetails={showDetails}
-              setShowDetails={setShowDetails}
-              formalityLevel={formalityLevel}
-              setFormalityLevel={setFormalityLevel}
-              isFetchingSlang={isFetchingSlang}
-              slangInsights={slangInsights}
-              isSaving={isSaving}
-              loadingAudioText={loadingAudioText}
-              userProfile={userProfile}
-              uiLang={uiLang}
-              searchHistory={searchHistory}
-              removeFromHistory={removeFromHistory}
-              clearHistory={clearHistory}
-              previousSearchWord={previousSearchWord}
-              setPreviousSearchWord={setPreviousSearchWord}
-              isExtractingPhoto={isExtractingPhoto}
-              onPhotoCapture={handlePhotoCapture}
-              isListening={isListening}
-              onToggleListening={toggleListening}
-              onTranslate={handleTranslateWithHistory}
-              onSearchWord={handleSearchWord}
-              onGoBack={handleGoBack}
-              onSaveWord={handleSaveWord}
-              onSpeak={speak}
-              onOpenPaywall={(trigger) => { setPaymentTrigger(trigger); setShowPayment(true); }}
-              onUpgrade={handleUpgrade}
-              onViewSlangEntry={(term) => { setSearchQuery(term); setActiveTab('slang'); }}
-              scene={scene}
-              setScene={setScene}
-              autoTranslateEnabled={autoTranslateEnabled}
-              toggleAutoTranslate={toggleAutoTranslate}
-              savedWords={savedWords}
-              user={user}
-            />
+            <TranslateProvider value={{
+              inputText, setInputText, isTranslating, translationResult,
+              selectedUsageIndex, setSelectedUsageIndex, showDetails, setShowDetails,
+              formalityLevel, setFormalityLevel, isFetchingSlang, slangInsights, isSaving,
+              loadingAudioText, userProfile, uiLang, savedWords, user,
+              searchHistory, removeFromHistory, clearHistory,
+              previousSearchWord, setPreviousSearchWord,
+              isExtractingPhoto, onPhotoCapture: handlePhotoCapture,
+              isListening, onToggleListening: toggleListening,
+              onTranslate: handleTranslateWithHistory, onSearchWord: handleSearchWord,
+              onGoBack: handleGoBack, onSaveWord: handleSaveWord, onSpeak: speak,
+              onOpenPaywall: (trigger) => { setPaymentTrigger(trigger); setShowPayment(true); },
+              onUpgrade: handleUpgrade,
+              onViewSlangEntry: (term) => { setSearchQuery(term); setActiveTab('slang'); },
+              scene, setScene, autoTranslateEnabled, toggleAutoTranslate,
+            }}>
+              <TranslateTab />
+            </TranslateProvider>
           ) : activeTab === 'grammar' ? (
             <div className="max-w-3xl mx-auto">
               <GrammarPage

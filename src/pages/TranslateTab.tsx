@@ -48,6 +48,7 @@ import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import * as Sentry from '@sentry/react';
 import { toast } from 'sonner';
 import { trackEvent } from '../utils/analytics';
+import { useTranslateContext } from '../contexts/TranslateContext';
 import { TranslationSkeleton, SlangInsightSkeleton } from '../components/Skeleton';
 
 interface SearchHistoryItem {
@@ -126,47 +127,19 @@ interface TranslateTabProps {
   user: User | null;
 }
 
-export default function TranslateTab({
-  inputText,
-  setInputText,
-  isTranslating,
-  translationResult,
-  selectedUsageIndex,
-  setSelectedUsageIndex,
-  showDetails,
-  setShowDetails,
-  formalityLevel,
-  setFormalityLevel,
-  isFetchingSlang,
-  slangInsights,
-  isSaving,
-  loadingAudioText,
-  userProfile,
-  uiLang,
-  searchHistory,
-  removeFromHistory,
-  clearHistory,
-  previousSearchWord,
-  setPreviousSearchWord,
-  isExtractingPhoto,
-  onPhotoCapture,
-  isListening,
-  onToggleListening,
-  onTranslate,
-  onSearchWord,
-  onGoBack,
-  onSaveWord,
-  onSpeak,
-  onOpenPaywall,
-  onUpgrade,
-  onViewSlangEntry,
-  scene,
-  setScene,
-  autoTranslateEnabled,
-  toggleAutoTranslate,
-  savedWords,
-  user,
-}: TranslateTabProps) {
+export default function TranslateTab(props?: Partial<TranslateTabProps>) {
+  // Use context if available (production), fall back to props (tests)
+  const ctxRaw = (() => { try { return useTranslateContext(); } catch { return null; } })();
+  const {
+    inputText, setInputText, isTranslating, translationResult,
+    selectedUsageIndex, setSelectedUsageIndex, showDetails, setShowDetails,
+    formalityLevel, setFormalityLevel, isFetchingSlang, slangInsights, isSaving,
+    loadingAudioText, userProfile, uiLang, searchHistory, removeFromHistory, clearHistory,
+    previousSearchWord, setPreviousSearchWord, isExtractingPhoto, onPhotoCapture,
+    isListening, onToggleListening, onTranslate, onSearchWord, onGoBack,
+    onSaveWord, onSpeak, onOpenPaywall, onUpgrade, onViewSlangEntry,
+    scene, setScene, autoTranslateEnabled, toggleAutoTranslate, savedWords, user,
+  } = (ctxRaw || props) as TranslateTabProps;
   const t = translations[uiLang];
   const photoInputRef = useRef<HTMLInputElement>(null);
 
