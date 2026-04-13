@@ -1,6 +1,22 @@
 import React, { useState, useEffect, Component, ReactNode, lazy, Suspense } from 'react';
 import * as Sentry from '@sentry/react';
 import { toast } from 'sonner';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import ReactMarkdown from 'react-markdown';
 import {
   Search,
@@ -160,6 +176,50 @@ export interface UserProfile {
 import PaymentScreen from './components/PaymentScreen';
 import { OnboardingChecklist } from './components/OnboardingChecklist';
 import TranslateTab from './pages/TranslateTab';
+
+// Sortable tab — Pro users can long-press + drag to reorder. Non-Pro
+// users get a normal button (no drag listeners attached). Listeners are
+// fed in from the parent so we can conditionally enable drag.
+interface SortableTabProps {
+  tab: { id: string; label: string; icon: any; count?: number };
+  isActive: boolean;
+  onSelect: () => void;
+  isPro: boolean;
+}
+function SortableTab({ tab, isActive, onSelect, isPro }: SortableTabProps) {
+  const sortable = useSortable({ id: tab.id, disabled: !isPro });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = sortable;
+  // dnd-kit's Translate-based transform is what actually moves the
+  // button during drag. The Button stays rendered in-place, but its
+  // transform translates it under the user's finger.
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.65 : 1,
+    zIndex: isDragging ? 20 : 1,
+    touchAction: isPro ? 'none' : undefined,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex-1 min-w-[80px]"
+      {...attributes}
+      {...listeners}
+    >
+      <button
+        onClick={onSelect}
+        className={cn(
+          "w-full py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap px-3 select-none",
+          isActive ? "bg-white/70 text-blue-600 shadow-sm backdrop-blur-md border border-white/60" : "text-gray-500 hover:text-gray-700 hover:bg-white/20"
+        )}
+      >
+        <tab.icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+        {tab.label} {tab.count !== undefined && <span className="hidden xs:inline">({tab.count})</span>}
+      </button>
+    </div>
+  );
+}
 
 // Lazy: loaded on tab switch / drawer open. Cuts the initial bundle by
 // pulling SlangDictionary, UserProfile, Leaderboard, ReviewPage,
@@ -640,6 +700,30 @@ export default function App() {
     }
   };
 
+  // dnd-kit sensors: PointerSensor is the default for mouse + pen on
+  // desktop; it activates on an 8px drag to distinguish from a click.
+  // TouchSensor on mobile uses a 250 ms long-press so taps still switch
+  // tabs normally but a held finger + drag reorders. tolerance: 5 means
+  // a 5 px wiggle doesn't cancel the long-press.
+  const tabSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
+  );
+
+  // When a drag ends, compute the new tab order based on the active
+  // (dragged) tab and the tab it was dropped over. arrayMove is a
+  // dnd-kit utility that returns the new array without mutating.
+  const handleTabDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const currentOrder = fullOrder;
+    const oldIndex = currentOrder.indexOf(active.id as string);
+    const newIndex = currentOrder.indexOf(over.id as string);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const newOrder = arrayMove(currentOrder, oldIndex, newIndex);
+    handleTabOrderChange(newOrder);
+  };
+
   const defaultTabs = ['slang', 'translate', 'grammar', 'history', 'review'];
   const rawOrder = userProfile?.tabOrder || defaultTabs;
   const fullOrder = [...rawOrder, ...defaultTabs.filter(t => !rawOrder.includes(t))];
@@ -739,28 +823,29 @@ export default function App() {
       </header>
 
       <main className="max-w-2xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 relative z-10">
-        {/* Tabs */}
-        <div
-          className="flex bg-white/30 backdrop-blur-sm border border-white/50 p-1 rounded-2xl mb-6 sm:mb-8 overflow-x-auto no-scrollbar shadow-inner"
+        {/* Tabs — Pro users can long-press + drag to reorder */}
+        <DndContext
+          sensors={tabSensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleTabDragEnd}
         >
-          {tabs.map((tab) => (
-            <div
-              key={tab.id}
-              className="flex-1 min-w-[80px]"
-            >
-              <button 
-                onClick={() => setActiveTab(tab.id as any)}
-                className={cn(
-                  "w-full py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap px-3",
-                  activeTab === tab.id ? "bg-white/70 text-blue-600 shadow-sm backdrop-blur-md border border-white/60" : "text-gray-500 hover:text-gray-700 hover:bg-white/20"
-                )}
-              >
-                <tab.icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                {tab.label} {tab.count !== undefined && <span className="hidden xs:inline">({tab.count})</span>}
-              </button>
+          <SortableContext
+            items={tabs.map((t) => t.id)}
+            strategy={horizontalListSortingStrategy}
+          >
+            <div className="flex bg-white/30 backdrop-blur-sm border border-white/50 p-1 rounded-2xl mb-6 sm:mb-8 overflow-x-auto no-scrollbar shadow-inner">
+              {tabs.map((tab) => (
+                <SortableTab
+                  key={tab.id}
+                  tab={tab}
+                  isActive={activeTab === tab.id}
+                  onSelect={() => setActiveTab(tab.id as any)}
+                  isPro={!!userProfile?.isPro}
+                />
+              ))}
             </div>
-          ))}
-        </div>
+          </SortableContext>
+        </DndContext>
 
         <Suspense fallback={<LazyFallback />}>
           {activeTab === 'translate' ? (
