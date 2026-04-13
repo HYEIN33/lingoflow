@@ -35,6 +35,8 @@ import {
   BookmarkCheck,
   ThumbsUp,
   ThumbsDown,
+  Heart,
+  Share2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TranslationResult, SlangExplanationResult } from '../services/ai';
@@ -459,8 +461,8 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className={cn("glass-card rounded-3xl p-5 sm:p-8 space-y-8 overflow-hidden relative", !isSentence && slangInsights.length > 0 && "lg:col-span-2")}
-              style={{ boxShadow: 'var(--shadow-card)', borderLeft: '3px solid transparent', borderImage: 'linear-gradient(to bottom, #2563eb, #7c3aed) 1' }}
+              className={cn("liquid-glass rounded-3xl p-5 sm:p-8 space-y-8 overflow-hidden relative", !isSentence && slangInsights.length > 0 && "lg:col-span-2")}
+              style={{ boxShadow: 'var(--shadow-card)' }}
             >
               {/* Dual Column Translation */}
               {(translationResult.authenticTranslation || translationResult.academicTranslation) && (
@@ -471,13 +473,15 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                       initial={{ opacity: 0, y: 16, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       transition={{ delay: 0.1, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-                      className="glass-card rounded-2xl p-4 sm:p-6 relative overflow-hidden transition-shadow duration-300 hover:shadow-[var(--shadow-card-hover)]"
-                      style={{ boxShadow: 'var(--shadow-card)', borderLeft: '3px solid transparent', borderImage: 'linear-gradient(to bottom, #2563eb, #4f46e5) 1' }}
+                      className="warm-card rounded-2xl p-4 sm:p-6 relative overflow-hidden border-l-4 border-l-rose-400"
                     >
-                      <h3 className="text-[10px] font-black uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
-                        <Zap className="w-3 h-3 text-rose-400 fill-current" />
-                        <span className="gradient-text">{uiLang === 'zh' ? '地道表达 (AUTHENTIC)' : 'AUTHENTIC EXPRESSION'}</span>
-                      </h3>
+                      {/* Social post header */}
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-6 h-6 bg-gradient-to-br from-rose-400 to-pink-500 rounded-full flex items-center justify-center">
+                          <Zap className="w-3 h-3 text-white fill-current" />
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] gradient-text">{uiLang === 'zh' ? '地道表达' : 'AUTHENTIC'}</span>
+                      </div>
                       <p className={cn("text-gray-900 font-medium break-words", translationFontCls, textPadRight)}>
                         {translationResult.authenticTranslation}
                       </p>
@@ -488,16 +492,18 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                         <Volume2 className="w-5 h-5" />
                         {isSentence && <span>{uiLang === 'zh' ? '朗读' : 'Listen'}</span>}
                       </button>
-                      <div className="mt-4 flex items-center gap-3">
+                      {/* Social action bar — heart save + speaker */}
+                      <div className="mt-4 pt-3 border-t border-gray-100/50 flex items-center gap-4">
                         <button
                           onClick={() => onSaveWord('authentic')}
                           disabled={isSaving || isAlreadySaved('authentic')}
-                          className="flex items-center gap-1.5 text-xs font-bold text-rose-500 hover:text-rose-600 transition-all duration-200 disabled:opacity-50 hover:gap-2"
+                          className={cn(
+                            "flex items-center gap-1.5 text-sm font-bold transition-all duration-300 disabled:opacity-50",
+                            isAlreadySaved('authentic') ? "text-rose-500" : "text-gray-400 hover:text-rose-500"
+                          )}
                           title={uiLang === 'zh' ? '收藏' : 'Save'}
                         >
-                          {isAlreadySaved('authentic')
-                            ? <BookmarkCheck className="w-4 h-4 fill-current" />
-                            : <Bookmark className="w-4 h-4" />}
+                          <Heart className={cn("w-5 h-5 transition-transform", isAlreadySaved('authentic') && "fill-current scale-110")} />
                           {uiLang === 'zh' ? (isAlreadySaved('authentic') ? '已收藏' : '收藏') : (isAlreadySaved('authentic') ? 'Saved' : 'Save')}
                         </button>
                       </div>
@@ -509,8 +515,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                       initial={{ opacity: 0, y: 16, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       transition={{ delay: 0.25, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-                      className="glass-card rounded-2xl p-4 sm:p-6 relative overflow-hidden transition-shadow duration-300 hover:shadow-[var(--shadow-card-hover)]"
-                      style={{ boxShadow: 'var(--shadow-card)', borderLeft: '3px solid transparent', borderImage: 'linear-gradient(to bottom, #6b7280, #7c3aed) 1' }}
+                      className="warm-card rounded-2xl p-4 sm:p-6 relative overflow-hidden border-l-4 border-l-purple-400"
                     >
                       <h3 className="text-[10px] font-black uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
                         <BookOpen className="w-3 h-3 text-gray-500" />
@@ -566,35 +571,48 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                 </div>
               )}
 
-              {/* Translation Feedback 👍/👎 */}
+              {/* Social reaction bar — ❤️ / 💔 / Share */}
               {user && (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4">
                   <span className="text-xs text-gray-400">
-                    {uiLang === 'zh' ? '翻译质量：' : 'Translation quality:'}
+                    {uiLang === 'zh' ? '觉得如何？' : 'How was it?'}
                   </span>
                   <button
                     onClick={() => handleFeedback('up')}
                     disabled={!!feedbackGiven || isSubmittingFeedback}
                     className={cn(
-                      "p-1.5 rounded-lg transition-all focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-1",
-                      feedbackGiven === 'up' ? "text-green-600 bg-green-50" : "text-gray-300 hover:text-green-500 hover:bg-green-50",
+                      "flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-300",
+                      feedbackGiven === 'up' ? "text-rose-500 bg-rose-50 scale-105" : "text-gray-400 hover:text-rose-500 hover:bg-rose-50",
                       feedbackGiven && feedbackGiven !== 'up' && "opacity-30"
                     )}
                     aria-label={uiLang === 'zh' ? '翻译质量好' : 'Good translation'}
                   >
-                    {isSubmittingFeedback && !feedbackGiven ? <Loader2 className="w-4 h-4 animate-spin" /> : <ThumbsUp className="w-4 h-4" />}
+                    {isSubmittingFeedback && !feedbackGiven ? <Loader2 className="w-4 h-4 animate-spin" /> : <Heart className={cn("w-4 h-4", feedbackGiven === 'up' && "fill-current")} />}
+                    <span className="text-xs">{uiLang === 'zh' ? '赞' : 'Like'}</span>
                   </button>
                   <button
                     onClick={() => handleFeedback('down')}
                     disabled={!!feedbackGiven || isSubmittingFeedback}
                     className={cn(
-                      "p-1.5 rounded-lg transition-all focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-1",
-                      feedbackGiven === 'down' ? "text-red-500 bg-red-50" : "text-gray-300 hover:text-red-400 hover:bg-red-50",
+                      "flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-300",
+                      feedbackGiven === 'down' ? "text-gray-600 bg-gray-100" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100",
                       feedbackGiven && feedbackGiven !== 'down' && "opacity-30"
                     )}
                     aria-label={uiLang === 'zh' ? '翻译质量差' : 'Poor translation'}
                   >
                     <ThumbsDown className="w-4 h-4" />
+                    <span className="text-xs">{uiLang === 'zh' ? '不太对' : 'Off'}</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const text = `${translationResult?.original} → ${translationResult?.authenticTranslation || translationResult?.academicTranslation || ''} — via MemeFlow`;
+                      navigator.clipboard.writeText(text).catch(() => {});
+                      toast.success(uiLang === 'zh' ? '已复制到剪贴板' : 'Copied!');
+                    }}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium text-gray-400 hover:text-pink-500 hover:bg-pink-50 transition-all duration-300 ml-auto"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    <span className="text-xs">{uiLang === 'zh' ? '分享' : 'Share'}</span>
                   </button>
                   {showFeedbackReason && (
                     <form

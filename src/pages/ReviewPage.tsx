@@ -291,17 +291,19 @@ export default function ReviewPage(props: ReviewPageProps) {
                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] text-center mb-3">
                       {uiLang === 'zh' ? '你记住了吗？' : 'HOW WELL DID YOU KNOW?'}
                     </p>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+                    {/* Emoji reaction buttons — social media feel */}
+                    <div className="grid grid-cols-4 gap-3">
                       {[
-                        { q: 1, label: uiLang === 'zh' ? '忘记' : 'Forgot', icon: XCircle, color: 'from-red-500 to-red-600', shadow: 'shadow-red-200/60', hint: uiLang === 'zh' ? '1天后' : 'in 1d' },
-                        { q: 3, label: uiLang === 'zh' ? '模糊' : 'Hard', icon: HelpCircle, color: 'from-yellow-400 to-yellow-500', shadow: 'shadow-yellow-200/60', hint: uiLang === 'zh' ? '~3天' : '~3d' },
-                        { q: 4, label: uiLang === 'zh' ? '记得' : 'Good', icon: ThumbsUp, color: 'from-green-400 to-green-600', shadow: 'shadow-green-200/60', hint: uiLang === 'zh' ? '~1周' : '~1w' },
-                        { q: 5, label: uiLang === 'zh' ? '秒杀' : 'Easy', icon: Zap, color: 'from-rose-400 to-pink-500', shadow: 'shadow-rose-200/60', hint: uiLang === 'zh' ? '~2周' : '~2w' }
+                        { q: 1, emoji: '😫', label: uiLang === 'zh' ? '忘记' : 'Forgot', bg: 'bg-red-50 hover:bg-red-100 border-red-200/60', text: 'text-red-500', hint: uiLang === 'zh' ? '1天后' : '1d' },
+                        { q: 3, emoji: '🤔', label: uiLang === 'zh' ? '模糊' : 'Hard', bg: 'bg-amber-50 hover:bg-amber-100 border-amber-200/60', text: 'text-amber-600', hint: uiLang === 'zh' ? '~3天' : '~3d' },
+                        { q: 4, emoji: '😊', label: uiLang === 'zh' ? '记得' : 'Good', bg: 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200/60', text: 'text-emerald-600', hint: uiLang === 'zh' ? '~1周' : '~1w' },
+                        { q: 5, emoji: '🤩', label: uiLang === 'zh' ? '秒杀' : 'Easy', bg: 'bg-rose-50 hover:bg-rose-100 border-rose-200/60', text: 'text-rose-500', hint: uiLang === 'zh' ? '~2周' : '~2w' }
                       ].map((btn) => (
                         <motion.button
                           key={btn.q}
-                          whileHover={{ scale: 1.05, y: -2 }}
-                          whileTap={{ scale: 0.9 }}
+                          whileHover={{ scale: 1.1, y: -4 }}
+                          whileTap={{ scale: 0.85 }}
+                          transition={{ type: 'spring', stiffness: 400, damping: 15 }}
                           onClick={() => {
                             onReview(currentReviewWord.id, btn.q);
                             setShowReviewAnswer(false);
@@ -315,13 +317,13 @@ export default function ReviewPage(props: ReviewPageProps) {
                           }}
                           aria-label={`${btn.label} — ${btn.hint}`}
                           className={cn(
-                            "py-4 rounded-2xl text-white font-bold shadow-lg flex flex-col items-center gap-1 bg-gradient-to-b transition-all focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2",
-                            `${btn.color} ${btn.shadow}`
+                            "py-3 sm:py-4 rounded-2xl font-bold flex flex-col items-center gap-0.5 border transition-all duration-200 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2",
+                            btn.bg, btn.text
                           )}
                         >
-                          <btn.icon className="w-5 h-5" />
-                          <span className="text-xs font-bold">{btn.label}</span>
-                          <span className="text-[10px] opacity-70">{btn.hint}</span>
+                          <span className="text-2xl sm:text-3xl leading-none select-none">{btn.emoji}</span>
+                          <span className="text-[10px] font-bold mt-1">{btn.label}</span>
+                          <span className="text-[9px] opacity-40">{btn.hint}</span>
                         </motion.button>
                       ))}
                     </div>
