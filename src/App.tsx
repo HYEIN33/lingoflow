@@ -225,6 +225,7 @@ function SortableTab({ tab, isActive, onSelect, isPro }: SortableTabProps) {
 // Lazy: loaded on tab switch / drawer open. Cuts the initial bundle by
 // pulling SlangDictionary, UserProfile, Leaderboard, ReviewPage,
 // SlangOnboarding, GrammarPage, WordbookPage out of the main chunk.
+import WelcomeOnboarding from './components/WelcomeOnboarding';
 const SlangDictionary = lazy(() =>
   import('./components/SlangDictionary').then(m => ({ default: m.SlangDictionary }))
 );
@@ -789,6 +790,12 @@ export default function App() {
     handleUpgrade, handleViewSlangEntry, removeFromHistory, clearHistory,
     toggleAutoTranslate,
   ]);
+
+  // Show animated welcome onboarding for first-time visitors (before any auth)
+  const hasSeenWelcome = (() => { try { return localStorage.getItem('memeflow_welcome_seen') === 'true'; } catch { return false; } })();
+  if (!hasSeenWelcome) {
+    return <WelcomeOnboarding onComplete={() => { try { localStorage.setItem('memeflow_welcome_seen', 'true'); } catch {} window.location.reload(); }} uiLang={uiLang} />;
+  }
 
   if (!isAuthReady) {
     return (
