@@ -401,6 +401,24 @@ export default function TranslateTab({
         </div>
       )}
 
+      {/* Quick examples for new users (no history, no result) */}
+      {!translationResult && searchHistory.length === 0 && !inputText && (
+        <div className="text-center py-4">
+          <p className="text-sm text-gray-400 mb-3">{uiLang === 'zh' ? '试试翻译：' : 'Try translating:'}</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {['我在弄咖啡', 'plot twist', 'no cap', '这个项目太牛了'].map((ex) => (
+              <button
+                key={ex}
+                onClick={() => { setInputText(ex); onTranslate(undefined); }}
+                className="px-3 py-1.5 bg-gray-50 hover:bg-blue-50 text-gray-500 hover:text-blue-600 text-xs rounded-lg transition-colors"
+              >
+                {ex}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Translation Result */}
       {translationResult && (() => {
         // Detect content length tier — affects layout, font size, and whether

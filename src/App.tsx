@@ -524,8 +524,15 @@ export default function App() {
     return <MaintenancePage />;
   }
 
-  const [activeTab, setActiveTab] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile'>('slang');
-  // Slang is the primary USP, always default tab
+  const [activeTab, setActiveTab] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile'>(() => {
+    try {
+      const saved = localStorage.getItem('memeflow_active_tab');
+      if (saved && ['translate', 'slang', 'grammar', 'review', 'history'].includes(saved)) {
+        return saved as any;
+      }
+    } catch {}
+    return 'slang';
+  });
   const [showPayment, setShowPayment] = useState(false);
   const [paymentTrigger, setPaymentTrigger] = useState('default');
 
@@ -815,21 +822,20 @@ export default function App() {
             >
               <UserCircle className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
-            <button 
+            <button
               onClick={() => setUiLang(uiLang === 'en' ? 'zh' : 'en')}
-              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 hover:bg-gray-50 rounded-lg transition-colors text-gray-500 text-xs sm:text-sm font-medium"
+              className="flex items-center gap-1 px-2 py-1.5 hover:bg-gray-50 rounded-lg transition-colors text-gray-500 text-xs font-medium"
             >
-              <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden xs:inline">{uiLang === 'en' ? '中文' : 'English'}</span>
-              <span className="xs:hidden">{uiLang === 'en' ? 'ZH' : 'EN'}</span>
+              <Globe className="w-3.5 h-3.5" />
+              <span>{uiLang === 'en' ? '中文' : 'EN'}</span>
             </button>
-            <button 
+            <button
               onClick={() => setShowQrCode(true)}
-              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 hover:bg-gray-50 rounded-lg transition-colors text-blue-500 text-xs sm:text-sm font-medium"
+              className="hidden sm:flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 hover:bg-gray-50 rounded-lg transition-colors text-blue-500 text-xs sm:text-sm font-medium"
               title={uiLang === 'zh' ? '在手机上使用' : 'Use on Mobile'}
             >
               <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden xs:inline">{uiLang === 'zh' ? '手机端' : 'Mobile'}</span>
+              <span>{uiLang === 'zh' ? '手机端' : 'Mobile'}</span>
             </button>
             <button
               onClick={confirmLogout}
@@ -860,7 +866,7 @@ export default function App() {
                   key={tab.id}
                   tab={tab}
                   isActive={activeTab === tab.id}
-                  onSelect={() => setActiveTab(tab.id as any)}
+                  onSelect={() => { setActiveTab(tab.id as any); try { localStorage.setItem('memeflow_active_tab', tab.id); } catch {} }}
                   isPro={!!userProfile?.isPro}
                 />
               ))}

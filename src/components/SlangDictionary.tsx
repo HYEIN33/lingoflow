@@ -1078,7 +1078,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
       {!currentSlang && !showAddForm && trendingTerms.length > 0 && (
         <div className="bg-white/70 rounded-2xl p-4 border border-white/60 shadow-sm">
           <h3 className="text-sm font-bold text-gray-500 mb-3">
-            {uiLang === 'zh' ? '📊 本周搜索榜' : '📊 Trending This Week'}
+            {uiLang === 'zh' ? '本周搜索榜' : 'Trending This Week'}
           </h3>
           <div className="space-y-1.5">
             {trendingTerms.map((item, idx) => (
@@ -1111,7 +1111,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
           {recentSlangs.length > 0 && (
             <div>
               <h3 className="text-sm font-bold text-gray-500 mb-3">
-                {uiLang === 'zh' ? '🔥 浏览词条' : '🔥 Browse Entries'}
+                {uiLang === 'zh' ? '浏览词条' : 'Browse Entries'}
               </h3>
               <div className="flex flex-wrap gap-2">
                 {recentSlangs.map((slang) => (
@@ -1133,7 +1133,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
               onClick={() => setShowGuidelines(!showGuidelines)}
               className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
             >
-              📖 {uiLang === 'zh' ? (showGuidelines ? '收起贡献准则' : '查看贡献准则') : (showGuidelines ? 'Hide Guidelines' : 'View Contribution Guidelines')}
+              {uiLang === 'zh' ? (showGuidelines ? '收起贡献准则' : '查看贡献准则') : (showGuidelines ? 'Hide Guidelines' : 'View Contribution Guidelines')}
             </button>
           )}
           <AnimatePresence>

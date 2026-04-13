@@ -293,7 +293,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                   <motion.div key="question" className="py-12">
                     <button
                       onClick={() => setShowReviewAnswer(true)}
-                      className="bg-gray-900 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-gray-800 transition-all shadow-xl shadow-gray-200"
+                      className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-200"
                     >
                       {uiLang === 'zh' ? '查看答案' : 'Show Answer'}
                     </button>
