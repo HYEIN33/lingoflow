@@ -401,7 +401,7 @@ export default function TranslateTab(props?: Partial<TranslateTabProps>) {
             {['我在弄咖啡', 'plot twist', 'no cap', '这个项目太牛了'].map((ex) => (
               <button
                 key={ex}
-                onClick={() => { setInputText(ex); onTranslate(undefined); }}
+                onClick={() => onSearchWord(ex)}
                 className="px-3 py-1.5 bg-gray-50 hover:bg-blue-50 text-gray-500 hover:text-blue-600 text-xs rounded-lg transition-colors"
               >
                 {ex}

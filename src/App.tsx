@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Component, ReactNode, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, Component, ReactNode, lazy, Suspense } from 'react';
 import * as Sentry from '@sentry/react';
 import { toast } from 'sonner';
 import {
@@ -17,7 +17,6 @@ import {
   arrayMove,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import ReactMarkdown from 'react-markdown';
 import {
   Search,
   Plus,
@@ -205,7 +204,7 @@ function SortableTab({ tab, isActive, onSelect, isPro }: SortableTabProps) {
     <div
       ref={setNodeRef}
       style={style}
-      className="flex-1 min-w-[80px]"
+      className="flex-1 min-w-0"
       {...attributes}
       {...listeners}
     >
@@ -528,7 +527,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile'>(() => {
     try {
       const saved = localStorage.getItem('memeflow_active_tab');
-      if (saved && ['translate', 'slang', 'grammar', 'review', 'history'].includes(saved)) {
+      if (saved && ['translate', 'slang', 'grammar', 'review', 'history', 'leaderboard', 'profile'].includes(saved)) {
         return saved as any;
       }
     } catch {}
@@ -662,6 +661,11 @@ export default function App() {
     }
   }, [activeTab, userProfile]);
 
+  // D4: Dismiss stale toasts when switching tabs
+  useEffect(() => {
+    toast.dismiss();
+  }, [activeTab]);
+
   const handleUpgrade = () => {
     setPaymentTrigger('default');
     setShowPayment(true);
@@ -757,6 +761,35 @@ export default function App() {
     }
   });
 
+  // E2: Memoize TranslateContext value to prevent unnecessary re-renders
+  const handleOpenPaywall = useCallback((trigger: string) => { setPaymentTrigger(trigger); setShowPayment(true); }, []);
+  const handleViewSlangEntry = useCallback((term: string) => { setSearchQuery(term); setActiveTab('slang'); }, []);
+
+  const translateContextValue = useMemo(() => ({
+    inputText, setInputText, isTranslating, translationResult,
+    selectedUsageIndex, setSelectedUsageIndex, showDetails, setShowDetails,
+    formalityLevel, setFormalityLevel, isFetchingSlang, slangInsights, isSaving,
+    loadingAudioText, userProfile, uiLang, savedWords, user,
+    searchHistory, removeFromHistory, clearHistory,
+    previousSearchWord, setPreviousSearchWord,
+    isExtractingPhoto, onPhotoCapture: handlePhotoCapture,
+    isListening, onToggleListening: toggleListening,
+    onTranslate: handleTranslateWithHistory, onSearchWord: handleSearchWord,
+    onGoBack: handleGoBack, onSaveWord: handleSaveWord, onSpeak: speak,
+    onOpenPaywall: handleOpenPaywall, onUpgrade: handleUpgrade,
+    onViewSlangEntry: handleViewSlangEntry,
+    scene, setScene, autoTranslateEnabled, toggleAutoTranslate,
+  }), [
+    inputText, isTranslating, translationResult, selectedUsageIndex, showDetails,
+    formalityLevel, isFetchingSlang, slangInsights, isSaving, loadingAudioText,
+    userProfile, uiLang, savedWords, user, searchHistory, previousSearchWord,
+    isExtractingPhoto, isListening, scene, autoTranslateEnabled,
+    handlePhotoCapture, toggleListening, handleTranslateWithHistory,
+    handleSearchWord, handleGoBack, handleSaveWord, speak, handleOpenPaywall,
+    handleUpgrade, handleViewSlangEntry, removeFromHistory, clearHistory,
+    toggleAutoTranslate,
+  ]);
+
   if (!isAuthReady) {
     return (
       <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center">
@@ -778,11 +811,11 @@ export default function App() {
       {/* Header */}
       <header className="bg-white/40 backdrop-blur-md border-b border-white/50 sticky top-0 z-10 shadow-sm">
         <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-lg sm:rounded-xl flex items-center justify-center">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0">
               <Languages className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
             </div>
-            <span className="text-lg sm:text-xl font-bold text-gray-900 tracking-tight">{t.appName}</span>
+            <span className="text-lg sm:text-xl font-bold text-gray-900 tracking-tight truncate">{t.appName}</span>
             <span
               className="hidden sm:inline text-[10px] text-gray-400 font-mono tabular-nums"
               title={`Environment: ${APP_ENV}`}
@@ -877,22 +910,7 @@ export default function App() {
 
         <Suspense fallback={<LazyFallback />}>
           {activeTab === 'translate' ? (
-            <TranslateProvider value={{
-              inputText, setInputText, isTranslating, translationResult,
-              selectedUsageIndex, setSelectedUsageIndex, showDetails, setShowDetails,
-              formalityLevel, setFormalityLevel, isFetchingSlang, slangInsights, isSaving,
-              loadingAudioText, userProfile, uiLang, savedWords, user,
-              searchHistory, removeFromHistory, clearHistory,
-              previousSearchWord, setPreviousSearchWord,
-              isExtractingPhoto, onPhotoCapture: handlePhotoCapture,
-              isListening, onToggleListening: toggleListening,
-              onTranslate: handleTranslateWithHistory, onSearchWord: handleSearchWord,
-              onGoBack: handleGoBack, onSaveWord: handleSaveWord, onSpeak: speak,
-              onOpenPaywall: (trigger) => { setPaymentTrigger(trigger); setShowPayment(true); },
-              onUpgrade: handleUpgrade,
-              onViewSlangEntry: (term) => { setSearchQuery(term); setActiveTab('slang'); },
-              scene, setScene, autoTranslateEnabled, toggleAutoTranslate,
-            }}>
+            <TranslateProvider value={translateContextValue}>
               <TranslateTab />
             </TranslateProvider>
           ) : activeTab === 'grammar' ? (
@@ -956,6 +974,7 @@ export default function App() {
                 onDeleteFolder={deleteFolder}
                 onSetActiveFolder={setActiveFolderId}
                 onMoveWordsToFolder={moveWordsToFolder}
+                onNavigateToTranslate={() => setActiveTab('translate')}
               />
             </div>
           ) : activeTab === 'slang' ? (
@@ -980,7 +999,7 @@ export default function App() {
             </div>
           ) : activeTab === 'leaderboard' ? (
             <div>
-              <Leaderboard currentUserId={user.uid} uiLang={uiLang} />
+              <Leaderboard currentUserId={user.uid} uiLang={uiLang} onContribute={() => setActiveTab('slang')} />
             </div>
           ) : activeTab === 'profile' ? (
             <div>

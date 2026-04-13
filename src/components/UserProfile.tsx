@@ -445,9 +445,9 @@ export default function UserProfile({
             </div>
 
             {/* Quick Stats Row */}
-            <div className="flex items-center gap-4 text-sm text-gray-500">
-              <span className="flex items-center gap-1"><MessageSquare className="w-3.5 h-3.5" /> {userProfile?.approvedSlangCount || 0} {uiLang === 'zh' ? '词条' : 'entries'}</span>
-              <span className="flex items-center gap-1"><Flame className="w-3.5 h-3.5 text-orange-400" /> {userProfile?.currentStreak || 0} {uiLang === 'zh' ? '天连续' : 'day streak'}</span>
+            <div className="flex items-center gap-2 sm:gap-4 text-xs sm:text-sm text-gray-500">
+              <span className="flex items-center gap-1 whitespace-nowrap"><MessageSquare className="w-3.5 h-3.5" /> {userProfile?.approvedSlangCount || 0} {uiLang === 'zh' ? '词条' : 'entries'}</span>
+              <span className="flex items-center gap-1 whitespace-nowrap"><Flame className="w-3.5 h-3.5 text-orange-400" /> {userProfile?.currentStreak || 0} {uiLang === 'zh' ? '天连续' : 'day streak'}</span>
             </div>
             {errorMsg && (
               <p className="text-red-500 text-xs mt-2 bg-red-50 px-3 py-1.5 rounded-lg">{errorMsg}</p>
@@ -470,9 +470,9 @@ export default function UserProfile({
           { label: uiLang === 'zh' ? '信誉分' : 'Reputation', value: userProfile?.reputationScore || 100, color: 'text-emerald-600', bg: 'bg-emerald-50' },
           { label: uiLang === 'zh' ? '连续天数' : 'Streak', value: userProfile?.currentStreak || 0, color: 'text-orange-600', bg: 'bg-orange-50', suffix: uiLang === 'zh' ? ' 天' : 'd' },
         ].map((stat, i) => (
-          <div key={i} className={`${stat.bg} border border-white/60 rounded-2xl p-4 text-center`}>
-            <p className="text-xs font-medium text-gray-500 mb-1">{stat.label}</p>
-            <p className={`text-2xl font-bold ${stat.color}`}>
+          <div key={i} className={`${stat.bg} border border-white/60 rounded-2xl p-3 sm:p-4 text-center`}>
+            <p className="text-[10px] sm:text-xs font-medium text-gray-500 mb-1 whitespace-nowrap">{stat.label}</p>
+            <p className={`text-xl sm:text-2xl font-bold ${stat.color}`}>
               <CountUp to={stat.value} />{stat.suffix}
             </p>
           </div>

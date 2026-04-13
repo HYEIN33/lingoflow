@@ -257,6 +257,10 @@ service cloud.firestore {
                     request.resource.data.rating in ['up', 'down'] &&
                     request.resource.data.query is string &&
                     request.resource.data.result is string &&
+                    request.resource.data.scene is string &&
+                    request.resource.data.scene in ['chat', 'business', 'writing'] &&
+                    request.resource.data.reason is string &&
+                    request.resource.data.reason.size() <= 500 &&
                     (request.resource.data.timestamp is timestamp || request.resource.data.timestamp == request.time);
       allow update, delete: if false;
     }

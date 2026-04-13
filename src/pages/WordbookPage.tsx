@@ -37,6 +37,7 @@ interface WordbookPageProps {
   onDeleteFolder: (id: string) => void;
   onSetActiveFolder: (id: string | null) => void;
   onMoveWordsToFolder: (wordIds: string[], folderId: string | null) => void;
+  onNavigateToTranslate?: () => void;
 }
 
 export default function WordbookPage(props: WordbookPageProps) {
@@ -46,7 +47,7 @@ export default function WordbookPage(props: WordbookPageProps) {
     selectedUsageIndex, setSelectedUsageIndex, showDetails, setShowDetails,
     loadingAudioText, uiLang, onSpeak, onDeleteWord,
     folders, wordFolderMap, activeFolderId, onCreateFolder, onRenameFolder,
-    onDeleteFolder, onSetActiveFolder, onMoveWordsToFolder
+    onDeleteFolder, onSetActiveFolder, onMoveWordsToFolder, onNavigateToTranslate
   } = props;
 
   const t = translations[uiLang];
@@ -294,6 +295,11 @@ export default function WordbookPage(props: WordbookPageProps) {
           <p className="text-gray-300 text-sm mt-2">
             {uiLang === 'zh' ? '翻译单词后点击保存，就会出现在这里' : 'Translate a word and save it to see it here'}
           </p>
+          {onNavigateToTranslate && (
+            <button onClick={onNavigateToTranslate} className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors">
+              {uiLang === 'zh' ? '去翻译' : 'Go Translate'}
+            </button>
+          )}
         </div>
       ) : (
         /* ======================== LIST VIEW ======================== */

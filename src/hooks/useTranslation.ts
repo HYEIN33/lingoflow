@@ -105,6 +105,7 @@ export function useTranslation({
     setShowDetails(false);
     setSelectedUsageIndex(0);
     setSlangInsights([]);
+    setIsFetchingSlang(false);
     markOnboardingStep('translate_word');
 
     const startTime = Date.now();

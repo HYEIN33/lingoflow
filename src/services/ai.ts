@@ -2,6 +2,15 @@ import { GoogleGenAI, Type, Modality } from "@google/genai";
 import * as Sentry from "@sentry/react";
 import { auth } from "../firebase";
 
+// E4: Maximum input length to prevent token overflow / abuse
+const MAX_INPUT_LENGTH = 2000;
+
+function validateInputLength(text: string): void {
+  if (text.length > MAX_INPUT_LENGTH) {
+    throw new Error(`输入过长（最多 ${MAX_INPUT_LENGTH} 字符）`);
+  }
+}
+
 // Record a Gemini-related event to Sentry as a breadcrumb. Only runs when
 // Sentry is actually initialized (PROD). In DEV it's a cheap no-op.
 function aiBreadcrumb(message: string, data?: Record<string, unknown>) {
@@ -125,7 +134,7 @@ async function geminiGenerate(opts: {
   const makeSignal = (parentSignal?: AbortSignal) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 15000);
-    if (parentSignal) parentSignal.addEventListener('abort', () => controller.abort());
+    if (parentSignal) parentSignal.addEventListener('abort', () => controller.abort(), { once: true });
     return { signal: controller.signal, clear: () => clearTimeout(timer) };
   };
 
@@ -284,6 +293,7 @@ function safeJsonParse<T>(text: string, context: string): T {
 }
 
 export async function explainSlang(text: string): Promise<SlangExplanationResult> {
+  validateInputLength(text);
   const { model } = getEffectiveConfig();
   const contents = `Explain the following Chinese internet slang or meme. Provide its meaning, origin (e.g., Douyin, Weibo, gaming), usage context, and examples.
 
@@ -319,6 +329,7 @@ export async function explainSlang(text: string): Promise<SlangExplanationResult
 }
 
 export async function translateText(text: string, formalityLevel?: number, scene?: 'chat' | 'business' | 'writing', signal?: AbortSignal): Promise<TranslationResult> {
+  validateInputLength(text);
   const { model } = getEffectiveConfig();
 
   let formalityPrompt = "";
@@ -413,6 +424,7 @@ export async function translateText(text: string, formalityLevel?: number, scene
 }
 
 export async function checkGrammar(text: string): Promise<GrammarCheckResult> {
+  validateInputLength(text);
   const { model } = getEffectiveConfig();
 
   const contents = `Check the grammar of the following text. If there are errors, provide the corrected version and a detailed explanation in both English and Chinese. If there are no errors, set hasErrors to false.
@@ -628,6 +640,7 @@ Important Rules:
 }
 
 export async function suggestSlangMeaning(term: string, partialInput: string): Promise<string> {
+  validateInputLength(term + partialInput);
   if (!rateLimiter.check()) {
     throw new Error('Rate limit exceeded. Please wait a moment.');
   }
