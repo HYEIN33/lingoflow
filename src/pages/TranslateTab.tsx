@@ -279,7 +279,6 @@ export default function TranslateTab({
             aria-pressed={autoTranslateEnabled}
           >
             {autoTranslateEnabled ? <Zap className="w-4 h-4 fill-current" /> : <ZapOff className="w-4 h-4" />}
-            <span className="text-[10px] leading-none">{uiLang === 'zh' ? '即译' : 'Auto'}</span>
           </button>
           <button
             type="button"
@@ -304,38 +303,26 @@ export default function TranslateTab({
         </div>
       </form>
 
-      {/* Formality Slider (Pro-gated) */}
-      <div
-        className={cn(
-          "bg-white/60 backdrop-blur-md border border-white/60 rounded-2xl p-4 shadow-sm relative group",
-          !userProfile?.isPro && "opacity-60 cursor-not-allowed"
-        )}
-      >
-        {!userProfile?.isPro && (
-          <div
-            className="absolute inset-0 z-10 cursor-pointer"
-            onClick={() => onOpenPaywall('slider')}
-            title={uiLang === 'zh' ? 'Pro 功能 · 升级解锁' : 'Pro Feature · Upgrade to Unlock'}
+      {/* Formality Slider (Pro only — hidden for free users to save space) */}
+      {userProfile?.isPro && (
+        <div className="bg-white/60 backdrop-blur-md border border-white/60 rounded-2xl p-4 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-semibold text-gray-600">{uiLang === 'zh' ? '口语/俚语' : 'Casual/Slang'}</span>
+            <span className="text-sm font-bold text-blue-600">
+              {uiLang === 'zh' ? '正式程度' : 'Formality'}: {formalityLevel}
+            </span>
+            <span className="text-sm font-semibold text-gray-600">{uiLang === 'zh' ? '学术/正式' : 'Academic/Formal'}</span>
+          </div>
+          <input
+            type="range"
+            min="1"
+            max="100"
+            value={formalityLevel}
+            onChange={(e) => setFormalityLevel(Number(e.target.value))}
+            className="w-full h-2 bg-gray-200 rounded-lg appearance-none accent-blue-600"
           />
-        )}
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-semibold text-gray-600">{uiLang === 'zh' ? '口语/俚语' : 'Casual/Slang'}</span>
-          <span className="text-sm font-bold text-blue-600">
-            {uiLang === 'zh' ? '正式程度' : 'Formality'}: {formalityLevel}
-            {!userProfile?.isPro && <span className="ml-2 text-[10px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded uppercase">Pro</span>}
-          </span>
-          <span className="text-sm font-semibold text-gray-600">{uiLang === 'zh' ? '学术/正式' : 'Academic/Formal'}</span>
         </div>
-        <input
-          type="range"
-          min="1"
-          max="100"
-          value={formalityLevel}
-          onChange={(e) => setFormalityLevel(Number(e.target.value))}
-          disabled={!userProfile?.isPro}
-          className="w-full h-2 bg-gray-200 rounded-lg appearance-none accent-blue-600"
-        />
-      </div>
+      )}
 
       {/* Auto-translate progress indicator */}
       {isTranslating && (
@@ -344,24 +331,24 @@ export default function TranslateTab({
         </div>
       )}
 
-      {/* Scene Switcher — free for all users */}
-      <div className="flex items-center gap-2">
+      {/* Scene Switcher — compact inline chips */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[10px] text-gray-400 font-medium mr-1">{uiLang === 'zh' ? '场景' : 'Tone'}:</span>
         {([
-          { key: 'chat' as const, icon: '💬', zh: '聊天', en: 'Chat' },
-          { key: 'business' as const, icon: '💼', zh: '商务', en: 'Business' },
-          { key: 'writing' as const, icon: '✍️', zh: '写作', en: 'Writing' },
-        ]).map(({ key, icon, zh, en }) => (
+          { key: 'chat' as const, zh: '聊天', en: 'Chat' },
+          { key: 'business' as const, zh: '商务', en: 'Business' },
+          { key: 'writing' as const, zh: '写作', en: 'Writing' },
+        ]).map(({ key, zh, en }) => (
           <button
             key={key}
             onClick={() => { setScene(key); trackEvent('scene_switch', { scene: key }); }}
             className={cn(
-              "flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all border-2",
+              "px-3 py-1 rounded-lg text-xs font-bold transition-all",
               scene === key
-                ? "bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-100"
-                : "bg-white border-gray-100 text-gray-400 hover:border-blue-200 hover:text-blue-400"
+                ? "bg-blue-600 text-white"
+                : "bg-gray-100 text-gray-400 hover:text-blue-500"
             )}
           >
-            <span>{icon}</span>
             {uiLang === 'zh' ? zh : en}
           </button>
         ))}
@@ -408,8 +395,12 @@ export default function TranslateTab({
         //   sentence  - short sentence (< 200 chars), compact single column
         //   paragraph - long text (>= 200 chars), tightest fonts for readability
         const txt = (inputText || '').trim();
-        const wordCount = txt.split(/\s+/).filter(Boolean).length;
-        const isSentence = wordCount > 3 || txt.length > 20;
+        // Chinese has no spaces — count Chinese characters as individual words
+        const chineseChars = (txt.match(/[\u4e00-\u9fa5]/g) || []).length;
+        const wordCount = chineseChars > 0
+          ? chineseChars + txt.split(/\s+/).filter(Boolean).length
+          : txt.split(/\s+/).filter(Boolean).length;
+        const isSentence = wordCount > 3 || txt.length > 8;
         const isParagraph = txt.length >= 200;
         const translationFontCls = isParagraph
           ? "text-xs sm:text-sm leading-relaxed"
@@ -424,11 +415,11 @@ export default function TranslateTab({
         const textPadRight = isSentence ? "" : "pr-8";
 
         return (
-          <div className={cn("grid grid-cols-1 gap-8", !isSentence && "lg:grid-cols-3")}>
+          <div className={cn("grid grid-cols-1 gap-8", !isSentence && slangInsights.length > 0 && "lg:grid-cols-3")}>
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className={cn("bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 space-y-8 overflow-hidden", !isSentence && "lg:col-span-2")}
+              className={cn("bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 space-y-8 overflow-hidden", !isSentence && slangInsights.length > 0 && "lg:col-span-2")}
             >
               {/* Dual Column Translation */}
               {(translationResult.authenticTranslation || translationResult.academicTranslation) && (
