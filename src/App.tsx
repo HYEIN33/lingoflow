@@ -54,6 +54,7 @@ import {
 } from './services/ai';
 import { cn } from './lib/utils';
 import { Language, translations } from './i18n';
+import { APP_VERSION, APP_ENV, IS_STAGING } from './version';
 import { useAuth } from './hooks/useAuth';
 import { useAudio } from './hooks/useAudio';
 import { useSpeechRecognition } from './hooks/useSpeechRecognition';
@@ -350,7 +351,15 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
         <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-6 sm:mb-8">
           <Languages className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600" />
         </div>
-        <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-3 sm:mb-4 tracking-tight">{t.appName}</h1>
+        <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-1 tracking-tight">
+          {t.appName}
+          {IS_STAGING && (
+            <span className="ml-2 align-middle px-2 py-0.5 bg-yellow-400 text-yellow-900 text-xs font-black rounded tracking-wider">
+              STAGING
+            </span>
+          )}
+        </h1>
+        <div className="text-[11px] text-gray-400 font-mono mb-3 sm:mb-4 tabular-nums">v{APP_VERSION} · {APP_ENV}</div>
         <p className="text-gray-600 mb-8 sm:mb-10 text-base sm:text-lg leading-relaxed">{t.tagline}</p>
 
         {mode === 'main' ? (
@@ -765,9 +774,20 @@ export default function App() {
               <Languages className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
             </div>
             <span className="text-lg sm:text-xl font-bold text-gray-900 tracking-tight">{t.appName}</span>
+            <span
+              className="hidden sm:inline text-[10px] text-gray-400 font-mono tabular-nums"
+              title={`Environment: ${APP_ENV}`}
+            >
+              v{APP_VERSION}
+            </span>
             {userProfile?.isPro && (
               <span className="ml-2 px-2 py-0.5 bg-gradient-to-r from-amber-400 to-orange-500 text-white text-[10px] font-black rounded-full shadow-sm uppercase tracking-wider">
                 {t.proBadge}
+              </span>
+            )}
+            {IS_STAGING && (
+              <span className="ml-2 px-2 py-0.5 bg-yellow-400 text-yellow-900 text-[10px] font-black rounded shadow-sm uppercase tracking-wider" title="Staging preview build">
+                STAGING
               </span>
             )}
           </div>

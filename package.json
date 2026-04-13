@@ -1,18 +1,21 @@
 {
-  "name": "react-example",
+  "name": "memeflow",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "dev:api": "tsx server/proxy.ts",
     "build": "vite build",
+    "build:staging": "VITE_ENV=staging vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "perf": "npx -y lighthouse https://memeflow-16ecf.web.app/ --view --preset=desktop --quiet"
+    "perf": "npx -y lighthouse https://memeflow-16ecf.web.app/ --view --preset=desktop --quiet",
+    "deploy:prod": "npm run build && firebase deploy --only hosting,functions --project memeflow-16ecf",
+    "deploy:preview": "npm run build:staging && firebase hosting:channel:deploy preview --project memeflow-16ecf --expires 7d"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

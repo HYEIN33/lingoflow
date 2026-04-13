@@ -1,7 +1,18 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
+const { getFirestore } = require('firebase-admin/firestore');
 
 if (!admin.apps.length) admin.initializeApp();
+
+// This project's Firestore database is literally named 'default'
+// (no parentheses). The firebase-admin SDK's admin.firestore() default
+// targets '(default)' which does not exist here, so every call returns
+// gRPC NOT_FOUND. Always go through getFirestore(app, 'default') to
+// hit the real database. Verified 2026-04-13 via diagnostic endpoint.
+const FIRESTORE_DB_ID = 'default';
+function firestoreDb() {
+  return getFirestore(admin.app(), FIRESTORE_DB_ID);
+}
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const MAX_PER_MINUTE = 30;
@@ -30,7 +41,7 @@ function applyCors(req, res) {
 }
 
 async function checkRateLimit(uid) {
-  const db = admin.firestore();
+  const db = firestoreDb();
   const ref = db.collection('_rate_limits').doc(uid);
   const now = admin.firestore.Timestamp.now();
   const minuteAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 60_000);
@@ -86,16 +97,13 @@ exports.apiGenerate = onRequest(
     }
     const uid = decoded.uid;
 
-    // Per-uid rate limit (Firestore-backed, survives across function instances)
-    //
-    // FAIL-OPEN on Firestore errors. Rationale:
-    // - Rate limit is a cost/abuse guardrail, not a security gate.
-    // - Auth (verifyIdToken above) is the actual security gate.
-    // - Gemini itself has its own daily/per-minute quota; GCP billing
-    //   alerts are the cost hard stop.
-    // - Previously fail-closed took the entire translate path down for
-    //   all users whenever the _rate_limits collection read glitched
-    //   (observed 2026-04-13: Firestore gRPC NOT_FOUND taking out /api/generate).
+    // Per-uid rate limit (Firestore-backed, survives across function instances).
+    // Previously this was fail-OPEN as a temporary measure because admin.firestore()
+    // was hitting a NOT_FOUND against a non-existent '(default)' database. Root
+    // cause: this project's Firestore DB is named 'default' (no parens). Now
+    // using firestoreDb() which points at the real DB, so the rate limiter
+    // actually works and we restore fail-CLOSED behavior for cost safety.
+    // The catch branch still logs to Sentry so we notice if it breaks again.
     try {
       const rl = await checkRateLimit(uid);
       if (!rl.allowed) {
@@ -106,9 +114,9 @@ exports.apiGenerate = onRequest(
         return;
       }
     } catch (e) {
-      console.error('Rate limit check failed, failing OPEN:', e);
-      // fall through — allow this request; rely on Gemini quota as the
-      // ultimate backstop. Monitor via GCP logs for sustained failure.
+      console.error('Rate limit check failed:', e);
+      res.status(503).json({ error: 'Rate limit service unavailable' });
+      return;
     }
 
     const { model, contents, config } = req.body || {};
