@@ -111,7 +111,7 @@ async function callGeminiProxy(
 /**
  * Unified generate helper — routes through proxy or SDK depending on config.
  */
-const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-1.5-flash'];
 
 async function geminiGenerate(opts: {
   model: string;
@@ -270,7 +270,7 @@ export interface SlangExplanationResult {
 function getEffectiveConfig(): { provider: AIProvider, model: string } {
   return { 
     provider: 'gemini', 
-    model: 'gemini-2.0-flash'
+    model: 'gemini-2.5-flash'
   };
 }
 
@@ -330,17 +330,24 @@ export async function translateText(text: string, formalityLevel?: number, scene
     ? 'The input is Chinese. Translate it to English. The authenticTranslation and academicTranslation MUST be in English.'
     : 'The input is English. Translate it to Chinese. The authenticTranslation and academicTranslation MUST be in Chinese (中文).';
 
-  // Balanced prompt — accurate translation + reasonable speed
   const contents = `You are a professional translator. ${langDirection}
-Translate the COMPLETE meaning accurately — never drop nouns, objects, or context from the original.
 
-1. authenticTranslation: natural, native-sounding translation of the FULL text in the target language.
-2. academicTranslation: formal version of the FULL text in the target language.
-3. pronunciation: phonetic guide for the original text.
-4. slangTerms: list any slang or idioms found in the original.
-5. usages: 1-3 definitions with label/labelZh, meaning/meaningZh, 2 examples with translations, synonyms, antonyms, alternatives. For verbs include conjugations; for nouns include plural; for adjectives include comparative/superlative.${formalityPrompt}${scenePrompt}
+    1. Provide an 'Authentic Translation' (地道表达) that sounds natural to native speakers of the TARGET language.
+    2. Provide an 'Academic Translation' (学术表达) that is formal and suitable for academic or professional contexts in the TARGET language.
+    3. If the original text contains any slang or idioms, list them in 'slangTerms'.
+    4. Provide multiple usage definitions categorized by frequency (e.g., "Primary", "Secondary", "Slang/Informal").
 
-Text: ${JSON.stringify(text)}`;
+    For each usage:
+    1. Provide a label (e.g., "Most Common").
+    2. Provide the meaning in English and Chinese.
+    3. Provide 2-3 example sentences with translations specific to this usage.
+    4. Provide a list of synonyms, antonyms, and alternative translations.
+    5. If the word is a verb, provide conjugations (past tense, past participle, present participle, present perfect example, third person singular) in 'conjugations'. For present perfect, provide a short example like "have/has + past participle". If the past tense and past participle are the same word, combine them into one entry labeled "Past Tense / Past Participle".
+    6. If the word is a noun, provide plural form in 'conjugations'.
+    7. If the word is an adjective, provide comparative and superlative in 'conjugations'.
+    ${formalityPrompt}${scenePrompt}
+
+    Text: "${text}"`;
   const config = {
     responseMimeType: "application/json",
     responseSchema: {
@@ -348,26 +355,26 @@ Text: ${JSON.stringify(text)}`;
       properties: {
         original: { type: Type.STRING },
         pronunciation: { type: Type.STRING },
-        authenticTranslation: { type: Type.STRING },
-        academicTranslation: { type: Type.STRING },
-        slangTerms: { type: Type.ARRAY, items: { type: Type.STRING } },
+        authenticTranslation: { type: Type.STRING, description: "Natural, native-like translation" },
+        academicTranslation: { type: Type.STRING, description: "Formal, academic translation" },
+        slangTerms: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of slang terms used" },
         usages: {
           type: Type.ARRAY,
           items: {
             type: Type.OBJECT,
             properties: {
-              label: { type: Type.STRING },
-              labelZh: { type: Type.STRING },
+              label: { type: Type.STRING, description: "Frequency label like 'Primary Usage'" },
+              labelZh: { type: Type.STRING, description: "Chinese translation of the label" },
               meaning: { type: Type.STRING },
               meaningZh: { type: Type.STRING },
               synonyms: { type: Type.ARRAY, items: { type: Type.STRING } },
-              antonyms: { type: Type.ARRAY, items: { type: Type.STRING } },
+              antonyms: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of antonyms" },
               alternatives: { type: Type.ARRAY, items: { type: Type.STRING } },
-              conjugations: { type: Type.OBJECT, properties: {
+              conjugations: { type: Type.OBJECT, description: "Verb tenses, noun plurals, or adjective forms", properties: {
                 pastTense: { type: Type.STRING },
                 pastParticiple: { type: Type.STRING },
                 presentParticiple: { type: Type.STRING },
-                presentPerfect: { type: Type.STRING },
+                presentPerfect: { type: Type.STRING, description: "Present perfect form, e.g. 'have/has gone'" },
                 thirdPerson: { type: Type.STRING },
                 plural: { type: Type.STRING },
                 comparative: { type: Type.STRING },

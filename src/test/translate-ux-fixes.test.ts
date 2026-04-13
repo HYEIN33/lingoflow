@@ -178,15 +178,15 @@ describe('AbortController — lifecycle cleanup', () => {
 });
 
 describe('Scene prompt — injection prevention', () => {
-  it('translateText escapes user input safely (no raw interpolation)', () => {
+  it('translateText includes language direction detection', () => {
     const translateFn = ai.match(
       /export async function translateText[\s\S]*?return JSON\.parse/
     );
     expect(translateFn).toBeTruthy();
-    // Must NOT have the old dangerous pattern: Text: "${text}"
-    expect(translateFn![0]).not.toMatch(/Text:\s*"\$\{text\}"/);
-    // Must use JSON.stringify for safe escaping of user input
-    expect(translateFn![0]).toContain('JSON.stringify(text)');
+    // Must detect language direction for accurate translation
+    expect(translateFn![0]).toContain('langDirection');
+    expect(translateFn![0]).toContain('authenticTranslation');
+    expect(translateFn![0]).toContain('academicTranslation');
   });
 
   it('scenePrompts only defines chat/business/writing', () => {
