@@ -56,9 +56,9 @@ export default function PaymentScreen({
         >
           <motion.div
             initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", bounce: 0.5, delay: 0.2 }}
-            className="w-24 h-24 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-blue-100"
+            className="w-24 h-24 bg-gradient-to-br from-blue-100 to-indigo-100 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg shadow-rose-100"
           >
-            <Check className="w-12 h-12 text-blue-600" />
+            <Check className="w-12 h-12 text-rose-500" />
           </motion.div>
           <h2 className="text-2xl font-bold mb-2"><span className="gradient-text">Pro</span> {uiLang === 'zh' ? '已激活' : 'Activated'}</h2>
           <p className="text-gray-400">{uiLang === 'zh' ? '欢迎来到 MemeFlow 的全新境界' : 'Welcome to MemeFlow Pro'}</p>
@@ -89,7 +89,7 @@ export default function PaymentScreen({
               onClick={() => setIsYearly(!isYearly)}
               className="w-14 h-8 bg-gray-200 rounded-full p-1 relative transition-colors hover:bg-gray-300"
             >
-              <motion.div animate={{ x: isYearly ? 24 : 0 }} className="w-6 h-6 bg-blue-600 rounded-full shadow-lg" />
+              <motion.div animate={{ x: isYearly ? 24 : 0 }} className="w-6 h-6 bg-rose-500 rounded-full shadow-lg" />
             </button>
             <span className={`text-sm font-bold flex items-center gap-2 ${isYearly ? 'text-gray-900' : 'text-gray-400'}`}>
               {uiLang === 'zh' ? '年付' : 'Yearly'} <span className="bg-orange-100 text-orange-600 text-[10px] px-2 py-0.5 rounded-full font-black">{uiLang === 'zh' ? '省 40%' : 'Save 40%'}</span>
@@ -133,8 +133,8 @@ export default function PaymentScreen({
             transition={selectedPlan === 'pro' ? { duration: 2.5, repeat: Infinity, ease: 'easeInOut' } : {}}
             className={`rounded-3xl p-5 sm:p-8 border-2 relative transition-all cursor-pointer ${
               selectedPlan === 'pro'
-                ? 'bg-gradient-to-br from-blue-50 via-white to-indigo-50 border-blue-400'
-                : 'bg-white/60 border-gray-100 hover:border-blue-200 hover:bg-blue-50/30'
+                ? 'bg-gradient-to-br from-blue-50 via-white to-indigo-50 border-rose-400'
+                : 'bg-white/60 border-gray-100 hover:border-rose-200 hover:bg-rose-50/30'
             }`}
           >
             <motion.div
@@ -145,19 +145,19 @@ export default function PaymentScreen({
               {uiLang === 'zh' ? '推荐' : 'Best'}
             </motion.div>
             <h3 className="text-xl font-bold mb-2 flex items-center gap-2">
-              <span className="gradient-text">Pro</span> <Zap className="w-5 h-5 text-blue-600 fill-blue-600" />
+              <span className="gradient-text">Pro</span> <Zap className="w-5 h-5 text-rose-500 fill-blue-600" />
             </h3>
             <div className="flex items-baseline gap-1 mb-6">
-              <span className="text-3xl font-black bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">¥{isYearly ? '28' : '48'}</span>
+              <span className="text-3xl font-black bg-gradient-to-r from-rose-500 to-pink-500 bg-clip-text text-transparent">¥{isYearly ? '28' : '48'}</span>
               <span className="text-gray-400">/{uiLang === 'zh' ? '月' : 'mo'}</span>
               {isYearly && <span className="text-xs text-blue-400 ml-2 font-medium">{uiLang === 'zh' ? '每年计费 ¥336' : 'Billed ¥336/year'}</span>}
             </div>
             <ul className="space-y-3 text-sm text-gray-700">
-              <li className="flex items-center gap-3"><div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center shrink-0"><Check className="w-3 h-3 text-blue-600" /></div> {uiLang === 'zh' ? '无限次 AI 翻译 + 语法检查' : 'Unlimited AI translation + grammar'}</li>
-              <li className="flex items-center gap-3"><div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center shrink-0"><Check className="w-3 h-3 text-blue-600" /></div> {uiLang === 'zh' ? '语气滑块（正式程度调节）' : 'Formality slider'}</li>
-              <li className="flex items-center gap-3"><div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center shrink-0"><Check className="w-3 h-3 text-blue-600" /></div> {uiLang === 'zh' ? '艾宾浩斯复习系统（SM-2）' : 'Spaced repetition (SM-2)'}</li>
-              <li className="flex items-center gap-3"><div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center shrink-0"><Check className="w-3 h-3 text-blue-600" /></div> {uiLang === 'zh' ? '优先 AI 响应速度' : 'Priority AI response'}</li>
-              <li className="flex items-center gap-3"><div className="w-5 h-5 rounded-full bg-blue-100 flex items-center justify-center shrink-0"><Check className="w-3 h-3 text-blue-600" /></div> {uiLang === 'zh' ? '全球排行榜参与资格' : 'Global leaderboard access'}</li>
+              <li className="flex items-center gap-3"><div className="w-5 h-5 rounded-full bg-rose-100 flex items-center justify-center shrink-0"><Check className="w-3 h-3 text-rose-500" /></div> {uiLang === 'zh' ? '无限次 AI 翻译 + 语法检查' : 'Unlimited AI translation + grammar'}</li>
+              <li className="flex items-center gap-3"><div className="w-5 h-5 rounded-full bg-rose-100 flex items-center justify-center shrink-0"><Check className="w-3 h-3 text-rose-500" /></div> {uiLang === 'zh' ? '语气滑块（正式程度调节）' : 'Formality slider'}</li>
+              <li className="flex items-center gap-3"><div className="w-5 h-5 rounded-full bg-rose-100 flex items-center justify-center shrink-0"><Check className="w-3 h-3 text-rose-500" /></div> {uiLang === 'zh' ? '艾宾浩斯复习系统（SM-2）' : 'Spaced repetition (SM-2)'}</li>
+              <li className="flex items-center gap-3"><div className="w-5 h-5 rounded-full bg-rose-100 flex items-center justify-center shrink-0"><Check className="w-3 h-3 text-rose-500" /></div> {uiLang === 'zh' ? '优先 AI 响应速度' : 'Priority AI response'}</li>
+              <li className="flex items-center gap-3"><div className="w-5 h-5 rounded-full bg-rose-100 flex items-center justify-center shrink-0"><Check className="w-3 h-3 text-rose-500" /></div> {uiLang === 'zh' ? '全球排行榜参与资格' : 'Global leaderboard access'}</li>
             </ul>
           </motion.div>
         </div>
@@ -182,7 +182,7 @@ export default function PaymentScreen({
                       key={method.id}
                       onClick={() => setPaymentMethod(method.id as any)}
                       className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all ${
-                        paymentMethod === method.id ? 'bg-blue-50 border-blue-400 text-blue-600' : 'bg-gray-50 border-gray-100 text-gray-500 hover:border-gray-200'
+                        paymentMethod === method.id ? 'bg-rose-50 border-rose-400 text-rose-500' : 'bg-gray-50 border-gray-100 text-gray-500 hover:border-gray-200'
                       }`}
                     >
                       <span className="text-2xl">{method.icon}</span>
@@ -201,17 +201,17 @@ export default function PaymentScreen({
                         onChange={handleCardInput}
                         placeholder="0000 0000 0000 0000"
                         autoComplete="off"
-                        className="w-full bg-white border border-gray-200 rounded-lg text-gray-900 p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                        className="w-full bg-white border border-gray-200 rounded-lg text-gray-900 p-3 focus:outline-none focus:ring-2 focus:ring-rose-500 font-mono"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">{uiLang === 'zh' ? '有效期' : 'Expiry'}</label>
-                        <input type="text" placeholder="MM/YY" autoComplete="off" className="w-full bg-white border border-gray-200 rounded-lg text-gray-900 p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono" />
+                        <input type="text" placeholder="MM/YY" autoComplete="off" className="w-full bg-white border border-gray-200 rounded-lg text-gray-900 p-3 focus:outline-none focus:ring-2 focus:ring-rose-500 font-mono" />
                       </div>
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">CVV</label>
-                        <input type="password" placeholder="123" autoComplete="off" maxLength={4} className="w-full bg-white border border-gray-200 rounded-lg text-gray-900 p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono" />
+                        <input type="password" placeholder="123" autoComplete="off" maxLength={4} className="w-full bg-white border border-gray-200 rounded-lg text-gray-900 p-3 focus:outline-none focus:ring-2 focus:ring-rose-500 font-mono" />
                       </div>
                     </div>
                   </motion.div>
@@ -220,7 +220,7 @@ export default function PaymentScreen({
                 <button
                   disabled={!paymentMethod || isProcessing}
                   onClick={handlePay}
-                  className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-gray-200 disabled:to-gray-200 disabled:text-gray-400 text-white font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-200/50 hover:shadow-xl hover:shadow-blue-300/50"
+                  className="w-full bg-gradient-to-r from-rose-500 to-pink-500 hover:from-blue-700 hover:to-indigo-700 disabled:from-gray-200 disabled:to-gray-200 disabled:text-gray-400 text-white font-bold py-4 rounded-2xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-rose-200/50 hover:shadow-xl hover:shadow-blue-300/50"
                 >
                   {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <ShieldCheck className="w-5 h-5" />}
                   {isProcessing ? (uiLang === 'zh' ? '处理中...' : 'Processing...') : `${uiLang === 'zh' ? '支付' : 'Pay'} ¥${isYearly ? '336' : '48'}`}

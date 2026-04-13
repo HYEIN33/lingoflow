@@ -35,11 +35,11 @@ export function SortableTab({ tab, isActive, onSelect, isPro }: SortableTabProps
         className={cn(
           "w-full py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap px-3 select-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
           isActive
-            ? "bg-white text-blue-600 shadow-[var(--shadow-card)] border border-white/80"
-            : "text-gray-400 hover:text-gray-700 hover:bg-white/30"
+            ? "bg-white text-rose-500 shadow-[var(--shadow-card)] border border-white/80"
+            : "text-stone-400 hover:text-stone-600 hover:bg-white/30"
         )}
       >
-        <tab.icon className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4", isActive && "text-blue-500")} />
+        <tab.icon className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4", isActive && "text-rose-400")} />
         {tab.label} {tab.count !== undefined && <span className="hidden xs:inline text-[10px] opacity-60">({tab.count})</span>}
       </button>
     </div>

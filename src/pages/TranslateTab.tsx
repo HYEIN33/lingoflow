@@ -265,7 +265,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
             type="button"
             onClick={() => photoInputRef.current?.click()}
             disabled={isExtractingPhoto}
-            className="p-3 sm:p-4 rounded-2xl transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer bg-blue-50/80 text-blue-600 hover:bg-blue-100 backdrop-blur-sm shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="p-3 sm:p-4 rounded-2xl transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer bg-rose-50/80 text-rose-500 hover:bg-rose-100 backdrop-blur-sm shadow-sm focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
             title={uiLang === 'zh' ? '拍照翻译' : 'Photo Translate'}
             aria-label={uiLang === 'zh' ? '拍照翻译' : 'Photo Translate'}
           >
@@ -311,7 +311,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
           <button
             type="submit"
             disabled={isTranslating || !inputText.trim()}
-            className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-3 sm:p-4 rounded-2xl disabled:opacity-40 transition-all duration-200 hover:scale-105 active:scale-95 shadow-lg shadow-blue-200/60 hover:shadow-blue-300/60 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            className="bg-gradient-to-r from-rose-500 to-pink-500 text-white p-3 sm:p-4 rounded-2xl disabled:opacity-40 transition-all duration-200 hover:scale-105 active:scale-95 shadow-lg shadow-rose-200/60 hover:shadow-blue-300/60 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
             aria-label={uiLang === 'zh' ? '翻译' : 'Translate'}
           >
             {isTranslating ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" /> : <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />}
@@ -322,8 +322,8 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
       {/* Scene Switcher + Progress — right below input */}
       {/* Auto-translate progress indicator */}
       {isTranslating && (
-        <div className="h-0.5 bg-blue-100 rounded-full overflow-hidden -mt-4">
-          <div className="h-full bg-blue-500 rounded-full animate-pulse w-full" />
+        <div className="h-0.5 bg-rose-100 rounded-full overflow-hidden -mt-4">
+          <div className="h-full bg-rose-500 rounded-full animate-pulse w-full" />
         </div>
       )}
 
@@ -341,8 +341,8 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
             className={cn(
               "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200",
               scene === key
-                ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-200/50"
-                : "glass-card text-gray-400 hover:text-blue-500 hover:shadow-sm"
+                ? "bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md shadow-rose-200/50"
+                : "glass-card text-gray-400 hover:text-rose-400 hover:shadow-sm"
             )}
           >
             {uiLang === 'zh' ? zh : en}
@@ -382,7 +382,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
               <div key={i} className="group flex items-center">
                 <button
                   onClick={() => onSearchWord(item.text)}
-                  className="glass-card hover:bg-blue-50/60 text-gray-500 hover:text-blue-600 px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 max-w-[180px] truncate"
+                  className="glass-card hover:bg-rose-50/60 text-gray-500 hover:text-rose-500 px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 max-w-[180px] truncate"
                   title={item.text}
                 >
                   {item.text.length > 15 ? item.text.slice(0, 15) + '...' : item.text}
@@ -408,7 +408,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
               <button
                 key={ex}
                 onClick={() => onSearchWord(ex)}
-                className="px-3.5 py-1.5 glass-card hover:bg-blue-50/60 text-gray-500 hover:text-blue-600 text-xs font-medium rounded-xl transition-all duration-200 hover:shadow-sm"
+                className="px-3.5 py-1.5 glass-card hover:bg-rose-50/60 text-gray-500 hover:text-rose-500 text-xs font-medium rounded-xl transition-all duration-200 hover:shadow-sm"
               >
                 {ex}
               </button>
@@ -475,7 +475,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                       style={{ boxShadow: 'var(--shadow-card)', borderLeft: '3px solid transparent', borderImage: 'linear-gradient(to bottom, #2563eb, #4f46e5) 1' }}
                     >
                       <h3 className="text-[10px] font-black uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
-                        <Zap className="w-3 h-3 text-blue-500 fill-current" />
+                        <Zap className="w-3 h-3 text-rose-400 fill-current" />
                         <span className="gradient-text">{uiLang === 'zh' ? '地道表达 (AUTHENTIC)' : 'AUTHENTIC EXPRESSION'}</span>
                       </h3>
                       <p className={cn("text-gray-900 font-medium break-words", translationFontCls, textPadRight)}>
@@ -483,7 +483,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                       </p>
                       <button
                         onClick={() => onSpeak(translationResult.authenticTranslation!)}
-                        className={cn(volumeBtnCls, "text-blue-400 hover:text-blue-600")}
+                        className={cn(volumeBtnCls, "text-blue-400 hover:text-rose-500")}
                       >
                         <Volume2 className="w-5 h-5" />
                         {isSentence && <span>{uiLang === 'zh' ? '朗读' : 'Listen'}</span>}
@@ -492,7 +492,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                         <button
                           onClick={() => onSaveWord('authentic')}
                           disabled={isSaving || isAlreadySaved('authentic')}
-                          className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-700 transition-all duration-200 disabled:opacity-50 hover:gap-2"
+                          className="flex items-center gap-1.5 text-xs font-bold text-rose-500 hover:text-rose-600 transition-all duration-200 disabled:opacity-50 hover:gap-2"
                           title={uiLang === 'zh' ? '收藏' : 'Save'}
                         >
                           {isAlreadySaved('authentic')
@@ -554,14 +554,14 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                     <button
                       key={insight.term}
                       onClick={() => { trackEvent('slang_chip_click', { term: insight.term }); onViewSlangEntry(insight.term); }}
-                      className="px-2.5 py-1 text-xs font-medium bg-indigo-50/60 text-indigo-600 rounded-xl border border-indigo-100/60 hover:bg-indigo-100 transition-all duration-200 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
+                      className="px-2.5 py-1 text-xs font-medium bg-rose-50/60 text-pink-500 rounded-xl border border-rose-100/60 hover:bg-rose-100 transition-all duration-200 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
                       title={insight.meaning}
                     >
                       {insight.term}
                     </button>
                   ))}
                   {isFetchingSlang && (
-                    <Loader2 className="w-3 h-3 animate-spin text-indigo-400" />
+                    <Loader2 className="w-3 h-3 animate-spin text-pink-300" />
                   )}
                 </div>
               )}
@@ -576,7 +576,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                     onClick={() => handleFeedback('up')}
                     disabled={!!feedbackGiven || isSubmittingFeedback}
                     className={cn(
-                      "p-1.5 rounded-lg transition-all focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1",
+                      "p-1.5 rounded-lg transition-all focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-1",
                       feedbackGiven === 'up' ? "text-green-600 bg-green-50" : "text-gray-300 hover:text-green-500 hover:bg-green-50",
                       feedbackGiven && feedbackGiven !== 'up' && "opacity-30"
                     )}
@@ -588,7 +588,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                     onClick={() => handleFeedback('down')}
                     disabled={!!feedbackGiven || isSubmittingFeedback}
                     className={cn(
-                      "p-1.5 rounded-lg transition-all focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1",
+                      "p-1.5 rounded-lg transition-all focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-1",
                       feedbackGiven === 'down' ? "text-red-500 bg-red-50" : "text-gray-300 hover:text-red-400 hover:bg-red-50",
                       feedbackGiven && feedbackGiven !== 'down' && "opacity-30"
                     )}
@@ -626,12 +626,12 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                           onChange={(e) => setFeedbackReason(e.target.value)}
                           placeholder={uiLang === 'zh' ? '哪里不好？(选填)' : 'What went wrong? (optional)'}
                           maxLength={500}
-                          className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-400"
+                          className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-rose-400"
                         />
                         <button
                           type="submit"
                           disabled={isSubmittingFeedback}
-                          className="text-xs font-bold text-blue-600 hover:text-blue-700 disabled:opacity-50 shrink-0"
+                          className="text-xs font-bold text-rose-500 hover:text-rose-600 disabled:opacity-50 shrink-0"
                         >
                           {uiLang === 'zh' ? '提交' : 'Submit'}
                         </button>
@@ -642,7 +642,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                         onChange={(e) => setSuggestedTranslation(e.target.value)}
                         placeholder={uiLang === 'zh' ? '更好的翻译是？(选填，帮助我们改进)' : 'Better translation? (optional, helps us improve)'}
                         maxLength={500}
-                        className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-400"
+                        className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-rose-400"
                       />
                     </form>
                   )}
@@ -665,7 +665,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
               {!isSentence && previousSearchWord && (
                 <button
                   onClick={onGoBack}
-                  className="flex items-center gap-1.5 text-sm font-bold text-blue-600 hover:text-blue-700 transition-colors mb-3"
+                  className="flex items-center gap-1.5 text-sm font-bold text-rose-500 hover:text-rose-600 transition-colors mb-3"
                 >
                   <ChevronRight className="w-4 h-4 rotate-180" />
                   {uiLang === 'zh' ? `返回「${previousSearchWord}」` : `Back to "${previousSearchWord}"`}
@@ -679,13 +679,13 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <h2 className="text-xl sm:text-2xl font-black text-gray-900 break-words">{translationResult.original}</h2>
                       {translationResult.pronunciation && (
-                        <span className="text-blue-600 font-mono bg-blue-50 px-2 py-0.5 rounded-lg text-xs">{translationResult.pronunciation}</span>
+                        <span className="text-rose-500 font-mono bg-rose-50 px-2 py-0.5 rounded-lg text-xs">{translationResult.pronunciation}</span>
                       )}
                     </div>
                     <button
                       onClick={() => onSaveWord()}
                       disabled={isSaving}
-                      className="flex items-center gap-1.5 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-blue-700 transition-all shadow-md"
+                      className="flex items-center gap-1.5 bg-rose-500 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-rose-600 transition-all shadow-md"
                     >
                       {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                       {t.save}
@@ -708,8 +708,8 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                           className={cn(
                             "px-4 py-2 rounded-xl text-sm font-bold transition-all border-2",
                             selectedUsageIndex === idx
-                              ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-100 scale-105"
-                              : "bg-white border-gray-100 text-gray-400 hover:border-blue-200 hover:text-blue-400"
+                              ? "bg-rose-500 border-blue-600 text-white shadow-lg shadow-rose-100 scale-105"
+                              : "bg-white border-gray-100 text-gray-400 hover:border-rose-200 hover:text-blue-400"
                           )}
                         >
                           {uiLang === 'zh' ? usage.labelZh : usage.label}
@@ -733,7 +733,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                           <p className="text-gray-800 text-lg font-bold leading-relaxed break-words">
                             {translationResult.usages?.[selectedUsageIndex]?.meaning}
                           </p>
-                          <p className="text-blue-600 text-lg font-medium leading-relaxed border-t border-gray-100 pt-3 break-words">
+                          <p className="text-rose-500 text-lg font-medium leading-relaxed border-t border-gray-100 pt-3 break-words">
                             {translationResult.usages?.[selectedUsageIndex]?.meaningZh}
                           </p>
                         </div>
@@ -742,7 +742,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                       {/* Details Toggle */}
                       <button
                         onClick={() => setShowDetails(!showDetails)}
-                        className="flex items-center gap-2 text-blue-600 font-bold text-sm hover:text-blue-700 transition-colors"
+                        className="flex items-center gap-2 text-rose-500 font-bold text-sm hover:text-rose-600 transition-colors"
                       >
                         {showDetails ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         {showDetails ? t.hideDetails : t.showDetails}
@@ -762,7 +762,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                                   <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">{t.synonyms}</h3>
                                   <div className="flex flex-wrap gap-2">
                                     {translationResult.usages?.[selectedUsageIndex]?.synonyms.map((syn, i) => (
-                                      <button key={i} onClick={() => onSearchWord(syn)} className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-blue-100 hover:text-blue-600 transition-colors cursor-pointer">
+                                      <button key={i} onClick={() => onSearchWord(syn)} className="bg-gray-100 text-gray-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-rose-100 hover:text-rose-500 transition-colors cursor-pointer">
                                         {syn}
                                       </button>
                                     ))}
@@ -775,7 +775,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                                   <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">{t.alternatives}</h3>
                                   <div className="flex flex-wrap gap-2">
                                     {translationResult.usages?.[selectedUsageIndex]?.alternatives.map((alt, i) => (
-                                      <button key={i} onClick={() => onSearchWord(alt)} className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-sm font-medium hover:bg-blue-100 hover:text-blue-700 transition-colors cursor-pointer">
+                                      <button key={i} onClick={() => onSearchWord(alt)} className="bg-rose-50 text-rose-500 px-3 py-1 rounded-lg text-sm font-medium hover:bg-rose-100 hover:text-rose-600 transition-colors cursor-pointer">
                                         {alt}
                                       </button>
                                     ))}
@@ -852,7 +852,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                         <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">{t.examples}</h3>
                         <div className="space-y-4">
                           {(translationResult.usages?.[selectedUsageIndex]?.examples || []).map((ex, i) => (
-                            <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 space-y-3 group/ex hover:border-blue-200 transition-colors overflow-hidden">
+                            <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 space-y-3 group/ex hover:border-rose-200 transition-colors overflow-hidden">
                               <div className="flex items-start justify-between gap-4">
                                 <div className="flex gap-4 min-w-0 flex-1">
                                   <span className="text-blue-200 font-black text-xl italic shrink-0">{String(i + 1).padStart(2, '0')}</span>
@@ -861,7 +861,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                                 <button
                                   onClick={() => onSpeak(ex.sentence)}
                                   disabled={loadingAudioText === ex.sentence}
-                                  className="p-2 text-gray-300 hover:text-blue-500 transition-colors shrink-0 disabled:opacity-50"
+                                  className="p-2 text-gray-300 hover:text-rose-400 transition-colors shrink-0 disabled:opacity-50"
                                 >
                                   {loadingAudioText === ex.sentence ? (
                                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -888,7 +888,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                 animate={{ opacity: 1, x: 0 }}
                 className="space-y-6"
               >
-                <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl p-6 text-white shadow-xl shadow-blue-200">
+                <div className="bg-gradient-to-br from-rose-500 to-indigo-700 rounded-3xl p-6 text-white shadow-xl shadow-rose-200">
                   <div className="flex items-center gap-2 mb-4">
                     <div className="bg-white/20 p-2 rounded-xl backdrop-blur-md">
                       <MessageSquare className="w-5 h-5 text-white" />
@@ -916,7 +916,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                           </p>
                           <button
                             onClick={() => onViewSlangEntry(insight.term)}
-                            className="w-full bg-white text-blue-600 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-50 transition-colors"
+                            className="w-full bg-white text-rose-500 py-2 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-rose-50 transition-colors"
                           >
                             {uiLang === 'zh' ? '查看百科详情' : 'View Full Entry'}
                           </button>

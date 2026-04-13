@@ -83,8 +83,8 @@ export default function ReviewPage(props: ReviewPageProps) {
     <div className="space-y-6">
       {!userProfile?.isPro && !userProfile?.hasCompletedOnboarding ? (
         <div className="bg-white rounded-3xl p-8 shadow-xl border border-gray-100 text-center space-y-6 max-w-md mx-auto mt-12">
-          <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto">
-            <BookOpen className="w-10 h-10 text-blue-500" />
+          <div className="w-20 h-20 bg-rose-50 rounded-full flex items-center justify-center mx-auto">
+            <BookOpen className="w-10 h-10 text-rose-400" />
           </div>
           <h3 className="text-2xl font-black text-gray-900">
             {uiLang === 'zh' ? '艾宾浩斯复习系统' : 'Spaced Repetition'}
@@ -108,7 +108,7 @@ export default function ReviewPage(props: ReviewPageProps) {
             </div>
             <button
               onClick={() => onOpenPayment('review')}
-              className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200"
+              className="w-full bg-rose-500 text-white py-3 rounded-xl font-bold hover:bg-rose-600 transition-colors shadow-lg shadow-rose-200"
             >
               {uiLang === 'zh' ? '或 升级 Pro 永久解锁' : 'Or Upgrade to Pro'}
             </button>
@@ -120,7 +120,7 @@ export default function ReviewPage(props: ReviewPageProps) {
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">{uiLang === 'zh' ? '复习' : 'Review'}</h2>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full">
+              <span className="text-sm font-bold text-rose-500 bg-rose-50 px-3 py-1 rounded-full">
                 {dueWords.length} {uiLang === 'zh' ? '个待复习' : 'due'}
               </span>
               <span className="text-sm font-medium text-gray-400 bg-gray-50 px-3 py-1 rounded-full">
@@ -136,11 +136,11 @@ export default function ReviewPage(props: ReviewPageProps) {
                 <span className="text-xs font-bold text-gray-500">
                   {uiLang === 'zh' ? `进度 ${reviewedCount}/${dueWords.length}` : `Progress ${reviewedCount}/${dueWords.length}`}
                 </span>
-                <span className="text-xs font-bold text-blue-600">{progress}%</span>
+                <span className="text-xs font-bold text-rose-500">{progress}%</span>
               </div>
               <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
                 <motion.div
-                  className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"
+                  className="h-full bg-gradient-to-r from-rose-400 to-pink-400 rounded-full"
                   initial={{ width: 0 }}
                   animate={{ width: `${progress}%` }}
                   transition={{ duration: 0.5 }}
@@ -167,12 +167,12 @@ export default function ReviewPage(props: ReviewPageProps) {
                   <div className="space-y-3 py-8">
                     <h3 className="text-3xl sm:text-4xl font-black text-gray-900 tracking-tight">{currentReviewWord.original}</h3>
                     {currentReviewWord.pronunciation && (
-                      <p className="text-blue-500 font-mono text-sm">{currentReviewWord.pronunciation}</p>
+                      <p className="text-rose-400 font-mono text-sm">{currentReviewWord.pronunciation}</p>
                     )}
                     {currentReviewWord.styleTag && currentReviewWord.styleTag !== 'standard' && (
                       <span className={cn(
                         "inline-block px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest",
-                        currentReviewWord.styleTag === 'authentic' ? "bg-blue-50 text-blue-600 border border-blue-100" : "bg-purple-50 text-purple-600 border border-purple-100"
+                        currentReviewWord.styleTag === 'authentic' ? "bg-rose-50 text-rose-500 border border-rose-100" : "bg-purple-50 text-purple-600 border border-purple-100"
                       )}>
                         {currentReviewWord.styleTag === 'authentic' ? t.styleAuthentic : t.styleAcademic}
                       </span>
@@ -181,7 +181,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                       <button
                         onClick={() => onSpeak(currentReviewWord.original)}
                         disabled={loadingAudioText === currentReviewWord.original}
-                        className="mx-auto flex items-center gap-2 text-blue-500 hover:text-blue-600 transition-colors mt-2 p-2 rounded-xl hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                        className="mx-auto flex items-center gap-2 text-rose-400 hover:text-rose-500 transition-colors mt-2 p-2 rounded-xl hover:bg-rose-50 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
                         aria-label={uiLang === 'zh' ? '朗读' : 'Read aloud'}
                       >
                         {loadingAudioText === currentReviewWord.original ? (
@@ -198,7 +198,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                       whileHover={{ scale: 1.03 }}
                       whileTap={{ scale: 0.97 }}
                       onClick={() => setShowReviewAnswer(true)}
-                      className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-blue-700 transition-colors shadow-xl shadow-blue-200/50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                      className="bg-rose-500 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-rose-600 transition-colors shadow-xl shadow-rose-200/50 focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2"
                     >
                       {uiLang === 'zh' ? '查看答案' : 'Show Answer'}
                     </motion.button>
@@ -226,7 +226,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                           transition={{ delay: 0.3 + idx * 0.1 }}
                           className="text-left bg-gray-50 rounded-2xl p-4 sm:p-5 space-y-2 border border-gray-100"
                         >
-                          <p className="font-bold text-blue-600 text-base">{usage.meaningZh}</p>
+                          <p className="font-bold text-rose-500 text-base">{usage.meaningZh}</p>
                           <p className="text-sm text-gray-700">{usage.meaning}</p>
                           {usage.examples && usage.examples.length > 0 && (
                             <div className="pt-2 border-t border-gray-100">
@@ -240,11 +240,11 @@ export default function ReviewPage(props: ReviewPageProps) {
 
                     {/* AI Memory Hint */}
                     {onGetHint && (
-                      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-4 border border-indigo-100 mb-6">
+                      <div className="bg-gradient-to-r from-rose-50 to-amber-50 rounded-2xl p-4 border border-rose-100 mb-6">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <Sparkles className="w-4 h-4 text-indigo-500" />
-                            <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">
+                            <Sparkles className="w-4 h-4 text-pink-400" />
+                            <span className="text-xs font-bold text-pink-500 uppercase tracking-wider">
                               {uiLang === 'zh' ? 'AI 记忆助手' : 'AI Memory Aid'}
                             </span>
                           </div>
@@ -269,7 +269,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                                 setAiHintLoading(false);
                               }}
                               disabled={aiHintLoading}
-                              className="text-xs font-bold text-indigo-500 hover:text-indigo-700 transition-colors flex items-center gap-1"
+                              className="text-xs font-bold text-pink-400 hover:text-pink-600 transition-colors flex items-center gap-1"
                             >
                               {aiHintLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
                               {uiLang === 'zh' ? '帮我记住' : 'Help me remember'}
@@ -277,10 +277,10 @@ export default function ReviewPage(props: ReviewPageProps) {
                           )}
                         </div>
                         {aiHint && (
-                          <p className="text-sm text-indigo-800 leading-relaxed whitespace-pre-line">{aiHint}</p>
+                          <p className="text-sm text-pink-700 leading-relaxed whitespace-pre-line">{aiHint}</p>
                         )}
                         {!aiHint && !aiHintLoading && (
-                          <p className="text-xs text-indigo-400 italic">
+                          <p className="text-xs text-pink-300 italic">
                             {uiLang === 'zh' ? '点击「帮我记住」获取记忆技巧、联想、易混词' : 'Click to get memory tricks, associations, and confusable words'}
                           </p>
                         )}
@@ -296,7 +296,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                         { q: 1, label: uiLang === 'zh' ? '忘记' : 'Forgot', icon: XCircle, color: 'from-red-500 to-red-600', shadow: 'shadow-red-200/60', hint: uiLang === 'zh' ? '1天后' : 'in 1d' },
                         { q: 3, label: uiLang === 'zh' ? '模糊' : 'Hard', icon: HelpCircle, color: 'from-yellow-400 to-yellow-500', shadow: 'shadow-yellow-200/60', hint: uiLang === 'zh' ? '~3天' : '~3d' },
                         { q: 4, label: uiLang === 'zh' ? '记得' : 'Good', icon: ThumbsUp, color: 'from-green-400 to-green-600', shadow: 'shadow-green-200/60', hint: uiLang === 'zh' ? '~1周' : '~1w' },
-                        { q: 5, label: uiLang === 'zh' ? '秒杀' : 'Easy', icon: Zap, color: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-200/60', hint: uiLang === 'zh' ? '~2周' : '~2w' }
+                        { q: 5, label: uiLang === 'zh' ? '秒杀' : 'Easy', icon: Zap, color: 'from-rose-400 to-pink-500', shadow: 'shadow-rose-200/60', hint: uiLang === 'zh' ? '~2周' : '~2w' }
                       ].map((btn) => (
                         <motion.button
                           key={btn.q}
@@ -315,7 +315,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                           }}
                           aria-label={`${btn.label} — ${btn.hint}`}
                           className={cn(
-                            "py-4 rounded-2xl text-white font-bold shadow-lg flex flex-col items-center gap-1 bg-gradient-to-b transition-all focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
+                            "py-4 rounded-2xl text-white font-bold shadow-lg flex flex-col items-center gap-1 bg-gradient-to-b transition-all focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2",
                             `${btn.color} ${btn.shadow}`
                           )}
                         >
@@ -336,7 +336,7 @@ export default function ReviewPage(props: ReviewPageProps) {
               <p className="text-gray-500">{uiLang === 'zh' ? `本次复习了 ${reviewedCount} 个单词` : `You reviewed ${reviewedCount} words`}</p>
               <button
                 onClick={() => { setReviewedCount(0); onSetReviewIndex(0); }}
-                className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors mt-4"
+                className="inline-flex items-center gap-2 bg-rose-500 text-white px-6 py-3 rounded-xl font-bold hover:bg-rose-600 transition-colors mt-4"
               >
                 <RotateCcw className="w-4 h-4" />
                 {uiLang === 'zh' ? '再来一轮' : 'Review Again'}
@@ -359,7 +359,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                 className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors"
               >
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-indigo-500" />
+                  <Sparkles className="w-4 h-4 text-pink-400" />
                   <span className="text-sm font-bold text-gray-700">
                     {uiLang === 'zh' ? 'AI 复习助手' : 'AI Review Assistant'}
                   </span>
@@ -406,7 +406,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                               setChatMessages(prev => [...prev, { role: 'ai', text: '抱歉，回答失败，请重试' }]);
                             }).finally(() => setChatLoading(false));
                           }}
-                          className="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg font-medium hover:bg-indigo-100 transition-colors"
+                          className="text-xs bg-rose-50 text-pink-500 px-3 py-1.5 rounded-lg font-medium hover:bg-rose-100 transition-colors"
                         >
                           {q}
                         </button>
@@ -443,7 +443,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                       placeholder={currentReviewWord
                         ? (uiLang === 'zh' ? `关于「${currentReviewWord.original}」的问题...` : `Ask about "${currentReviewWord.original}"...`)
                         : (uiLang === 'zh' ? '问任何语言学习问题...' : 'Ask any language question...')}
-                      className="flex-1 px-3.5 py-2 rounded-xl border border-gray-200 outline-none focus:border-indigo-400 text-sm"
+                      className="flex-1 px-3.5 py-2 rounded-xl border border-gray-200 outline-none focus:border-rose-400 text-sm"
                     />
                     <button
                       onClick={handleChatSend}

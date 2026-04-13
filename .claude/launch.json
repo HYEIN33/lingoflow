@@ -4,8 +4,8 @@
     {
       "name": "Vite Dev Server",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["vite", "--host=0.0.0.0"],
-      "port": 5173
+      "runtimeArgs": ["vite", "--host=0.0.0.0", "--port", "5174"],
+      "port": 5174
     },
     {
       "name": "API Proxy Server",

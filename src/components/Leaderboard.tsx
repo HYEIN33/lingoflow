@@ -89,11 +89,11 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
   const renderGroupTab = () => (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
       {/* Timer */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 rounded-2xl p-4 flex items-center justify-between">
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-rose-100 rounded-2xl p-4 flex items-center justify-between">
         <div>
-          <p className="text-blue-500 text-xs font-medium mb-1">{uiLang === 'zh' ? '本周结算倒计时' : 'Weekly reset'}</p>
+          <p className="text-rose-400 text-xs font-medium mb-1">{uiLang === 'zh' ? '本周结算倒计时' : 'Weekly reset'}</p>
           <p className="text-gray-900 font-mono font-bold text-lg flex items-center gap-2">
-            <Clock className="w-4 h-4 text-blue-500" /> {timeLeft}
+            <Clock className="w-4 h-4 text-rose-400" /> {timeLeft}
           </p>
         </div>
         <div className="text-right">
@@ -112,7 +112,7 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
             onClick={() => onUserClick?.(user.id)}
             className={`flex items-center gap-3 p-4 rounded-2xl cursor-pointer transition-all ${
               user.id === currentUserId
-                ? 'bg-blue-50/80 border-2 border-blue-300 shadow-md shadow-blue-100/50'
+                ? 'bg-rose-50/80 border-2 border-rose-300 shadow-md shadow-rose-100/50'
                 : index === 0
                 ? 'bg-gradient-to-r from-amber-50/80 to-orange-50/50 border border-amber-100 shadow-sm'
                 : index === 1
@@ -124,14 +124,14 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
           >
             {getRankBadge(index)}
             <div className={`w-10 h-10 rounded-xl overflow-hidden shrink-0 flex items-center justify-center font-bold ${
-              index === 0 ? 'bg-amber-100 text-amber-700' : index === 1 ? 'bg-gray-100 text-gray-600' : index === 2 ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-600'
+              index === 0 ? 'bg-amber-100 text-amber-700' : index === 1 ? 'bg-gray-100 text-gray-600' : index === 2 ? 'bg-orange-100 text-orange-700' : 'bg-rose-100 text-rose-500'
             }`}>
               {user.username.charAt(0)}
             </div>
             <div className="flex-1 min-w-0">
               <h4 className="text-gray-900 font-bold truncate flex items-center gap-2">
                 {user.username}
-                {user.id === currentUserId && <span className="text-[10px] bg-blue-500 text-white px-2 py-0.5 rounded-full font-bold shadow-sm">YOU</span>}
+                {user.id === currentUserId && <span className="text-[10px] bg-rose-500 text-white px-2 py-0.5 rounded-full font-bold shadow-sm">YOU</span>}
               </h4>
               <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
                 <span className="flex items-center gap-1"><Flame className="w-3 h-3 text-orange-400" /> {user.weeklyCount} {uiLang === 'zh' ? '词条' : 'entries'}</span>
@@ -164,7 +164,7 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
           onClick={() => onUserClick?.(user.id)}
           className={`flex items-center gap-3 p-4 rounded-2xl cursor-pointer transition-all ${
             index === 0 ? 'bg-gradient-to-r from-amber-50 to-orange-50/50 border border-amber-200 shadow-md shadow-amber-100/30' :
-            user.id === currentUserId ? 'bg-blue-50/80 border-2 border-blue-300 shadow-md shadow-blue-100/50' :
+            user.id === currentUserId ? 'bg-rose-50/80 border-2 border-rose-300 shadow-md shadow-rose-100/50' :
             index < 3 ? 'bg-white/80 border border-gray-100 shadow-sm' :
             'bg-white/60 border border-white/60 hover:bg-white/80'
           }`}
@@ -174,7 +174,7 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
             index === 0 ? 'bg-gradient-to-br from-amber-200 to-amber-300 text-amber-700' :
             index === 1 ? 'bg-gray-100 text-gray-600' :
             index === 2 ? 'bg-orange-100 text-orange-700' :
-            'bg-blue-100 text-blue-600'
+            'bg-rose-100 text-rose-500'
           }`}>
             {user.username.charAt(0)}
           </div>
@@ -212,7 +212,7 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
             <div className="flex items-center gap-3">
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold text-lg shadow-md ${
                 index === 0 ? 'bg-gradient-to-br from-amber-400 to-orange-500' :
-                index === 1 ? 'bg-gradient-to-br from-blue-400 to-indigo-500' :
+                index === 1 ? 'bg-gradient-to-br from-blue-400 to-pink-400' :
                 'bg-gradient-to-br from-blue-300 to-blue-400'
               }`}>
                 {user.username.charAt(0)}
@@ -276,7 +276,7 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
             onClick={() => setActiveTab(tab.id as any)}
             className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
               activeTab === tab.id
-                ? 'bg-white/70 text-blue-600 shadow-sm backdrop-blur-md border border-white/60'
+                ? 'bg-white/70 text-rose-500 shadow-sm backdrop-blur-md border border-white/60'
                 : 'text-gray-500 hover:text-gray-700 hover:bg-white/20'
             }`}
           >
@@ -292,7 +292,7 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
           <Trophy className="w-10 h-10 mx-auto mb-3 text-gray-300" />
           <p>{uiLang === 'zh' ? '还没有排行数据，去梗百科贡献吧！' : 'No leaderboard data yet. Start contributing!'}</p>
           {onContribute && (
-            <button onClick={onContribute} className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors">
+            <button onClick={onContribute} className="mt-4 px-4 py-2 bg-rose-500 text-white text-sm font-medium rounded-xl hover:bg-rose-600 transition-colors">
               {uiLang === 'zh' ? '去贡献' : 'Contribute'}
             </button>
           )}
