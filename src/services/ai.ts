@@ -2,6 +2,15 @@ import { GoogleGenAI, Type, Modality } from "@google/genai";
 import * as Sentry from "@sentry/react";
 import { auth } from "../firebase";
 
+// E4: Maximum input length to prevent token overflow / abuse
+const MAX_INPUT_LENGTH = 2000;
+
+function validateInputLength(text: string): void {
+  if (text.length > MAX_INPUT_LENGTH) {
+    throw new Error(`输入过长（最多 ${MAX_INPUT_LENGTH} 字符）`);
+  }
+}
+
 // Record a Gemini-related event to Sentry as a breadcrumb. Only runs when
 // Sentry is actually initialized (PROD). In DEV it's a cheap no-op.
 function aiBreadcrumb(message: string, data?: Record<string, unknown>) {
@@ -66,6 +75,7 @@ async function callGeminiProxy(
   model: string,
   contents: string | object[],
   config?: Record<string, any>,
+  signal?: AbortSignal,
 ): Promise<any> {
   const body: Record<string, any> = {
     model,
@@ -83,6 +93,7 @@ async function callGeminiProxy(
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!res.ok) {
@@ -109,19 +120,30 @@ async function callGeminiProxy(
 /**
  * Unified generate helper — routes through proxy or SDK depending on config.
  */
-const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-1.5-flash'];
 
 async function geminiGenerate(opts: {
   model: string;
   contents: string | { parts: { text: string }[] }[];
   config?: Record<string, any>;
+  signal?: AbortSignal;
 }): Promise<string> {
   const models = [opts.model, ...FALLBACK_MODELS.filter(m => m !== opts.model)];
 
+  // Per-model timeout: abort after 10s and try next model
+  const makeSignal = (parentSignal?: AbortSignal) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    if (parentSignal) parentSignal.addEventListener('abort', () => controller.abort(), { once: true });
+    return { signal: controller.signal, clear: () => clearTimeout(timer) };
+  };
+
   for (let i = 0; i < models.length; i++) {
+    const { signal: modelSignal, clear: clearTimer } = makeSignal(opts.signal);
     try {
       if (USE_PROXY) {
-        const result = await callGeminiProxy(models[i], opts.contents, opts.config);
+        const result = await callGeminiProxy(models[i], opts.contents, opts.config, modelSignal);
+        clearTimer();
         aiBreadcrumb('generate.success', { model: models[i], path: 'proxy', attempt: i + 1 });
         return result.text;
       }
@@ -131,25 +153,35 @@ async function geminiGenerate(opts: {
         contents: opts.contents as any,
         config: opts.config as any,
       });
+      clearTimer();
       aiBreadcrumb('generate.success', { model: models[i], path: 'sdk', attempt: i + 1 });
       return response.text;
     } catch (e: any) {
+      clearTimer();
       const msg = e?.message || String(e);
+      const isTimeout = e?.name === 'AbortError' && !opts.signal?.aborted;
       const status = e?.status || msg.match(/(\d{3})/)?.[1];
 
       aiBreadcrumb('generate.error', {
         model: models[i],
         attempt: i + 1,
-        status: String(status || 'unknown'),
+        status: isTimeout ? 'timeout' : String(status || 'unknown'),
         error: msg.substring(0, 200),
       });
+
+      // Timeout — try next model immediately
+      if (isTimeout && i < models.length - 1) {
+        console.warn(`${models[i]} timed out after 10s, falling back to ${models[i + 1]}`);
+        aiBreadcrumb('generate.timeout_fallback', { from: models[i], to: models[i + 1] });
+        continue;
+      }
 
       // Location restriction or FAILED_PRECONDITION — try proxy fallback
       if (msg.includes('location is not supported') || msg.includes('FAILED_PRECONDITION') || status == 400) {
         console.warn(`Direct API blocked (${msg.substring(0, 80)}), trying proxy...`);
         aiBreadcrumb('generate.region_fallback_to_proxy', { model: models[i] });
         try {
-          const result = await callGeminiProxy(models[i], opts.contents, opts.config);
+          const result = await callGeminiProxy(models[i], opts.contents, opts.config, opts.signal);
           aiBreadcrumb('generate.proxy_fallback_success', { model: models[i] });
           return result.text;
         } catch (proxyErr: any) {
@@ -245,17 +277,27 @@ export interface SlangExplanationResult {
 }
 
 function getEffectiveConfig(): { provider: AIProvider, model: string } {
-  return { 
-    provider: 'gemini', 
-    model: 'gemini-2.5-flash' 
+  return {
+    provider: 'gemini',
+    model: 'gemini-2.5-flash'
   };
 }
 
+function safeJsonParse<T>(text: string, context: string): T {
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    console.error(`JSON parse failed in ${context}:`, text.slice(0, 200));
+    throw new Error(`AI returned invalid response format. Please try again.`);
+  }
+}
+
 export async function explainSlang(text: string): Promise<SlangExplanationResult> {
+  validateInputLength(text);
   const { model } = getEffectiveConfig();
   const contents = `Explain the following Chinese internet slang or meme. Provide its meaning, origin (e.g., Douyin, Weibo, gaming), usage context, and examples.
 
-    Slang: "${text}"`;
+    Slang: ${JSON.stringify(text)}`;
   const config = {
     responseMimeType: "application/json",
     responseSchema: {
@@ -283,16 +325,24 @@ export async function explainSlang(text: string): Promise<SlangExplanationResult
     }
   };
   const text_ = await geminiGenerate({ model, contents, config });
-  return JSON.parse(text_);
+  return safeJsonParse(text_, 'explainSlang');
 }
 
-export async function translateText(text: string, formalityLevel?: number): Promise<TranslationResult> {
+export async function translateText(text: string, formalityLevel?: number, scene?: 'chat' | 'business' | 'writing', signal?: AbortSignal): Promise<TranslationResult> {
+  validateInputLength(text);
   const { model } = getEffectiveConfig();
 
   let formalityPrompt = "";
   if (formalityLevel !== undefined) {
     formalityPrompt = `\nThe user has requested a specific formality level of ${formalityLevel} (1 = very casual/slang, 100 = highly academic/formal). Please ensure the 'authenticTranslation' reflects this exact formality level.`;
   }
+
+  const scenePrompts: Record<string, string> = {
+    chat: "\nTranslate in a casual, conversational tone, like texting a friend. Use contractions, slang, and informal expressions where appropriate.",
+    business: "\nTranslate in a professional, business email tone. Use polite, clear, and formal language suitable for workplace communication.",
+    writing: "\nTranslate in a formal, academic writing tone. Use precise vocabulary, complex sentence structures, and scholarly language.",
+  };
+  const scenePrompt = scene ? scenePrompts[scene] || "" : "";
 
   // Detect language direction
   const hasChinese = /[\u4e00-\u9fa5]/.test(text);
@@ -315,9 +365,9 @@ export async function translateText(text: string, formalityLevel?: number): Prom
     5. If the word is a verb, provide conjugations (past tense, past participle, present participle, present perfect example, third person singular) in 'conjugations'. For present perfect, provide a short example like "have/has + past participle". If the past tense and past participle are the same word, combine them into one entry labeled "Past Tense / Past Participle".
     6. If the word is a noun, provide plural form in 'conjugations'.
     7. If the word is an adjective, provide comparative and superlative in 'conjugations'.
-    ${formalityPrompt}
+    ${formalityPrompt}${scenePrompt}
 
-    Text: "${text}"`;
+    Text: ${JSON.stringify(text)}`;
   const config = {
     responseMimeType: "application/json",
     responseSchema: {
@@ -369,11 +419,12 @@ export async function translateText(text: string, formalityLevel?: number): Prom
       required: ["original", "usages"]
     }
   };
-  const text_ = await geminiGenerate({ model, contents, config });
-  return JSON.parse(text_);
+  const text_ = await geminiGenerate({ model, contents, config, signal });
+  return safeJsonParse(text_, 'translateText');
 }
 
 export async function checkGrammar(text: string): Promise<GrammarCheckResult> {
+  validateInputLength(text);
   const { model } = getEffectiveConfig();
 
   const contents = `Check the grammar of the following text. If there are errors, provide the corrected version and a detailed explanation in both English and Chinese. If there are no errors, set hasErrors to false.
@@ -382,7 +433,7 @@ export async function checkGrammar(text: string): Promise<GrammarCheckResult> {
 
     Also, provide an array of specific 'edits', where each edit shows the 'originalText' that was wrong, the 'correctedText', and a brief 'explanation' (in Chinese) of why it was changed.
 
-    Text: "${text}"`;
+    Text: ${JSON.stringify(text)}`;
   const config = {
     responseMimeType: "application/json",
     responseSchema: {
@@ -412,7 +463,7 @@ export async function checkGrammar(text: string): Promise<GrammarCheckResult> {
     }
   };
   const text_ = await geminiGenerate({ model, contents, config });
-  return JSON.parse(text_);
+  return safeJsonParse(text_, 'checkGrammar');
 }
 
 export async function extractTextFromImage(base64Image: string, mimeType: string): Promise<string> {
@@ -448,7 +499,7 @@ export async function translateSimple(text: string): Promise<string> {
     If the input is English, translate to Chinese.
     Only return the translated text, no other explanation.
 
-    Text: "${text}"`;
+    Text: ${JSON.stringify(text)}`;
   const result = await geminiGenerate({ model, contents });
   return result.trim();
 }
@@ -458,8 +509,8 @@ export async function getReviewHint(word: string, meaningZh: string): Promise<st
 
   const contents = `你是一个英语记忆助手。用户正在复习单词，请帮助他们记住这个词。
 
-单词: "${word}"
-中文含义: "${meaningZh}"
+单词: ${JSON.stringify(word)}
+中文含义: ${JSON.stringify(meaningZh)}
 
 请用中文给出:
 1. 一个记忆技巧（谐音、联想、词根拆解等，选最有效的一种）
@@ -585,17 +636,18 @@ Important Rules:
     }
   };
   const text = await geminiGenerate({ model, contents, config });
-  return JSON.parse(text);
+  return safeJsonParse(text, 'validateSlangEntry');
 }
 
 export async function suggestSlangMeaning(term: string, partialInput: string): Promise<string> {
+  validateInputLength(term + partialInput);
   if (!rateLimiter.check()) {
     throw new Error('Rate limit exceeded. Please wait a moment.');
   }
   const { model } = getEffectiveConfig();
 
-  const contents = `You are helping a user write a definition for the Chinese internet slang term "${term}".
-    The user has started typing: "${partialInput}"
+  const contents = `You are helping a user write a definition for the Chinese internet slang term ${JSON.stringify(term)}.
+    The user has started typing: ${JSON.stringify(partialInput)}
 
     Complete or expand their input into a full, natural definition (in Chinese).
     Keep it concise (1-2 sentences), accurate, and in the same tone as the user's input.
@@ -611,8 +663,8 @@ export async function generateSlangExample(term: string, meaning: string): Promi
     The example should be something a native speaker would actually say online or in daily conversation.
     Only output the sentence itself, nothing else.
 
-    Term: "${term}"
-    Meaning: "${meaning}"`;
+    Term: ${JSON.stringify(term)}
+    Meaning: ${JSON.stringify(meaning)}`;
   const result = await geminiGenerate({ model, contents });
   return result.trim();
 }

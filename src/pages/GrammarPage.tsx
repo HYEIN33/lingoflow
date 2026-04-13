@@ -56,6 +56,28 @@ export default function GrammarPage(props: GrammarPageProps) {
         </div>
       </form>
 
+      {/* Example prompts when no result yet */}
+      {!grammarResult && !grammarInput && (
+        <div className="text-center py-6">
+          <p className="text-sm text-gray-400 mb-3">{uiLang === 'zh' ? '试试这些：' : 'Try these:'}</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {[
+              'I have went to the store yesterday',
+              'She don\'t like coffee',
+              'Me and him is friends',
+            ].map((ex) => (
+              <button
+                key={ex}
+                onClick={() => setGrammarInput(ex)}
+                className="px-3 py-1.5 bg-gray-50 hover:bg-blue-50 text-gray-500 hover:text-blue-600 text-xs rounded-lg transition-colors"
+              >
+                {ex}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Grammar Result */}
       {grammarResult && (
         <motion.div

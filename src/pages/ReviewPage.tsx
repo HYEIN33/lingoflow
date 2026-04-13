@@ -226,7 +226,17 @@ export default function ReviewPage(props: ReviewPageProps) {
                                 try {
                                   const hint = await onGetHint(currentReviewWord.original, currentReviewWord.usages[0]?.meaningZh || '');
                                   setAiHint(hint);
-                                } catch { setAiHint(uiLang === 'zh' ? '获取提示失败' : 'Failed to get hint'); }
+                                } catch (err: any) {
+                                  console.error('AI hint failed:', err);
+                                  const msg = err?.message || '';
+                                  if (msg.includes('location') || msg.includes('PRECONDITION')) {
+                                    setAiHint(uiLang === 'zh' ? 'AI 服务在当前地区不可用，请使用 VPN 或稍后重试' : 'AI service unavailable in your region');
+                                  } else if (msg.includes('繁忙') || msg.includes('不可用')) {
+                                    setAiHint(msg);
+                                  } else {
+                                    setAiHint(uiLang === 'zh' ? '获取提示失败，请重试' : 'Failed to get hint, please retry');
+                                  }
+                                }
                                 setAiHintLoading(false);
                               }}
                               disabled={aiHintLoading}
@@ -248,7 +258,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                       </div>
                     )}
 
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {[
                         { q: 1, label: uiLang === 'zh' ? '忘记' : 'Forgot', color: 'bg-red-500', hint: uiLang === 'zh' ? '1天后' : 'in 1d' },
                         { q: 3, label: uiLang === 'zh' ? '模糊' : 'Hard', color: 'bg-orange-500', hint: uiLang === 'zh' ? '~3天' : '~3d' },
@@ -283,7 +293,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                   <motion.div key="question" className="py-12">
                     <button
                       onClick={() => setShowReviewAnswer(true)}
-                      className="bg-gray-900 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-gray-800 transition-all shadow-xl shadow-gray-200"
+                      className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-blue-700 transition-all shadow-xl shadow-blue-200"
                     >
                       {uiLang === 'zh' ? '查看答案' : 'Show Answer'}
                     </button>

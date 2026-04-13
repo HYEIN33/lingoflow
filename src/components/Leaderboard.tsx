@@ -4,7 +4,7 @@ import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestor
 import { db } from '../firebase';
 import { Trophy, Crown, ChevronUp, ChevronDown, Clock, Star, Flame, Loader2 } from 'lucide-react';
 
-export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLang = 'zh', onUserClick }: { defaultTab?: 'group' | 'global' | 'monthly', currentUserId: string, uiLang?: 'en' | 'zh', groupId?: string, onUserClick?: (uid: string) => void }) {
+export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLang = 'zh', onUserClick, onContribute }: { defaultTab?: 'group' | 'global' | 'monthly', currentUserId: string, uiLang?: 'en' | 'zh', groupId?: string, onUserClick?: (uid: string) => void, onContribute?: () => void }) {
   const [activeTab, setActiveTab] = useState(defaultTab);
   const [groupData, setGroupData] = useState<any[]>([]);
   const [globalData, setGlobalData] = useState<any[]>([]);
@@ -231,6 +231,11 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
         <div className="text-center py-12 text-gray-400">
           <Trophy className="w-10 h-10 mx-auto mb-3 text-gray-300" />
           <p>{uiLang === 'zh' ? '还没有排行数据，去梗百科贡献吧！' : 'No leaderboard data yet. Start contributing!'}</p>
+          {onContribute && (
+            <button onClick={onContribute} className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors">
+              {uiLang === 'zh' ? '去贡献' : 'Contribute'}
+            </button>
+          )}
         </div>
       ) : (
         <AnimatePresence mode="wait">
