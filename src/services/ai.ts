@@ -412,7 +412,7 @@ export async function checkGrammar(text: string): Promise<GrammarCheckResult> {
 
     Also, provide an array of specific 'edits', where each edit shows the 'originalText' that was wrong, the 'correctedText', and a brief 'explanation' (in Chinese) of why it was changed.
 
-    Text: "${text}"`;
+    Text: ${JSON.stringify(text)}`;
   const config = {
     responseMimeType: "application/json",
     responseSchema: {
@@ -478,7 +478,7 @@ export async function translateSimple(text: string): Promise<string> {
     If the input is English, translate to Chinese.
     Only return the translated text, no other explanation.
 
-    Text: "${text}"`;
+    Text: ${JSON.stringify(text)}`;
   const result = await geminiGenerate({ model, contents });
   return result.trim();
 }
@@ -488,8 +488,8 @@ export async function getReviewHint(word: string, meaningZh: string): Promise<st
 
   const contents = `你是一个英语记忆助手。用户正在复习单词，请帮助他们记住这个词。
 
-单词: "${word}"
-中文含义: "${meaningZh}"
+单词: ${JSON.stringify(word)}
+中文含义: ${JSON.stringify(meaningZh)}
 
 请用中文给出:
 1. 一个记忆技巧（谐音、联想、词根拆解等，选最有效的一种）
@@ -624,8 +624,8 @@ export async function suggestSlangMeaning(term: string, partialInput: string): P
   }
   const { model } = getEffectiveConfig();
 
-  const contents = `You are helping a user write a definition for the Chinese internet slang term "${term}".
-    The user has started typing: "${partialInput}"
+  const contents = `You are helping a user write a definition for the Chinese internet slang term ${JSON.stringify(term)}.
+    The user has started typing: ${JSON.stringify(partialInput)}
 
     Complete or expand their input into a full, natural definition (in Chinese).
     Keep it concise (1-2 sentences), accurate, and in the same tone as the user's input.
@@ -641,8 +641,8 @@ export async function generateSlangExample(term: string, meaning: string): Promi
     The example should be something a native speaker would actually say online or in daily conversation.
     Only output the sentence itself, nothing else.
 
-    Term: "${term}"
-    Meaning: "${meaning}"`;
+    Term: ${JSON.stringify(term)}
+    Meaning: ${JSON.stringify(meaning)}`;
   const result = await geminiGenerate({ model, contents });
   return result.trim();
 }

@@ -194,6 +194,24 @@ export default function TranslateTab({
     if (!user || !translationResult || isSubmittingFeedback) return;
     setIsSubmittingFeedback(true);
     try {
+      // Dedup: check if user already submitted feedback for this exact query in the last hour
+      const q = translationResult.original;
+      const oneHourAgo = new Date(Date.now() - 3600_000);
+      const existing = await import('firebase/firestore').then(m =>
+        m.getDocs(m.query(
+          collection(db, 'feedback'),
+          m.where('uid', '==', user.uid),
+          m.where('query', '==', q),
+          m.where('timestamp', '>', Timestamp.fromDate(oneHourAgo)),
+          m.limit(1),
+        ))
+      );
+      if (!existing.empty) {
+        toast(uiLang === 'zh' ? '你已经反馈过了' : 'Already submitted feedback');
+        setFeedbackGiven(rating);
+        return;
+      }
+
       await addDoc(collection(db, 'feedback'), {
         uid: user.uid,
         query: translationResult.original,
@@ -303,27 +321,7 @@ export default function TranslateTab({
         </div>
       </form>
 
-      {/* Formality Slider (Pro only — hidden for free users to save space) */}
-      {userProfile?.isPro && (
-        <div className="bg-white/60 backdrop-blur-md border border-white/60 rounded-2xl p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-semibold text-gray-600">{uiLang === 'zh' ? '口语/俚语' : 'Casual/Slang'}</span>
-            <span className="text-sm font-bold text-blue-600">
-              {uiLang === 'zh' ? '正式程度' : 'Formality'}: {formalityLevel}
-            </span>
-            <span className="text-sm font-semibold text-gray-600">{uiLang === 'zh' ? '学术/正式' : 'Academic/Formal'}</span>
-          </div>
-          <input
-            type="range"
-            min="1"
-            max="100"
-            value={formalityLevel}
-            onChange={(e) => setFormalityLevel(Number(e.target.value))}
-            className="w-full h-2 bg-gray-200 rounded-lg appearance-none accent-blue-600"
-          />
-        </div>
-      )}
-
+      {/* Scene Switcher + Progress — right below input */}
       {/* Auto-translate progress indicator */}
       {isTranslating && (
         <div className="h-0.5 bg-blue-100 rounded-full overflow-hidden -mt-4">
@@ -353,6 +351,22 @@ export default function TranslateTab({
           </button>
         ))}
       </div>
+
+      {/* Formality Slider (Pro only — after scene chips, less prominent) */}
+      {userProfile?.isPro && (
+        <div className="flex items-center gap-3 px-1">
+          <span className="text-[10px] text-gray-400 font-medium whitespace-nowrap">{uiLang === 'zh' ? '正式度' : 'Formal'}:</span>
+          <input
+            type="range"
+            min="1"
+            max="100"
+            value={formalityLevel}
+            onChange={(e) => setFormalityLevel(Number(e.target.value))}
+            className="flex-1 h-1.5 bg-gray-200 rounded-lg appearance-none accent-blue-600"
+          />
+          <span className="text-[10px] text-blue-600 font-bold tabular-nums w-6 text-right">{formalityLevel}</span>
+        </div>
+      )}
 
       {/* Search History (only before a result exists) */}
       {!translationResult && searchHistory.length > 0 && (

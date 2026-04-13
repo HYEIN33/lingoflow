@@ -136,6 +136,7 @@ export function useTranslation({
           setSlangInsights(insights);
         }).catch(err => {
           console.error("Error fetching slang insights:", err);
+          toast.error(uiLang === 'zh' ? '俚语解释加载失败' : 'Failed to load slang insights');
         }).finally(() => {
           setIsFetchingSlang(false);
         });

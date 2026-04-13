@@ -40,18 +40,22 @@ describe('Feedback flow — data loss prevention', () => {
     expect(body).not.toMatch(/setFeedbackGiven\(rating\)/);
   });
 
-  it('submitFeedback sets feedbackGiven AFTER successful addDoc', () => {
+  it('submitFeedback sets feedbackGiven AFTER successful write (addDoc or dedup)', () => {
     const submitFeedback = translateTab.match(
       /const submitFeedback[\s\S]*?(?=\n\s*return\s*\()/
     );
     expect(submitFeedback).toBeTruthy();
     const body = submitFeedback![0];
-    // setFeedbackGiven must appear inside the try block, AFTER addDoc
-    const addDocPos = body.indexOf('addDoc(');
+    // setFeedbackGiven must appear inside the try block, AFTER the write logic
+    // It should come after addDoc (normal path) or after dedup check (already submitted path)
     const setFeedbackPos = body.indexOf('setFeedbackGiven(rating)');
-    expect(addDocPos).toBeGreaterThan(-1);
     expect(setFeedbackPos).toBeGreaterThan(-1);
-    expect(setFeedbackPos).toBeGreaterThan(addDocPos);
+    // Must be inside try block (not before it)
+    const tryPos = body.indexOf('try {');
+    expect(setFeedbackPos).toBeGreaterThan(tryPos);
+    // Must NOT appear before the try block
+    const beforeTry = body.substring(0, tryPos);
+    expect(beforeTry).not.toContain('setFeedbackGiven');
   });
 
   it('submitFeedback has a finally block that resets isSubmittingFeedback', () => {

@@ -15,8 +15,8 @@ function firestoreDb() {
 }
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const MAX_PER_MINUTE = 30;
-const MAX_PER_DAY = 300;
+const MAX_PER_MINUTE = 15;
+const MAX_PER_DAY = 200;
 
 // Allowed origins — anything else gets a hard CORS reject
 const ALLOWED_ORIGINS = new Set([
