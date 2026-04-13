@@ -270,7 +270,7 @@ export interface SlangExplanationResult {
 function getEffectiveConfig(): { provider: AIProvider, model: string } {
   return { 
     provider: 'gemini', 
-    model: 'gemini-2.5-flash' 
+    model: 'gemini-2.0-flash'
   };
 }
 
@@ -330,9 +330,15 @@ export async function translateText(text: string, formalityLevel?: number, scene
     ? 'The input is Chinese. Translate it to English. The authenticTranslation and academicTranslation MUST be in English.'
     : 'The input is English. Translate it to Chinese. The authenticTranslation and academicTranslation MUST be in Chinese (中文).';
 
-  // Compact prompt — shorter = faster Gemini inference
-  const contents = `You are a translator. ${langDirection}
-Provide: authenticTranslation (native-sounding), academicTranslation (formal), pronunciation, slangTerms (if any), and 1-3 usage definitions with label/labelZh, meaning/meaningZh, 2 examples, synonyms, antonyms, alternatives, and conjugations (verbs: tenses; nouns: plural; adjectives: comparative/superlative).${formalityPrompt}${scenePrompt}
+  // Balanced prompt — accurate translation + reasonable speed
+  const contents = `You are a professional translator. ${langDirection}
+Translate the COMPLETE meaning accurately — never drop nouns, objects, or context from the original.
+
+1. authenticTranslation: natural, native-sounding translation of the FULL text in the target language.
+2. academicTranslation: formal version of the FULL text in the target language.
+3. pronunciation: phonetic guide for the original text.
+4. slangTerms: list any slang or idioms found in the original.
+5. usages: 1-3 definitions with label/labelZh, meaning/meaningZh, 2 examples with translations, synonyms, antonyms, alternatives. For verbs include conjugations; for nouns include plural; for adjectives include comparative/superlative.${formalityPrompt}${scenePrompt}
 
 Text: ${JSON.stringify(text)}`;
   const config = {
