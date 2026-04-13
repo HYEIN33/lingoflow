@@ -131,7 +131,7 @@ export default function ReviewPage(props: ReviewPageProps) {
 
           {/* Progress bar */}
           {dueWords.length > 0 && (
-            <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+            <div className="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-bold text-gray-500">
                   {uiLang === 'zh' ? `进度 ${reviewedCount}/${dueWords.length}` : `Progress ${reviewedCount}/${dueWords.length}`}
@@ -151,18 +151,15 @@ export default function ReviewPage(props: ReviewPageProps) {
 
           {currentReviewWord ? (
           <>
-            {/* 3D Flip Card */}
+            {/* 3D Flip Card — both faces always in DOM, absolute stacked */}
             <div className="[perspective:1000px]">
               <motion.div
                 animate={{ rotateY: showReviewAnswer ? 180 : 0 }}
                 transition={{ duration: 0.5, type: 'spring', stiffness: 260, damping: 20 }}
                 className="relative [transform-style:preserve-3d]"
               >
-                {/* Front face — question */}
-                <div className={cn(
-                  "bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 text-center [backface-visibility:hidden]",
-                  showReviewAnswer && "invisible"
-                )}>
+                {/* Front face — question (always in DOM) */}
+                <div className="bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 text-center [backface-visibility:hidden]">
                   <div className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-6">
                     {reviewIndex + 1} / {dueWords.length}
                   </div>
@@ -184,7 +181,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                       <button
                         onClick={() => onSpeak(currentReviewWord.original)}
                         disabled={loadingAudioText === currentReviewWord.original}
-                        className="mx-auto flex items-center gap-2 text-blue-500 hover:text-blue-600 transition-colors mt-2 p-2 rounded-xl hover:bg-blue-50"
+                        className="mx-auto flex items-center gap-2 text-blue-500 hover:text-blue-600 transition-colors mt-2 p-2 rounded-xl hover:bg-blue-50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                         aria-label={uiLang === 'zh' ? '朗读' : 'Read aloud'}
                       >
                         {loadingAudioText === currentReviewWord.original ? (
@@ -201,21 +198,17 @@ export default function ReviewPage(props: ReviewPageProps) {
                       whileHover={{ scale: 1.03 }}
                       whileTap={{ scale: 0.97 }}
                       onClick={() => setShowReviewAnswer(true)}
-                      className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-blue-700 transition-colors shadow-xl shadow-blue-200/50"
+                      className="bg-blue-600 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-blue-700 transition-colors shadow-xl shadow-blue-200/50 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                     >
                       {uiLang === 'zh' ? '查看答案' : 'Show Answer'}
                     </motion.button>
                   </div>
                 </div>
 
-                {/* Back face — answer + rating */}
-                {showReviewAnswer && (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.25 }}
-                    className="bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 [transform:rotateY(180deg)] [backface-visibility:hidden]"
-                  >
+                {/* Back face — answer + rating (always in DOM, absolute on top) */}
+                <div
+                  className="absolute inset-0 bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 [transform:rotateY(180deg)] [backface-visibility:hidden] overflow-y-auto"
+                >
                     <div className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4 text-center">
                       {reviewIndex + 1} / {dueWords.length}
                     </div>
@@ -301,7 +294,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
                       {[
                         { q: 1, label: uiLang === 'zh' ? '忘记' : 'Forgot', icon: XCircle, color: 'from-red-500 to-red-600', shadow: 'shadow-red-200/60', hint: uiLang === 'zh' ? '1天后' : 'in 1d' },
-                        { q: 3, label: uiLang === 'zh' ? '模糊' : 'Hard', icon: HelpCircle, color: 'from-orange-400 to-orange-500', shadow: 'shadow-orange-200/60', hint: uiLang === 'zh' ? '~3天' : '~3d' },
+                        { q: 3, label: uiLang === 'zh' ? '模糊' : 'Hard', icon: HelpCircle, color: 'from-yellow-400 to-yellow-500', shadow: 'shadow-yellow-200/60', hint: uiLang === 'zh' ? '~3天' : '~3d' },
                         { q: 4, label: uiLang === 'zh' ? '记得' : 'Good', icon: ThumbsUp, color: 'from-green-400 to-green-600', shadow: 'shadow-green-200/60', hint: uiLang === 'zh' ? '~1周' : '~1w' },
                         { q: 5, label: uiLang === 'zh' ? '秒杀' : 'Easy', icon: Zap, color: 'from-blue-500 to-indigo-600', shadow: 'shadow-blue-200/60', hint: uiLang === 'zh' ? '~2周' : '~2w' }
                       ].map((btn) => (
@@ -320,8 +313,9 @@ export default function ReviewPage(props: ReviewPageProps) {
                               onSetReviewIndex(0);
                             }
                           }}
+                          aria-label={`${btn.label} — ${btn.hint}`}
                           className={cn(
-                            "py-3.5 sm:py-4 rounded-2xl text-white font-bold shadow-lg flex flex-col items-center gap-1 bg-gradient-to-b transition-all",
+                            "py-4 rounded-2xl text-white font-bold shadow-lg flex flex-col items-center gap-1 bg-gradient-to-b transition-all focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
                             `${btn.color} ${btn.shadow}`
                           )}
                         >
@@ -331,8 +325,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                         </motion.button>
                       ))}
                     </div>
-                  </motion.div>
-                )}
+                  </div>
               </motion.div>
             </div>
           </>
@@ -360,7 +353,7 @@ export default function ReviewPage(props: ReviewPageProps) {
 
           {/* AI Chat — always visible in review tab */}
           {onAiChat && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
               <button
                 onClick={() => setShowChat(!showChat)}
                 className="w-full flex items-center justify-between px-5 py-3 hover:bg-gray-50 transition-colors"
@@ -397,7 +390,22 @@ export default function ReviewPage(props: ReviewPageProps) {
                       ]).map((q, i) => (
                         <button
                           key={i}
-                          onClick={() => { setChatInput(q); }}
+                          onClick={() => {
+                            if (!onAiChat || chatLoading) return;
+                            const contextPrefix = currentReviewWord
+                              ? `[用户正在复习单词 "${currentReviewWord.original}"（${currentReviewWord.usages[0]?.meaningZh || ''}）] `
+                              : '';
+                            const newMessages: { role: 'user' | 'ai'; text: string }[] = [{ role: 'user', text: q }];
+                            setChatMessages(newMessages);
+                            setChatInput('');
+                            setChatLoading(true);
+                            const messagesWithContext = [{ role: 'user' as const, text: contextPrefix + q }];
+                            onAiChat(messagesWithContext).then(answer => {
+                              setChatMessages(prev => [...prev, { role: 'ai', text: answer }]);
+                            }).catch(() => {
+                              setChatMessages(prev => [...prev, { role: 'ai', text: '抱歉，回答失败，请重试' }]);
+                            }).finally(() => setChatLoading(false));
+                          }}
                           className="text-xs bg-indigo-50 text-indigo-600 px-3 py-1.5 rounded-lg font-medium hover:bg-indigo-100 transition-colors"
                         >
                           {q}

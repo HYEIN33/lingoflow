@@ -1173,50 +1173,42 @@ export function SlangDictionary({ uiLang, initialSearchTerm, onTryTranslate }: {
 
       {currentSlang && (
         <div className="space-y-6">
-          {/* Magazine-style hero header */}
+          {/* Compact hero header — word + stats + actions in one row */}
           <motion.div
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 relative overflow-hidden"
+            className="flex items-center justify-between gap-3 bg-white rounded-3xl px-5 sm:px-8 py-4 shadow-xl border border-gray-100 relative overflow-hidden"
           >
-            {/* Decorative gradient accent */}
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
-            <div className="flex items-start justify-between gap-4">
-              <div className="space-y-2">
-                <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
-                  {uiLang === 'zh' ? '梗百科' : 'MEME WIKI'}
-                </p>
-                <h2 className="text-3xl sm:text-4xl font-black text-gray-900 tracking-tight">
-                  {currentSlang.term}
-                </h2>
-                <p className="text-xs text-gray-400">
-                  {meanings.length} {uiLang === 'zh' ? '条释义' : 'definitions'}
-                  {meanings.reduce((sum, m) => sum + m.upvotes, 0) > 0 && (
-                    <span className="ml-2">
-                      · {meanings.reduce((sum, m) => sum + m.upvotes, 0)} {uiLang === 'zh' ? '次点赞' : 'upvotes'}
-                    </span>
-                  )}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {onTryTranslate && (
-                  <button
-                    onClick={() => { trackEvent('cross_tab_navigate', { from: 'slang', to: 'translate', term: currentSlang.term }); onTryTranslate(currentSlang.term); }}
-                    className="flex items-center gap-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105 active:scale-95"
-                  >
-                    {uiLang === 'zh' ? '造句试试' : 'Try it'}
-                  </button>
+            <div className="min-w-0">
+              <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight truncate">
+                {currentSlang.term}
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {meanings.length} {uiLang === 'zh' ? '条释义' : 'definitions'}
+                {meanings.reduce((sum, m) => sum + m.upvotes, 0) > 0 && (
+                  <span className="ml-1.5">· {meanings.reduce((sum, m) => sum + m.upvotes, 0)} {uiLang === 'zh' ? '赞' : 'likes'}</span>
                 )}
-                {!showAddForm && (
-                  <button
-                    onClick={() => setShowAddForm(true)}
-                    className="flex items-center gap-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105 active:scale-95"
-                  >
-                    <Plus className="w-4 h-4" />
-                    {uiLang === 'zh' ? '补充' : 'Add'}
-                  </button>
-                )}
-              </div>
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {onTryTranslate && (
+                <button
+                  onClick={() => { trackEvent('cross_tab_navigate', { from: 'slang', to: 'translate', term: currentSlang.term }); onTryTranslate(currentSlang.term); }}
+                  className="flex items-center gap-1.5 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105 active:scale-95 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                >
+                  {uiLang === 'zh' ? '造句试试' : 'Try it'}
+                </button>
+              )}
+              {!showAddForm && (
+                <button
+                  onClick={() => setShowAddForm(true)}
+                  className="flex items-center gap-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105 active:scale-95 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  {uiLang === 'zh' ? '补充' : 'Add'}
+                </button>
+              )}
             </div>
           </motion.div>
 
@@ -1306,7 +1298,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm, onTryTranslate }: {
                       onClick={() => handleUpvote(meaning.id, meaning.upvotes)}
                       disabled={upvotedMeanings.has(meaning.id)}
                       className={cn(
-                        "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                        "flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
                         upvotedMeanings.has(meaning.id)
                           ? "bg-blue-100 text-blue-700 shadow-sm"
                           : "bg-gray-100 text-gray-600 hover:bg-blue-50 hover:text-blue-600"
