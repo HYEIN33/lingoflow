@@ -59,6 +59,33 @@ describe('firestore.rules — security audit', () => {
     expect(rules).toMatch(/match\s*\/slang_reports\/\{/);
   });
 
+  it('feedback collection exists and is admin-read-only', () => {
+    const section = rules.match(/match\s*\/feedback\/\{[^}]*\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toMatch(/allow read:\s*if isAdmin\(\)/);
+    expect(section![0]).toMatch(/allow create:\s*if isAuthenticated\(\)/);
+    // Must NOT allow update or delete by users
+    expect(section![0]).toMatch(/allow update,\s*delete:\s*if false/);
+  });
+
+  it('feedback create enforces field whitelist via hasOnly', () => {
+    const section = rules.match(/match\s*\/feedback\/\{[^}]*\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toContain("'uid'");
+    expect(section![0]).toContain("'query'");
+    expect(section![0]).toContain("'result'");
+    expect(section![0]).toContain("'rating'");
+    expect(section![0]).toContain("'reason'");
+    expect(section![0]).toContain("'timestamp'");
+    expect(section![0]).toContain("'scene'");
+  });
+
+  it('feedback rating constrained to up/down', () => {
+    const section = rules.match(/match\s*\/feedback\/\{[^}]*\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toMatch(/rating\s*in\s*\['up',\s*'down'\]/);
+  });
+
   it('slang_reports reads gated to admin only', () => {
     const section = rules.match(/match\s*\/slang_reports\/\{[^}]*\}[\s\S]*?\n\s*\}/);
     expect(section).toBeTruthy();

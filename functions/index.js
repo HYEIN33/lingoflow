@@ -15,8 +15,8 @@ function firestoreDb() {
 }
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const MAX_PER_MINUTE = 30;
-const MAX_PER_DAY = 300;
+const MAX_PER_MINUTE = 15;
+const MAX_PER_DAY = 200;
 
 // Allowed origins — anything else gets a hard CORS reject
 const ALLOWED_ORIGINS = new Set([
@@ -65,7 +65,7 @@ async function checkRateLimit(uid) {
 }
 
 exports.apiGenerate = onRequest(
-  { secrets: ['GEMINI_API_KEY'], cors: false },
+  { secrets: ['GEMINI_API_KEY'], cors: false, minInstances: 1, timeoutSeconds: 60 },
   async (req, res) => {
     const corsOk = applyCors(req, res);
     if (req.method === 'OPTIONS') {
@@ -127,8 +127,7 @@ exports.apiGenerate = onRequest(
     // Whitelist models to prevent users billing expensive models
     const ALLOWED_MODELS = new Set([
       'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-2.0-flash-exp',
+      'gemini-2.5-flash-lite',
       'gemini-1.5-flash',
       'gemini-1.5-flash-8b',
     ]);

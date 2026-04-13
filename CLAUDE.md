@@ -48,3 +48,79 @@ Search by grepping titles, tags, or component names under `docs/solutions/` befo
 - Don't ship a localStorage schema change without a defensive deserializer or versioned key.
 - Don't bypass `isUserSelfUpdate` whitelist by adding fields without auditing.
 - Don't commit service account JSONs. `.gitignore` covers `scripts/*-service-account.json` and `.firebase/`.
+
+## 审查流程：autoplan + preview + qa 三合一（强制执行）
+
+**任何涉及 UI 的改动，autoplan 的 Design Review 阶段必须启动 dev server 截图。**
+纯看代码做设计审查是不够的。中文分词在代码里看不出问题，到浏览器里才发现句子被当成单词处理。
+
+### autoplan 截图驱动审查模式（强制）
+
+**核心原则：gstack autoplan 是审查主导者，preview 是它的眼睛。**
+
+autoplan 跑 CEO/Design/Eng 审查时，每个 phase 可以请求截图。请求方式：
+- autoplan subagent 输出 `SCREENSHOT_REQUEST: {page}, {device}, {state}` 
+- 主 agent 收到后用 preview 工具截图并提供给 subagent
+
+**截图覆盖率要求：90%**
+
+必须覆盖的矩阵（每个组合都要截）：
+
+| 页面 | 空状态 | 有数据状态 | 特殊状态 |
+|------|--------|-----------|---------|
+| 翻译 | 无输入 | 中文句子翻译结果 | 翻译失败 |
+| 梗百科 | 首页+搜索榜 | 词条详情 | 贡献表单 |
+| 语法检查 | 空+示例引导 | 纠错结果 | — |
+| 单词本 | 空 | 有词列表+详情 | — |
+| 复习 | 卡片正面 | 答案揭示 | 无待复习 |
+| 排行榜 | 有数据 | — | — |
+| 个人中心 | 正常 | — | — |
+
+设备：Desktop 1280x800、iPad 768x1024、iPhone 375x812
+
+**所有 review phase 都必须请求截图，不只是 Design Review：**
+- **CEO Review：** 审查产品定位时，截首页看用户第一印象；审查用户旅程时，截每个步骤的真实画面
+- **Design Review：** 每张截图对照 7 个维度打分，视觉问题优先级 > 代码问题
+- **Eng Review：** 审查响应式/性能/错误处理时，截移动端看实际渲染效果
+- **QA：** 交互测试每个步骤都截图作为证据
+
+**截图请求格式：** 任何 review subagent 需要看 UI 时，输出：
+```
+SCREENSHOT_REQUEST: {page}, {device}, {state}
+例: SCREENSHOT_REQUEST: 翻译页, iPhone, 有翻译结果
+```
+主 agent 用 preview 工具截图后返回给 subagent。
+
+**改完 UI 后验证（不可跳过）：** preview_screenshot + preview_resize mobile + preview_snapshot a11y。
+
+### 测试用中文输入（强制）
+
+截图中翻译/语法检查必须用中文句子测试：
+- `我在弄咖啡`、`今天天气不错`、`你好`（短）、`我觉得这个项目做得非常好，希望能够继续改进`（长）
+
+### 测试必须用中文输入
+
+这个 app 的目标用户是在美华人。测试时：
+- 翻译功能必须用中文句子测试（不是英文单词）
+- 测试用例：`我在弄咖啡`、`今天天气不错`、`你好` (短)、`我觉得这个项目做得非常好，希望能够继续改进` (长)
+- 中文没有空格，任何依赖空格分词的逻辑都是 bug
+
+## Skill routing
+
+When the user's request matches an available skill, ALWAYS invoke it using the Skill
+tool as your FIRST action. Do NOT answer directly, do NOT use other tools first.
+The skill has specialized workflows that produce better results than ad-hoc answers.
+
+Key routing rules:
+- Product ideas, "is this worth building", brainstorming → invoke office-hours
+- Bugs, errors, "why is this broken", 500 errors → invoke investigate
+- Ship, deploy, push, create PR → invoke ship
+- QA, test the site, find bugs → invoke qa
+- Code review, check my diff → invoke review
+- Update docs after shipping → invoke document-release
+- Weekly retro → invoke retro
+- Design system, brand → invoke design-consultation
+- Visual audit, design polish → invoke design-review
+- Architecture review → invoke plan-eng-review
+- Save progress, checkpoint, resume → invoke checkpoint
+- Code quality, health check → invoke health

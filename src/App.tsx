@@ -112,7 +112,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError
             {isQuota ? copy.quotaTitle : copy.genericTitle}
           </h1>
           <p className="text-gray-600 mb-4 max-w-md">
-            {isQuota ? copy.quotaBody : msg}
+            {isQuota ? copy.quotaBody : (uiLang === 'zh' ? '遇到了技术问题，请稍后重试。如果问题持续存在，请刷新页面。' : 'A technical issue occurred. Please try again later.')}
           </p>
           <button
             onClick={() => window.location.reload()}
@@ -177,6 +177,7 @@ export interface UserProfile {
 import PaymentScreen from './components/PaymentScreen';
 import { OnboardingChecklist } from './components/OnboardingChecklist';
 import TranslateTab from './pages/TranslateTab';
+import { TranslateProvider } from './contexts/TranslateContext';
 
 // Sortable tab — Pro users can long-press + drag to reorder. Non-Pro
 // users get a normal button (no drag listeners attached). Listeners are
@@ -524,8 +525,15 @@ export default function App() {
     return <MaintenancePage />;
   }
 
-  const [activeTab, setActiveTab] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile'>('slang');
-  // Slang is the primary USP, always default tab
+  const [activeTab, setActiveTab] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile'>(() => {
+    try {
+      const saved = localStorage.getItem('memeflow_active_tab');
+      if (saved && ['translate', 'slang', 'grammar', 'review', 'history'].includes(saved)) {
+        return saved as any;
+      }
+    } catch {}
+    return 'slang';
+  });
   const [showPayment, setShowPayment] = useState(false);
   const [paymentTrigger, setPaymentTrigger] = useState('default');
 
@@ -611,7 +619,8 @@ export default function App() {
   const {
     inputText, setInputText, isTranslating, translationResult, slangInsights, isFetchingSlang,
     selectedUsageIndex, setSelectedUsageIndex, showDetails, setShowDetails,
-    formalityLevel, setFormalityLevel, isSaving, handleTranslate, handleSaveWord,
+    formalityLevel, setFormalityLevel, isSaving, scene, setScene,
+    autoTranslateEnabled, toggleAutoTranslate, handleTranslate, handleSaveWord,
   } = useTranslation({ user, userProfile, setUserProfile, savedWords, uiLang, onPaymentNeeded });
 
   const { dueWords, reviewIndex, setReviewIndex, showReviewAnswer, setShowReviewAnswer, currentReviewWord, handleReview } = useReview(user, userProfile, savedWords);
@@ -768,7 +777,7 @@ export default function App() {
 
       {/* Header */}
       <header className="bg-white/40 backdrop-blur-md border-b border-white/50 sticky top-0 z-10 shadow-sm">
-        <div className="max-w-2xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
+        <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-lg sm:rounded-xl flex items-center justify-center">
               <Languages className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
@@ -814,21 +823,20 @@ export default function App() {
             >
               <UserCircle className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
-            <button 
+            <button
               onClick={() => setUiLang(uiLang === 'en' ? 'zh' : 'en')}
-              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 hover:bg-gray-50 rounded-lg transition-colors text-gray-500 text-xs sm:text-sm font-medium"
+              className="flex items-center gap-1 px-2 py-1.5 hover:bg-gray-50 rounded-lg transition-colors text-gray-500 text-xs font-medium"
             >
-              <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden xs:inline">{uiLang === 'en' ? '中文' : 'English'}</span>
-              <span className="xs:hidden">{uiLang === 'en' ? 'ZH' : 'EN'}</span>
+              <Globe className="w-3.5 h-3.5" />
+              <span>{uiLang === 'en' ? '中文' : 'EN'}</span>
             </button>
-            <button 
+            <button
               onClick={() => setShowQrCode(true)}
-              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 hover:bg-gray-50 rounded-lg transition-colors text-blue-500 text-xs sm:text-sm font-medium"
+              className="hidden sm:flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 hover:bg-gray-50 rounded-lg transition-colors text-blue-500 text-xs sm:text-sm font-medium"
               title={uiLang === 'zh' ? '在手机上使用' : 'Use on Mobile'}
             >
               <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden xs:inline">{uiLang === 'zh' ? '手机端' : 'Mobile'}</span>
+              <span>{uiLang === 'zh' ? '手机端' : 'Mobile'}</span>
             </button>
             <button
               onClick={confirmLogout}
@@ -842,7 +850,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 relative z-10">
+      <main className="max-w-2xl lg:max-w-5xl mx-auto px-4 sm:px-6 pt-6 sm:pt-8 relative z-10">
         {/* Tabs — Pro users can long-press + drag to reorder */}
         <DndContext
           sensors={tabSensors}
@@ -853,13 +861,13 @@ export default function App() {
             items={tabs.map((t) => t.id)}
             strategy={horizontalListSortingStrategy}
           >
-            <div className="flex bg-white/30 backdrop-blur-sm border border-white/50 p-1 rounded-2xl mb-6 sm:mb-8 overflow-x-auto no-scrollbar shadow-inner">
+            <div className="flex bg-white/30 backdrop-blur-sm border border-white/50 p-1 rounded-2xl mb-6 sm:mb-8 overflow-x-auto no-scrollbar shadow-inner sm:[mask-image:none] [mask-image:linear-gradient(to_right,black_90%,transparent)] [-webkit-mask-image:linear-gradient(to_right,black_90%,transparent)]">
               {tabs.map((tab) => (
                 <SortableTab
                   key={tab.id}
                   tab={tab}
                   isActive={activeTab === tab.id}
-                  onSelect={() => setActiveTab(tab.id as any)}
+                  onSelect={() => { setActiveTab(tab.id as any); try { localStorage.setItem('memeflow_active_tab', tab.id); } catch {} }}
                   isPro={!!userProfile?.isPro}
                 />
               ))}
@@ -869,43 +877,26 @@ export default function App() {
 
         <Suspense fallback={<LazyFallback />}>
           {activeTab === 'translate' ? (
-            <TranslateTab
-              inputText={inputText}
-              setInputText={setInputText}
-              isTranslating={isTranslating}
-              translationResult={translationResult}
-              selectedUsageIndex={selectedUsageIndex}
-              setSelectedUsageIndex={setSelectedUsageIndex}
-              showDetails={showDetails}
-              setShowDetails={setShowDetails}
-              formalityLevel={formalityLevel}
-              setFormalityLevel={setFormalityLevel}
-              isFetchingSlang={isFetchingSlang}
-              slangInsights={slangInsights}
-              isSaving={isSaving}
-              loadingAudioText={loadingAudioText}
-              userProfile={userProfile}
-              uiLang={uiLang}
-              searchHistory={searchHistory}
-              removeFromHistory={removeFromHistory}
-              clearHistory={clearHistory}
-              previousSearchWord={previousSearchWord}
-              setPreviousSearchWord={setPreviousSearchWord}
-              isExtractingPhoto={isExtractingPhoto}
-              onPhotoCapture={handlePhotoCapture}
-              isListening={isListening}
-              onToggleListening={toggleListening}
-              onTranslate={handleTranslateWithHistory}
-              onSearchWord={handleSearchWord}
-              onGoBack={handleGoBack}
-              onSaveWord={handleSaveWord}
-              onSpeak={speak}
-              onOpenPaywall={(trigger) => { setPaymentTrigger(trigger); setShowPayment(true); }}
-              onUpgrade={handleUpgrade}
-              onViewSlangEntry={(term) => { setSearchQuery(term); setActiveTab('slang'); }}
-            />
+            <TranslateProvider value={{
+              inputText, setInputText, isTranslating, translationResult,
+              selectedUsageIndex, setSelectedUsageIndex, showDetails, setShowDetails,
+              formalityLevel, setFormalityLevel, isFetchingSlang, slangInsights, isSaving,
+              loadingAudioText, userProfile, uiLang, savedWords, user,
+              searchHistory, removeFromHistory, clearHistory,
+              previousSearchWord, setPreviousSearchWord,
+              isExtractingPhoto, onPhotoCapture: handlePhotoCapture,
+              isListening, onToggleListening: toggleListening,
+              onTranslate: handleTranslateWithHistory, onSearchWord: handleSearchWord,
+              onGoBack: handleGoBack, onSaveWord: handleSaveWord, onSpeak: speak,
+              onOpenPaywall: (trigger) => { setPaymentTrigger(trigger); setShowPayment(true); },
+              onUpgrade: handleUpgrade,
+              onViewSlangEntry: (term) => { setSearchQuery(term); setActiveTab('slang'); },
+              scene, setScene, autoTranslateEnabled, toggleAutoTranslate,
+            }}>
+              <TranslateTab />
+            </TranslateProvider>
           ) : activeTab === 'grammar' ? (
-            <div>
+            <div className="max-w-3xl mx-auto">
               <GrammarPage
                 grammarInput={grammarInput}
                 setGrammarInput={setGrammarInput}
@@ -918,7 +909,7 @@ export default function App() {
               />
             </div>
           ) : activeTab === 'review' ? (
-            <div>
+            <div className="max-w-3xl mx-auto">
               <ReviewPage
                 userProfile={userProfile}
                 uiLang={uiLang}
@@ -939,7 +930,7 @@ export default function App() {
               />
             </div>
           ) : activeTab === 'history' ? (
-            <div>
+            <div className="max-w-3xl mx-auto">
               <WordbookPage
                 savedWords={savedWords}
                 filteredWords={filteredWords}
@@ -968,7 +959,7 @@ export default function App() {
               />
             </div>
           ) : activeTab === 'slang' ? (
-            <div>
+            <div className="max-w-3xl mx-auto">
               {userProfile && !userProfile.hasCompletedOnboarding && (userProfile.approvedSlangCount || 0) < 3 && (
                 <OnboardingChecklist
                   uiLang={uiLang}
@@ -985,7 +976,7 @@ export default function App() {
                   }}
                 />
               )}
-              <SlangDictionary uiLang={uiLang} initialSearchTerm={searchQuery} />
+              <SlangDictionary uiLang={uiLang} initialSearchTerm={searchQuery} onTryTranslate={(term) => { setInputText(term); setActiveTab('translate'); }} />
             </div>
           ) : activeTab === 'leaderboard' ? (
             <div>
