@@ -112,7 +112,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError
             {isQuota ? copy.quotaTitle : copy.genericTitle}
           </h1>
           <p className="text-gray-600 mb-4 max-w-md">
-            {isQuota ? copy.quotaBody : msg}
+            {isQuota ? copy.quotaBody : (uiLang === 'zh' ? '遇到了技术问题，请稍后重试。如果问题持续存在，请刷新页面。' : 'A technical issue occurred. Please try again later.')}
           </p>
           <button
             onClick={() => window.location.reload()}
@@ -860,7 +860,7 @@ export default function App() {
             items={tabs.map((t) => t.id)}
             strategy={horizontalListSortingStrategy}
           >
-            <div className="flex bg-white/30 backdrop-blur-sm border border-white/50 p-1 rounded-2xl mb-6 sm:mb-8 overflow-x-auto no-scrollbar shadow-inner">
+            <div className="flex bg-white/30 backdrop-blur-sm border border-white/50 p-1 rounded-2xl mb-6 sm:mb-8 overflow-x-auto no-scrollbar shadow-inner sm:[mask-image:none] [mask-image:linear-gradient(to_right,black_90%,transparent)] [-webkit-mask-image:linear-gradient(to_right,black_90%,transparent)]">
               {tabs.map((tab) => (
                 <SortableTab
                   key={tab.id}

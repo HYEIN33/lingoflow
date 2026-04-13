@@ -184,7 +184,7 @@ describe('AbortController — lifecycle cleanup', () => {
 describe('Scene prompt — injection prevention', () => {
   it('translateText includes language direction detection', () => {
     const translateFn = ai.match(
-      /export async function translateText[\s\S]*?return JSON\.parse/
+      /export async function translateText[\s\S]*?return safeJsonParse/
     );
     expect(translateFn).toBeTruthy();
     // Must detect language direction for accurate translation

@@ -130,15 +130,23 @@ export function useTranslation({
       // Fetch slang insights in background — don't block the translation result
       if (result.slangTerms && result.slangTerms.length > 0) {
         setIsFetchingSlang(true);
+        const currentOriginal = result.original;
         Promise.all(
           result.slangTerms.slice(0, 3).map(term => explainSlang(term))
         ).then(insights => {
-          setSlangInsights(insights);
+          // Only update if user hasn't started a new translation
+          if (lastTranslatedRef.current === currentOriginal) {
+            setSlangInsights(insights);
+          }
         }).catch(err => {
           console.error("Error fetching slang insights:", err);
-          toast.error(uiLang === 'zh' ? '俚语解释加载失败' : 'Failed to load slang insights');
+          if (lastTranslatedRef.current === currentOriginal) {
+            toast.error(uiLang === 'zh' ? '俚语解释加载失败' : 'Failed to load slang insights');
+          }
         }).finally(() => {
-          setIsFetchingSlang(false);
+          if (lastTranslatedRef.current === currentOriginal) {
+            setIsFetchingSlang(false);
+          }
         });
       }
 

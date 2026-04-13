@@ -268,17 +268,26 @@ export interface SlangExplanationResult {
 }
 
 function getEffectiveConfig(): { provider: AIProvider, model: string } {
-  return { 
-    provider: 'gemini', 
+  return {
+    provider: 'gemini',
     model: 'gemini-2.5-flash'
   };
+}
+
+function safeJsonParse<T>(text: string, context: string): T {
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    console.error(`JSON parse failed in ${context}:`, text.slice(0, 200));
+    throw new Error(`AI returned invalid response format. Please try again.`);
+  }
 }
 
 export async function explainSlang(text: string): Promise<SlangExplanationResult> {
   const { model } = getEffectiveConfig();
   const contents = `Explain the following Chinese internet slang or meme. Provide its meaning, origin (e.g., Douyin, Weibo, gaming), usage context, and examples.
 
-    Slang: "${text}"`;
+    Slang: ${JSON.stringify(text)}`;
   const config = {
     responseMimeType: "application/json",
     responseSchema: {
@@ -306,7 +315,7 @@ export async function explainSlang(text: string): Promise<SlangExplanationResult
     }
   };
   const text_ = await geminiGenerate({ model, contents, config });
-  return JSON.parse(text_);
+  return safeJsonParse(text_, 'explainSlang');
 }
 
 export async function translateText(text: string, formalityLevel?: number, scene?: 'chat' | 'business' | 'writing', signal?: AbortSignal): Promise<TranslationResult> {
@@ -347,7 +356,7 @@ export async function translateText(text: string, formalityLevel?: number, scene
     7. If the word is an adjective, provide comparative and superlative in 'conjugations'.
     ${formalityPrompt}${scenePrompt}
 
-    Text: "${text}"`;
+    Text: ${JSON.stringify(text)}`;
   const config = {
     responseMimeType: "application/json",
     responseSchema: {
@@ -400,7 +409,7 @@ export async function translateText(text: string, formalityLevel?: number, scene
     }
   };
   const text_ = await geminiGenerate({ model, contents, config, signal });
-  return JSON.parse(text_);
+  return safeJsonParse(text_, 'translateText');
 }
 
 export async function checkGrammar(text: string): Promise<GrammarCheckResult> {
@@ -442,7 +451,7 @@ export async function checkGrammar(text: string): Promise<GrammarCheckResult> {
     }
   };
   const text_ = await geminiGenerate({ model, contents, config });
-  return JSON.parse(text_);
+  return safeJsonParse(text_, 'checkGrammar');
 }
 
 export async function extractTextFromImage(base64Image: string, mimeType: string): Promise<string> {
@@ -615,7 +624,7 @@ Important Rules:
     }
   };
   const text = await geminiGenerate({ model, contents, config });
-  return JSON.parse(text);
+  return safeJsonParse(text, 'validateSlangEntry');
 }
 
 export async function suggestSlangMeaning(term: string, partialInput: string): Promise<string> {

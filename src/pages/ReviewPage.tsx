@@ -258,7 +258,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                       </div>
                     )}
 
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {[
                         { q: 1, label: uiLang === 'zh' ? '忘记' : 'Forgot', color: 'bg-red-500', hint: uiLang === 'zh' ? '1天后' : 'in 1d' },
                         { q: 3, label: uiLang === 'zh' ? '模糊' : 'Hard', color: 'bg-orange-500', hint: uiLang === 'zh' ? '~3天' : '~3d' },

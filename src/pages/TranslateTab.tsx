@@ -17,7 +17,7 @@
  *   - Pro upsell card (non-Pro users only)
  *   - Back button for synonym/antonym navigation
  */
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   Plus,
   BookOpen,
@@ -175,6 +175,14 @@ export default function TranslateTab({
   const [showFeedbackReason, setShowFeedbackReason] = useState(false);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
+  // Reset feedback state when a new translation arrives
+  useEffect(() => {
+    setFeedbackGiven(null);
+    setFeedbackReason('');
+    setShowFeedbackReason(false);
+    setIsSubmittingFeedback(false);
+  }, [translationResult?.original]);
+
   // Check if current translation is already saved
   const isAlreadySaved = (styleTag: string) => {
     if (!translationResult) return false;
@@ -218,7 +226,7 @@ export default function TranslateTab({
         result: translationResult.authenticTranslation || translationResult.academicTranslation || '',
         scene,
         rating,
-        reason: reason || null,
+        reason: reason || '',
         timestamp: Timestamp.now(),
       });
       setFeedbackGiven(rating);
@@ -244,7 +252,7 @@ export default function TranslateTab({
           onChange={(e) => setInputText(e.target.value.slice(0, 2000))}
           placeholder={t.inputPlaceholder}
           maxLength={2000}
-          className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-40 sm:pr-48 text-lg sm:text-xl shadow-xl shadow-gray-200/50 outline-none transition-all placeholder:text-gray-300"
+          className="w-full bg-white border-2 border-transparent focus:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-44 sm:pr-48 md:pr-52 text-lg sm:text-xl shadow-xl shadow-gray-200/50 outline-none transition-all placeholder:text-gray-300"
         />
         {/* Character count — only when typing long text */}
         {inputText.length > 200 && (
@@ -275,7 +283,7 @@ export default function TranslateTab({
             type="button"
             onClick={() => photoInputRef.current?.click()}
             disabled={isExtractingPhoto}
-            className="p-3 sm:p-4 rounded-2xl transition-all hover:scale-105 active:scale-95 shadow-lg cursor-pointer bg-blue-100 text-blue-600 shadow-blue-100"
+            className="p-3 sm:p-4 rounded-2xl transition-all hover:scale-105 active:scale-95 shadow-lg cursor-pointer bg-blue-100 text-blue-600 shadow-blue-100 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
             title={uiLang === 'zh' ? '拍照翻译' : 'Photo Translate'}
             aria-label={uiLang === 'zh' ? '拍照翻译' : 'Photo Translate'}
           >
@@ -321,7 +329,7 @@ export default function TranslateTab({
           <button
             type="submit"
             disabled={isTranslating || !inputText.trim()}
-            className="bg-blue-600 text-white p-3 sm:p-4 rounded-2xl disabled:opacity-50 transition-all hover:scale-105 active:scale-95 shadow-lg shadow-blue-200"
+            className="bg-blue-600 text-white p-3 sm:p-4 rounded-2xl disabled:opacity-50 transition-all hover:scale-105 active:scale-95 shadow-lg shadow-blue-200 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
             aria-label={uiLang === 'zh' ? '翻译' : 'Translate'}
           >
             {isTranslating ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" /> : <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />}
@@ -426,6 +434,11 @@ export default function TranslateTab({
           </div>
         </div>
       )}
+
+      {/* Screen reader announcement for translation result */}
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {translationResult ? (uiLang === 'zh' ? '翻译完成' : 'Translation complete') : ''}
+      </div>
 
       {/* Translation Result */}
       {translationResult && (() => {
@@ -541,7 +554,7 @@ export default function TranslateTab({
                     onClick={() => handleFeedback('up')}
                     disabled={!!feedbackGiven || isSubmittingFeedback}
                     className={cn(
-                      "p-1.5 rounded-lg transition-all",
+                      "p-1.5 rounded-lg transition-all focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1",
                       feedbackGiven === 'up' ? "text-green-600 bg-green-50" : "text-gray-300 hover:text-green-500 hover:bg-green-50",
                       feedbackGiven && feedbackGiven !== 'up' && "opacity-30"
                     )}
@@ -553,7 +566,7 @@ export default function TranslateTab({
                     onClick={() => handleFeedback('down')}
                     disabled={!!feedbackGiven || isSubmittingFeedback}
                     className={cn(
-                      "p-1.5 rounded-lg transition-all",
+                      "p-1.5 rounded-lg transition-all focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1",
                       feedbackGiven === 'down' ? "text-red-500 bg-red-50" : "text-gray-300 hover:text-red-400 hover:bg-red-50",
                       feedbackGiven && feedbackGiven !== 'down' && "opacity-30"
                     )}
