@@ -78,7 +78,19 @@ autoplan 跑 CEO/Design/Eng 审查时，每个 phase 可以请求截图。请求
 
 设备：Desktop 1280x800、iPad 768x1024、iPhone 375x812
 
-**Design Review 阶段：** 每张截图对照 7 个维度打分，视觉问题优先级 > 代码问题。
+**所有 review phase 都必须请求截图，不只是 Design Review：**
+- **CEO Review：** 审查产品定位时，截首页看用户第一印象；审查用户旅程时，截每个步骤的真实画面
+- **Design Review：** 每张截图对照 7 个维度打分，视觉问题优先级 > 代码问题
+- **Eng Review：** 审查响应式/性能/错误处理时，截移动端看实际渲染效果
+- **QA：** 交互测试每个步骤都截图作为证据
+
+**截图请求格式：** 任何 review subagent 需要看 UI 时，输出：
+```
+SCREENSHOT_REQUEST: {page}, {device}, {state}
+例: SCREENSHOT_REQUEST: 翻译页, iPhone, 有翻译结果
+```
+主 agent 用 preview 工具截图后返回给 subagent。
+
 **改完 UI 后验证（不可跳过）：** preview_screenshot + preview_resize mobile + preview_snapshot a11y。
 
 ### 测试用中文输入（强制）
