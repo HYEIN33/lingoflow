@@ -33,14 +33,17 @@ export function SortableTab({ tab, isActive, onSelect, isPro }: SortableTabProps
       <button
         onClick={onSelect}
         className={cn(
-          "w-full py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap px-3 select-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2",
+          "w-full py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all flex flex-col items-center justify-center gap-0.5 whitespace-nowrap px-3 select-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 relative",
           isActive
-            ? "bg-white text-rose-500 shadow-[var(--shadow-card)] border border-white/80"
-            : "text-stone-400 hover:text-stone-600 hover:bg-white/30"
+            ? "text-[#1D1D1F] bg-white/70 shadow-[var(--shadow-glass)]"
+            : "text-[#86868B] hover:text-[#1D1D1F] hover:bg-white/30"
         )}
       >
-        <tab.icon className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4", isActive && "text-rose-400")} />
-        {tab.label} {tab.count !== undefined && <span className="hidden xs:inline text-[10px] opacity-60">({tab.count})</span>}
+        <span className="flex items-center gap-1.5">
+          <tab.icon className={cn("w-3.5 h-3.5 sm:w-4 sm:h-4", isActive && "text-violet-500")} />
+          {tab.label}
+        </span>
+        {isActive && <span className="w-1 h-1 rounded-full bg-gradient-to-r from-violet-500 to-pink-500" />}
       </button>
     </div>
   );

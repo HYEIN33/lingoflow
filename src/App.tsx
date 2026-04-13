@@ -462,17 +462,17 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen pb-24 relative overflow-hidden" style={{ background: 'var(--color-bg)' }}>
-      {/* Decorative warm blobs */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-rose-200/40 rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-amber-200/30 rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute top-[30%] right-[-5%] w-[25%] h-[25%] bg-pink-200/25 rounded-full blur-3xl pointer-events-none"></div>
+    <div className="min-h-screen pb-24 relative overflow-hidden" style={{ background: '#FAFAFA' }}>
+      {/* Apple-style drifting color blobs — ultra subtle */}
+      <div className="absolute top-[-8%] left-[-8%] w-[35%] h-[35%] rounded-full pointer-events-none" style={{ background: 'rgba(233, 213, 255, 0.2)', filter: 'blur(80px)' }} />
+      <div className="absolute top-[40%] right-[-5%] w-[30%] h-[30%] rounded-full pointer-events-none" style={{ background: 'rgba(167, 243, 208, 0.15)', filter: 'blur(80px)' }} />
+      <div className="absolute bottom-[-5%] left-[20%] w-[28%] h-[28%] rounded-full pointer-events-none" style={{ background: 'rgba(254, 205, 211, 0.12)', filter: 'blur(80px)' }} />
 
-      {/* Header — liquid glass warm */}
-      <header className="liquid-glass-heavy border-b border-white/40 sticky top-0 z-10">
+      {/* Header — Apple glass bar */}
+      <header className="glass-heavy border-b sticky top-0 z-10" style={{ borderColor: 'rgba(0,0,0,0.04)' }}>
         <div className="max-w-2xl lg:max-w-5xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 bg-gradient-to-br from-rose-400 to-pink-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-rose-400/25">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'var(--gradient-accent)', boxShadow: 'var(--shadow-accent)' }}>
               <Languages className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
             </div>
             <span className="text-lg sm:text-xl font-extrabold text-gray-900 tracking-tight truncate">{t.appName}</span>
@@ -483,7 +483,7 @@ export default function App() {
               v{APP_VERSION}
             </span>
             {userProfile?.isPro && (
-              <span className="ml-1 px-2 py-0.5 bg-gradient-to-r from-rose-400 to-pink-500 text-white text-[9px] font-black rounded-full shadow-sm shadow-rose-300/30 uppercase tracking-wider">
+              <span className="ml-1 px-2 py-0.5 text-white text-[9px] font-black rounded-full uppercase tracking-wider" style={{ background: 'var(--gradient-accent)', boxShadow: 'var(--shadow-accent)' }}>
                 {t.proBadge}
               </span>
             )}
@@ -499,7 +499,7 @@ export default function App() {
               aria-label={uiLang === 'zh' ? '排行榜' : 'Leaderboard'}
               className={cn(
                 "p-2 rounded-xl transition-all",
-                activeTab === 'leaderboard' ? "bg-rose-50 text-rose-500 shadow-sm" : "hover:bg-white/50 text-gray-400 hover:text-rose-400"
+                activeTab === 'leaderboard' ? "bg-violet-50/50 text-violet-500" : "hover:bg-black/[0.03] text-[#86868B] hover:text-[#1D1D1F]"
               )}
               title={uiLang === 'zh' ? '排行榜' : 'Leaderboard'}
             >
@@ -510,7 +510,7 @@ export default function App() {
               aria-label={uiLang === 'zh' ? '我的' : 'Profile'}
               className={cn(
                 "p-2 rounded-xl transition-all",
-                activeTab === 'profile' ? "bg-pink-50 text-pink-500 shadow-sm" : "hover:bg-white/50 text-gray-400 hover:text-pink-400"
+                activeTab === 'profile' ? "bg-violet-50/50 text-violet-500" : "hover:bg-black/[0.03] text-[#86868B] hover:text-[#1D1D1F]"
               )}
               title={uiLang === 'zh' ? '我的' : 'Profile'}
             >
@@ -554,7 +554,7 @@ export default function App() {
             items={tabs.map((t) => t.id)}
             strategy={horizontalListSortingStrategy}
           >
-            <div className="flex liquid-glass p-1 rounded-2xl mb-6 sm:mb-8 overflow-x-auto no-scrollbar sm:[mask-image:none] [mask-image:linear-gradient(to_right,black_90%,transparent)] [-webkit-mask-image:linear-gradient(to_right,black_90%,transparent)]">
+            <div className="flex glass p-1.5 rounded-2xl mb-6 sm:mb-8 overflow-x-auto no-scrollbar sm:[mask-image:none] [mask-image:linear-gradient(to_right,black_90%,transparent)] [-webkit-mask-image:linear-gradient(to_right,black_90%,transparent)]">
               {tabs.map((tab) => (
                 <SortableTab
                   key={tab.id}

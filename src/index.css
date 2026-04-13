@@ -1,187 +1,209 @@
 @import "tailwindcss";
 
-/* ========== MemeFlow Design Tokens — Style C: Warm + Liquid Glass ========== */
+/* ========== MemeFlow — Apple Liquid Glass Design System ========== */
 
 :root {
-  /* Brand — warm coral + cream */
-  --color-primary: #FF6B6B;
-  --color-primary-dark: #E85D5D;
-  --color-primary-light: #FFF1F0;
-  --color-accent: #EC4899;
-  --color-cta: #FF6B6B;
-  --color-success: #34D399;
-  --color-warning: #FBBF24;
-  --color-destructive: #EF4444;
-  --color-info: #60A5FA;
+  /* Text hierarchy — Apple-style grays */
+  --color-text-primary: #1D1D1F;
+  --color-text-secondary: #86868B;
+  --color-text-tertiary: #C7C7CC;
+  --color-text-quaternary: #D1D1D6;
 
-  /* Surfaces — cream warmth */
-  --color-bg: #FFFBF0;
-  --color-bg-warm: #FFF8ED;
-  --color-surface: #FFFFFF;
-  --color-text: #44403C;
-  --color-text-secondary: #78716C;
-  --color-text-muted: #A8A29E;
-  --color-border: rgba(120, 113, 108, 0.12);
+  /* Surfaces */
+  --color-bg: #FAFAFA;
+  --color-divider: #F5F5F7;
 
-  /* Liquid Glass */
-  --glass-bg: rgba(255, 255, 255, 0.55);
-  --glass-bg-heavy: rgba(255, 255, 255, 0.72);
-  --glass-border: rgba(255, 255, 255, 0.65);
-  --glass-blur: 20px;
+  /* Single accent — violet to rose gradient */
+  --gradient-accent: linear-gradient(135deg, #8B5CF6, #EC4899);
+  --gradient-accent-subtle: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(236,72,153,0.08));
+
+  /* Liquid Glass tiers */
+  --glass-1: rgba(255, 255, 255, 0.55);
+  --glass-2: rgba(255, 255, 255, 0.65);
+  --glass-3: rgba(255, 255, 255, 0.75);
+  --glass-blur-sm: 16px;
+  --glass-blur-md: 24px;
+  --glass-blur-lg: 32px;
   --glass-saturate: 1.8;
+  --glass-border: rgba(255, 255, 255, 0.7);
 
-  /* Shadows — warm tinted */
-  --shadow-sm: 0 1px 3px rgba(255, 107, 107, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-card: 0 4px 20px -4px rgba(255, 107, 107, 0.1), 0 2px 8px -2px rgba(0, 0, 0, 0.05);
-  --shadow-card-hover: 0 8px 32px -4px rgba(255, 107, 107, 0.15), 0 4px 12px -2px rgba(0, 0, 0, 0.06);
-  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  --shadow-button: 0 4px 14px -2px rgba(255, 107, 107, 0.4);
-
-  /* Radius */
-  --radius-card: 1.5rem;
-  --radius-button: 1rem;
+  /* Shadows — ultra subtle */
+  --shadow-glass: 0 2px 16px rgba(0, 0, 0, 0.04), 0 0 0 0.5px rgba(0, 0, 0, 0.02);
+  --shadow-glass-hover: 0 4px 24px rgba(0, 0, 0, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.03);
+  --shadow-accent: 0 4px 16px -4px rgba(139, 92, 246, 0.25);
 
   /* Typography */
-  --font-display: 'Outfit', 'Noto Sans SC', system-ui, sans-serif;
-  --font-body: 'Outfit', 'Noto Sans SC', system-ui, sans-serif;
+  --font-display: 'Outfit', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+
+  /* Radius */
+  --radius-glass: 24px;
+  --radius-button: 16px;
+  --radius-pill: 999px;
+
+  /* Apple easing */
+  --ease-apple: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* ========== Global ========== */
+/* ========== Base ========== */
 
 * { font-family: var(--font-display); }
 
 body {
   font-family: var(--font-display);
   background: var(--color-bg);
-  color: var(--color-text);
+  color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 html { scroll-behavior: smooth; }
 
 ::selection {
-  background: rgba(255, 107, 107, 0.18);
+  background: rgba(139, 92, 246, 0.12);
   color: inherit;
 }
 
-/* Scrollbar — thin warm */
-::-webkit-scrollbar { width: 5px; height: 5px; }
+/* Scrollbar — nearly invisible */
+::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255, 107, 107, 0.2); border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 107, 107, 0.35); }
+::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.08); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.15); }
 
-/* ========== Liquid Glass ========== */
+/* ========== Liquid Glass Layers ========== */
 
-.liquid-glass {
-  background: var(--glass-bg);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+/* Light glass — background panels, tab bar */
+.glass {
+  background: var(--glass-1);
+  backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-saturate));
   border: 1px solid var(--glass-border);
   box-shadow: var(--shadow-glass);
 }
 
-.liquid-glass-heavy {
-  background: var(--glass-bg-heavy);
-  backdrop-filter: blur(24px) saturate(2);
-  -webkit-backdrop-filter: blur(24px) saturate(2);
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  box-shadow: var(--shadow-glass), inset 0 0 0 0.5px rgba(255, 255, 255, 0.3);
+/* Medium glass — content cards */
+.glass-card {
+  background: var(--glass-2);
+  backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-glass);
+  border-radius: var(--radius-glass);
+  transition: box-shadow 0.4s var(--ease-apple), transform 0.4s var(--ease-apple);
+}
+.glass-card:hover {
+  box-shadow: var(--shadow-glass-hover);
 }
 
-/* Glass shimmer — subtle refraction effect */
-.liquid-glass-shimmer {
-  position: relative;
-  overflow: hidden;
+/* Heavy glass — header, elevated panels */
+.glass-heavy {
+  background: var(--glass-3);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(2);
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(2);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: var(--shadow-glass);
 }
-.liquid-glass-shimmer::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  left: -50%;
-  width: 200%;
-  height: 200%;
-  background: conic-gradient(
-    from 0deg at 50% 50%,
-    transparent 0deg,
-    rgba(255, 255, 255, 0.08) 60deg,
-    transparent 120deg,
-    rgba(255, 255, 255, 0.05) 180deg,
-    transparent 240deg,
-    rgba(255, 255, 255, 0.08) 300deg,
-    transparent 360deg
-  );
-  animation: glass-refract 8s linear infinite;
-  pointer-events: none;
-  z-index: 1;
-}
-@keyframes glass-refract {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+
+/* Recessed glass — secondary info, quotes */
+.glass-recessed {
+  background: rgba(245, 245, 247, 0.5);
+  backdrop-filter: blur(var(--glass-blur-sm));
+  -webkit-backdrop-filter: blur(var(--glass-blur-sm));
+  border: 1px solid rgba(0, 0, 0, 0.03);
+  border-radius: var(--radius-glass);
 }
 
 /* Legacy compat */
-.glass-card { composes: liquid-glass; }
+.liquid-glass { composes: glass; }
+.liquid-glass-heavy { composes: glass-heavy; }
+.warm-card {
+  background: var(--glass-2);
+  backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-glass);
+  border-radius: var(--radius-glass);
+  transition: box-shadow 0.4s var(--ease-apple);
+}
+.warm-card:hover { box-shadow: var(--shadow-glass-hover); }
 
-/* ========== Utilities ========== */
+/* ========== Gradient Accent ========== */
 
 .gradient-text {
-  background: linear-gradient(135deg, #FF6B6B, #EC4899);
+  background: var(--gradient-accent);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-.gradient-text-warm {
-  background: linear-gradient(135deg, #FF6B6B, #F59E0B);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+.gradient-border {
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  position: relative;
+}
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: var(--gradient-accent);
+  opacity: 0.3;
+  z-index: -1;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+  padding: 1px;
 }
 
-/* Warm card */
-.warm-card {
-  background: var(--color-surface);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  border: 1px solid var(--color-border);
-  transition: box-shadow 0.3s ease, transform 0.3s ease;
+/* Gradient CTA button */
+.btn-accent {
+  background: var(--gradient-accent);
+  color: white;
+  font-weight: 600;
+  border-radius: var(--radius-button);
+  box-shadow: var(--shadow-accent);
+  transition: opacity 0.3s var(--ease-apple), transform 0.3s var(--ease-apple);
 }
-.warm-card:hover {
-  box-shadow: var(--shadow-card-hover);
-  transform: translateY(-1px);
-}
+.btn-accent:hover { opacity: 0.92; }
+.btn-accent:active { transform: scale(0.97); }
 
-/* Formality slider (warm) */
+/* ========== Formality Slider ========== */
+
 .formality-slider {
-  background: linear-gradient(90deg, #FEE2E2 0%, #FECACA 100%);
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: linear-gradient(90deg, var(--color-divider) 0%, #E5E5EA 100%);
+  border-radius: 999px;
+  outline: none;
 }
 .formality-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #FF6B6B, #EC4899);
-  border: 2.5px solid white;
-  box-shadow: 0 2px 10px rgba(255, 107, 107, 0.4);
+  background: var(--gradient-accent);
+  border: 3px solid white;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
   cursor: pointer;
-  transition: transform 0.15s ease;
+  transition: transform 0.2s var(--ease-apple);
 }
 .formality-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
+  transform: scale(1.12);
 }
 .formality-slider::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #FF6B6B, #EC4899);
-  border: 2.5px solid white;
-  box-shadow: 0 2px 10px rgba(255, 107, 107, 0.4);
+  background: var(--gradient-accent);
+  border: 3px solid white;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
   cursor: pointer;
 }
 .formality-slider::-moz-range-track {
-  background: linear-gradient(90deg, #FEE2E2, #FECACA);
-  height: 8px;
+  background: linear-gradient(90deg, var(--color-divider), #E5E5EA);
+  height: 6px;
   border-radius: 999px;
 }

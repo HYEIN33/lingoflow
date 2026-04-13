@@ -33,7 +33,7 @@ export default function GrammarPage(props: GrammarPageProps) {
           onChange={(e) => setGrammarInput(e.target.value)}
           placeholder={t.grammarPlaceholder}
           rows={4}
-          className="w-full glass-card border-2 border-transparent focus:border-rose-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-28 sm:pr-32 text-lg shadow-[var(--shadow-card)] focus:shadow-[var(--shadow-card-hover)] outline-none transition-all placeholder:text-gray-300 resize-none"
+          className="w-full glass-card border-2 border-transparent focus:border-violet-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-28 sm:pr-32 text-lg shadow-[var(--shadow-card)] focus:shadow-[var(--shadow-card-hover)] outline-none transition-all placeholder:text-gray-300 resize-none"
         />
         {grammarInput && (
           <button
@@ -59,7 +59,7 @@ export default function GrammarPage(props: GrammarPageProps) {
           <button
             type="submit"
             disabled={isCheckingGrammar || !grammarInput.trim()}
-            className="bg-rose-500 text-white p-3 sm:p-4 rounded-2xl disabled:opacity-50 transition-all hover:scale-105 active:scale-95 shadow-lg shadow-rose-200"
+            className="bg-violet-500 text-white p-3 sm:p-4 rounded-2xl disabled:opacity-50 transition-all hover:scale-105 active:scale-95 shadow-lg shadow-violet-200"
           >
             {isCheckingGrammar ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" /> : <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />}
           </button>
@@ -79,7 +79,7 @@ export default function GrammarPage(props: GrammarPageProps) {
               <button
                 key={ex}
                 onClick={() => setGrammarInput(ex)}
-                className="px-4 py-2 glass-card hover:bg-rose-50 text-gray-500 hover:text-rose-500 text-xs font-medium rounded-xl transition-all hover:scale-[1.03] active:scale-[0.97] hover:shadow-sm"
+                className="px-4 py-2 glass-card hover:bg-violet-50 text-gray-500 hover:text-violet-500 text-xs font-medium rounded-xl transition-all hover:scale-[1.03] active:scale-[0.97] hover:shadow-sm"
               >
                 {ex}
               </button>
@@ -119,7 +119,7 @@ export default function GrammarPage(props: GrammarPageProps) {
                 <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
                   {t.correctedVersion}
                 </h4>
-                <div className="bg-rose-50 p-6 rounded-2xl border border-rose-100">
+                <div className="bg-violet-50 p-6 rounded-2xl border border-violet-100">
                   <p className="text-blue-900 text-lg font-bold leading-relaxed">
                     {grammarResult.corrected}
                   </p>
