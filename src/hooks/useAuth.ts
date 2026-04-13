@@ -97,6 +97,18 @@ export function useAuth() {
               setUserProfile(data);
             }
           }
+
+          // Overlay local Pro cache on top of the Firestore profile.
+          // isPro is rules-whitelisted (not client-writable), so the
+          // Firestore value always reads false until a Cloud Function
+          // activates it. Until that Cloud Function exists, local
+          // activation via PaymentScreen writes memeflow_isPro and we
+          // honor it on the client.
+          try {
+            if (localStorage.getItem('memeflow_isPro') === 'true') {
+              setUserProfile((prev) => prev ? { ...prev, isPro: true } : prev);
+            }
+          } catch {}
         } catch (error) {
           console.error('Failed to sync user profile:', error);
           Sentry.captureException(error, {

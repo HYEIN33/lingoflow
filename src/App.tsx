@@ -235,7 +235,8 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
 
   const handleGuestLogin = async () => {
     setError('');
-    if (guestCode !== '8888') {
+    // Trim whitespace — previously "8888 " failed silently.
+    if (guestCode.trim() !== '8888') {
       setError(uiLang === 'zh' ? '邀请码错误' : 'Invalid invite code');
       return;
     }
@@ -245,7 +246,22 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
       const { auth } = await import('./firebase');
       await signInAnonymously(auth);
     } catch (e: any) {
-      setError(e.message || 'Login failed');
+      // Give the user an actionable message rather than raw Firebase codes.
+      const code = e?.code || '';
+      const msg = e?.message || 'Login failed';
+      let friendly: string;
+      if (code === 'auth/operation-not-allowed' || msg.includes('operation-not-allowed')) {
+        friendly = uiLang === 'zh'
+          ? '内测登录未启用,请联系管理员在 Firebase Console 开启 Anonymous provider'
+          : 'Anonymous sign-in is disabled. Ask the admin to enable it in Firebase Console.';
+      } else if (code === 'auth/admin-restricted-operation') {
+        friendly = uiLang === 'zh' ? '内测登录被管理员限制' : 'Sign-in restricted by admin';
+      } else if (code === 'auth/network-request-failed') {
+        friendly = uiLang === 'zh' ? '网络连接失败,请检查网络' : 'Network error, check connection';
+      } else {
+        friendly = uiLang === 'zh' ? `登录失败: ${msg}` : `Login failed: ${msg}`;
+      }
+      setError(friendly);
     }
     setLoading(false);
   };
@@ -914,18 +930,17 @@ export default function App() {
               onClose={() => setShowPayment(false)}
               onSuccess={async () => {
                 if (user) {
-                  try {
-                    await updateDoc(doc(db, 'users', user.uid), { isPro: true });
-                  } catch (e) {
-                    console.error('Failed to update Pro:', e);
-                    // Critical: Pro purchased but not persisted server-side.
-                    // Tag as P1 so this stands out in Sentry even among
-                    // other firestore writes. Local cache below is the
-                    // safety net, but server truth must be reconciled.
-                    Sentry.captureException(e, { tags: { component: 'App', op: 'firestore.write', field: 'isPro', severity: 'P1' } });
-                    toast.error(uiLang === 'zh' ? 'Pro 已激活但同步失败,请联系支持' : 'Pro activated but sync failed, contact support');
-                  }
-                  // Cache Pro status locally in case DB write fails (quota etc)
+                  // isPro is guarded by firestore.rules isUserSelfUpdate
+                  // whitelist on purpose — clients must not be able to
+                  // self-grant Pro. Until we ship a server-side Pro
+                  // activation Cloud Function, the source of truth for
+                  // Pro status on the client is localStorage, overlaid
+                  // by useAuth on top of the Firestore profile.
+                  //
+                  // This means Pro is *effectively* unverified on the
+                  // server side. Any backend code that needs to trust
+                  // Pro status (e.g. a premium API route) must verify
+                  // it server-side, not read it from the client.
                   localStorage.setItem('memeflow_isPro', 'true');
                 }
                 window.location.reload();
