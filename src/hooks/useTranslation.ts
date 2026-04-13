@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import * as Sentry from '@sentry/react';
 import { toast } from 'sonner';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -13,6 +13,9 @@ import {
 } from '../services/ai';
 import { Timestamp, addDoc, collection } from 'firebase/firestore';
 import { markOnboardingStep } from '../components/OnboardingChecklist';
+import { trackEvent } from '../utils/analytics';
+
+export type TranslateScene = 'chat' | 'business' | 'writing';
 
 interface UseTranslationParams {
   user: User | null;
@@ -40,10 +43,31 @@ export function useTranslation({
   const [showDetails, setShowDetails] = useState(false);
   const [formalityLevel, setFormalityLevel] = useState<number>(50);
   const [isSaving, setIsSaving] = useState(false);
+  const [scene, setScene] = useState<TranslateScene>('chat');
+
+  // Auto-translate state
+  const [autoTranslateEnabled, setAutoTranslateEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('memeflow_auto_translate') !== 'false';
+    } catch { return true; }
+  });
+
   // Ref-based guard — survives async gap between parallel clicks, which setIsTranslating cannot
   const inFlightRef = useRef(false);
+  // AbortController for cancelling in-flight auto-translate requests
+  const abortControllerRef = useRef<AbortController | null>(null);
+  // Track last translated text to skip duplicate requests
+  const lastTranslatedRef = useRef<string>('');
+  // Auto-translate rate limiter: max 6 per minute
+  const autoCountRef = useRef<number[]>([]);
 
-  const handleTranslate = async (e?: React.FormEvent, overrideText?: string) => {
+  const toggleAutoTranslate = useCallback((enabled: boolean) => {
+    setAutoTranslateEnabled(enabled);
+    try { localStorage.setItem('memeflow_auto_translate', String(enabled)); } catch {}
+    trackEvent('auto_translate_toggle', { enabled });
+  }, []);
+
+  const handleTranslate = async (e?: React.FormEvent, overrideText?: string, isAuto = false) => {
     e?.preventDefault();
     const textToTranslate = overrideText || inputText;
     if (!textToTranslate.trim()) return;
@@ -58,6 +82,15 @@ export function useTranslation({
       return;
     }
 
+    // Cancel any in-flight auto-translate request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     inFlightRef.current = true;
     setIsTranslating(true);
     setTranslationResult(null);
@@ -65,10 +98,26 @@ export function useTranslation({
     setSelectedUsageIndex(0);
     setSlangInsights([]);
     markOnboardingStep('translate_word');
+
+    const startTime = Date.now();
+    trackEvent('translate_submit', {
+      method: isAuto ? 'auto' : 'manual',
+      char_count: textToTranslate.length,
+      scene,
+    });
+
     try {
-      const result = await translateText(textToTranslate, userProfile?.isPro ? formalityLevel : undefined);
+      const result = await translateText(
+        textToTranslate,
+        userProfile?.isPro ? formalityLevel : undefined,
+        scene,
+        controller.signal,
+      );
       setTranslationResult(result);
       setSelectedUsageIndex(0);
+      lastTranslatedRef.current = textToTranslate;
+
+      trackEvent('translate_result', { success: true, duration_ms: Date.now() - startTime });
 
       // Fetch slang insights if terms are found
       if (result.slangTerms && result.slangTerms.length > 0) {
@@ -97,14 +146,18 @@ export function useTranslation({
         setUserProfile({ ...userProfile, translationCount: nextCount });
       }
     } catch (error: any) {
+      // Ignore AbortError — user typed new input, this is expected
+      if (error.name === 'AbortError') return;
+
       console.error(error);
+      trackEvent('translate_result', { success: false, duration_ms: Date.now() - startTime });
+
       const raw = error.message || '';
-      // Show friendly message, never raw JSON/API errors
       let message: string;
       if (raw.includes('location') || raw.includes('PRECONDITION')) {
         message = uiLang === 'zh' ? '翻译服务在当前地区不可用，请使用 VPN 或稍后重试' : 'Translation service unavailable in your region';
       } else if (raw.includes('不可用') || raw.includes('繁忙')) {
-        message = raw; // Already friendly
+        message = raw;
       } else {
         message = uiLang === 'zh' ? '翻译失败，请重试' : 'Translation failed. Please try again.';
       }
@@ -114,6 +167,27 @@ export function useTranslation({
       inFlightRef.current = false;
     }
   };
+
+  // Auto-translate: debounced effect on inputText changes
+  useEffect(() => {
+    if (!autoTranslateEnabled) return;
+    const text = inputText.trim();
+    // Skip: empty, too short, too long, same as last, or already translating
+    if (text.length < 2 || text.length > 200 || text === lastTranslatedRef.current) return;
+
+    // Rate limit: max 6 auto-translates per minute
+    const now = Date.now();
+    autoCountRef.current = autoCountRef.current.filter(t => now - t < 60000);
+    if (autoCountRef.current.length >= 6) return;
+
+    const timer = setTimeout(() => {
+      autoCountRef.current.push(Date.now());
+      handleTranslate(undefined, text, true);
+    }, 500);
+
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputText, autoTranslateEnabled]);
 
   const handleSaveWord = async (styleTag: 'authentic' | 'academic' | 'standard' = 'standard') => {
     if (!user || !translationResult || isSaving) return;
@@ -125,7 +199,6 @@ export function useTranslation({
 
     setIsSaving(true);
     markOnboardingStep('save_wordbook');
-    const path = 'words';
     try {
       const wordData: any = {
         original: translationResult.original,
@@ -142,6 +215,7 @@ export function useTranslation({
 
       await addDoc(collection(db, 'words'), wordData);
 
+      trackEvent('word_save', { style_tag: styleTag });
       toast.success(uiLang === 'zh' ? '已保存到单词本 ✓' : 'Saved to wordbook ✓');
       setTranslationResult(null);
       setInputText('');
@@ -169,6 +243,10 @@ export function useTranslation({
     formalityLevel,
     setFormalityLevel,
     isSaving,
+    scene,
+    setScene,
+    autoTranslateEnabled,
+    toggleAutoTranslate,
     handleTranslate,
     handleSaveWord,
   };

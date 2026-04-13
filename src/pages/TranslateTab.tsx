@@ -17,7 +17,7 @@
  *   - Pro upsell card (non-Pro users only)
  *   - Back button for synonym/antonym navigation
  */
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Plus,
   BookOpen,
@@ -30,12 +30,24 @@ import {
   MicOff,
   MessageSquare,
   Zap,
+  ZapOff,
+  Bookmark,
+  BookmarkCheck,
+  ThumbsUp,
+  ThumbsDown,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TranslationResult, SlangExplanationResult } from '../services/ai';
 import { cn } from '../lib/utils';
 import { Language, translations } from '../i18n';
-import { UserProfile } from '../App';
+import { UserProfile, SavedWord } from '../App';
+import { TranslateScene } from '../hooks/useTranslation';
+import { User } from 'firebase/auth';
+import { db } from '../firebase';
+import { collection, addDoc, Timestamp } from 'firebase/firestore';
+import * as Sentry from '@sentry/react';
+import { toast } from 'sonner';
+import { trackEvent } from '../utils/analytics';
 
 interface SearchHistoryItem {
   text: string;
@@ -99,6 +111,18 @@ interface TranslateTabProps {
   onOpenPaywall: (trigger: string) => void;
   onUpgrade: () => void;
   onViewSlangEntry: (term: string) => void;
+
+  // Scene switcher
+  scene: TranslateScene;
+  setScene: (s: TranslateScene) => void;
+
+  // Auto-translate toggle
+  autoTranslateEnabled: boolean;
+  toggleAutoTranslate: (enabled: boolean) => void;
+
+  // For bookmark dedup check
+  savedWords: SavedWord[];
+  user: User | null;
 }
 
 export default function TranslateTab({
@@ -135,9 +159,58 @@ export default function TranslateTab({
   onOpenPaywall,
   onUpgrade,
   onViewSlangEntry,
+  scene,
+  setScene,
+  autoTranslateEnabled,
+  toggleAutoTranslate,
+  savedWords,
+  user,
 }: TranslateTabProps) {
   const t = translations[uiLang];
   const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // Feedback state: track which translation the user has rated
+  const [feedbackGiven, setFeedbackGiven] = useState<'up' | 'down' | null>(null);
+  const [feedbackReason, setFeedbackReason] = useState('');
+  const [showFeedbackReason, setShowFeedbackReason] = useState(false);
+
+  // Check if current translation is already saved
+  const isAlreadySaved = (styleTag: string) => {
+    if (!translationResult) return false;
+    return savedWords.some(w => w.original === translationResult.original && w.styleTag === styleTag);
+  };
+
+  const handleFeedback = async (rating: 'up' | 'down', reason?: string) => {
+    if (!user || !translationResult || feedbackGiven) return;
+    setFeedbackGiven(rating);
+    if (rating === 'down') {
+      setShowFeedbackReason(true);
+      return; // wait for reason submission
+    }
+    await submitFeedback(rating);
+  };
+
+  const submitFeedback = async (rating: 'up' | 'down', reason?: string) => {
+    if (!user || !translationResult) return;
+    try {
+      await addDoc(collection(db, 'feedback'), {
+        uid: user.uid,
+        query: translationResult.original,
+        result: translationResult.authenticTranslation || translationResult.academicTranslation || '',
+        scene,
+        rating,
+        reason: reason || null,
+        timestamp: Timestamp.now(),
+      });
+      trackEvent('feedback_submit', { rating, has_reason: !!reason });
+      toast.success(uiLang === 'zh' ? '感谢反馈！' : 'Thanks for your feedback!');
+      setShowFeedbackReason(false);
+    } catch (e: any) {
+      console.error('Feedback write failed:', e);
+      Sentry.captureException(e, { tags: { component: 'TranslateTab', op: 'feedback.write' } });
+      toast.error(uiLang === 'zh' ? '反馈提交失败' : 'Feedback failed');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -186,6 +259,19 @@ export default function TranslateTab({
             {isExtractingPhoto
               ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" />
               : <svg className="w-5 h-5 sm:w-6 sm:h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>}
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleAutoTranslate(!autoTranslateEnabled)}
+            className={cn(
+              "p-2 rounded-xl transition-all cursor-pointer",
+              autoTranslateEnabled ? "text-amber-500 hover:text-amber-600" : "text-gray-300 hover:text-gray-400"
+            )}
+            title={autoTranslateEnabled
+              ? (uiLang === 'zh' ? '输入即译：开' : 'Auto-translate: On')
+              : (uiLang === 'zh' ? '输入即译：关' : 'Auto-translate: Off')}
+          >
+            {autoTranslateEnabled ? <Zap className="w-4 h-4 fill-current" /> : <ZapOff className="w-4 h-4" />}
           </button>
           <button
             type="button"
@@ -238,6 +324,29 @@ export default function TranslateTab({
           disabled={!userProfile?.isPro}
           className="w-full h-2 bg-gray-200 rounded-lg appearance-none accent-blue-600"
         />
+      </div>
+
+      {/* Scene Switcher — free for all users */}
+      <div className="flex items-center gap-2">
+        {([
+          { key: 'chat' as const, icon: '💬', zh: '聊天', en: 'Chat' },
+          { key: 'business' as const, icon: '💼', zh: '商务', en: 'Business' },
+          { key: 'writing' as const, icon: '✍️', zh: '写作', en: 'Writing' },
+        ]).map(({ key, icon, zh, en }) => (
+          <button
+            key={key}
+            onClick={() => { setScene(key); trackEvent('scene_switch', { scene: key }); }}
+            className={cn(
+              "flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all border-2",
+              scene === key
+                ? "bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-100"
+                : "bg-white border-gray-100 text-gray-400 hover:border-blue-200 hover:text-blue-400"
+            )}
+          >
+            <span>{icon}</span>
+            {uiLang === 'zh' ? zh : en}
+          </button>
+        ))}
       </div>
 
       {/* Search History (only before a result exists) */}
@@ -323,14 +432,19 @@ export default function TranslateTab({
                         <Volume2 className="w-5 h-5" />
                         {isSentence && <span>{uiLang === 'zh' ? '朗读' : 'Listen'}</span>}
                       </button>
-                      <button
-                        onClick={() => onSaveWord('authentic')}
-                        disabled={isSaving}
-                        className="mt-4 flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors"
-                      >
-                        <Plus className="w-3 h-3" />
-                        {uiLang === 'zh' ? '存入地道表达' : 'Save as Authentic'}
-                      </button>
+                      <div className="mt-4 flex items-center gap-3">
+                        <button
+                          onClick={() => onSaveWord('authentic')}
+                          disabled={isSaving || isAlreadySaved('authentic')}
+                          className="flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors disabled:opacity-50"
+                          title={uiLang === 'zh' ? '收藏' : 'Save'}
+                        >
+                          {isAlreadySaved('authentic')
+                            ? <BookmarkCheck className="w-4 h-4 fill-current" />
+                            : <Bookmark className="w-4 h-4" />}
+                          {uiLang === 'zh' ? (isAlreadySaved('authentic') ? '已收藏' : '收藏') : (isAlreadySaved('authentic') ? 'Saved' : 'Save')}
+                        </button>
+                      </div>
                     </div>
                   )}
                   {/* Academic Column */}
@@ -350,15 +464,71 @@ export default function TranslateTab({
                         <Volume2 className="w-5 h-5" />
                         {isSentence && <span>{uiLang === 'zh' ? '朗读' : 'Listen'}</span>}
                       </button>
-                      <button
-                        onClick={() => onSaveWord('academic')}
-                        disabled={isSaving}
-                        className="mt-4 flex items-center gap-1 text-xs font-bold text-gray-500 hover:text-gray-700 transition-colors"
-                      >
-                        <Plus className="w-3 h-3" />
-                        {uiLang === 'zh' ? '存入学术表达' : 'Save as Academic'}
-                      </button>
+                      <div className="mt-4 flex items-center gap-3">
+                        <button
+                          onClick={() => onSaveWord('academic')}
+                          disabled={isSaving || isAlreadySaved('academic')}
+                          className="flex items-center gap-1 text-xs font-bold text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-50"
+                          title={uiLang === 'zh' ? '收藏' : 'Save'}
+                        >
+                          {isAlreadySaved('academic')
+                            ? <BookmarkCheck className="w-4 h-4 fill-current" />
+                            : <Bookmark className="w-4 h-4" />}
+                          {uiLang === 'zh' ? (isAlreadySaved('academic') ? '已收藏' : '收藏') : (isAlreadySaved('academic') ? 'Saved' : 'Save')}
+                        </button>
+                      </div>
                     </div>
+                  )}
+                </div>
+              )}
+
+              {/* Translation Feedback 👍/👎 */}
+              {user && (
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-gray-400">
+                    {uiLang === 'zh' ? '翻译质量：' : 'Translation quality:'}
+                  </span>
+                  <button
+                    onClick={() => handleFeedback('up')}
+                    disabled={!!feedbackGiven}
+                    className={cn(
+                      "p-1.5 rounded-lg transition-all",
+                      feedbackGiven === 'up' ? "text-green-600 bg-green-50" : "text-gray-300 hover:text-green-500 hover:bg-green-50",
+                      feedbackGiven && feedbackGiven !== 'up' && "opacity-30"
+                    )}
+                  >
+                    <ThumbsUp className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => handleFeedback('down')}
+                    disabled={!!feedbackGiven}
+                    className={cn(
+                      "p-1.5 rounded-lg transition-all",
+                      feedbackGiven === 'down' ? "text-red-500 bg-red-50" : "text-gray-300 hover:text-red-400 hover:bg-red-50",
+                      feedbackGiven && feedbackGiven !== 'down' && "opacity-30"
+                    )}
+                  >
+                    <ThumbsDown className="w-4 h-4" />
+                  </button>
+                  {showFeedbackReason && (
+                    <form
+                      className="flex items-center gap-2 flex-1"
+                      onSubmit={(e) => { e.preventDefault(); submitFeedback('down', feedbackReason); }}
+                    >
+                      <input
+                        type="text"
+                        value={feedbackReason}
+                        onChange={(e) => setFeedbackReason(e.target.value)}
+                        placeholder={uiLang === 'zh' ? '哪里不好？(选填)' : 'What went wrong? (optional)'}
+                        className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-400"
+                      />
+                      <button
+                        type="submit"
+                        className="text-xs font-bold text-blue-600 hover:text-blue-700"
+                      >
+                        {uiLang === 'zh' ? '提交' : 'Submit'}
+                      </button>
+                    </form>
                   )}
                 </div>
               )}

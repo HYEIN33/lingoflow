@@ -611,7 +611,8 @@ export default function App() {
   const {
     inputText, setInputText, isTranslating, translationResult, slangInsights, isFetchingSlang,
     selectedUsageIndex, setSelectedUsageIndex, showDetails, setShowDetails,
-    formalityLevel, setFormalityLevel, isSaving, handleTranslate, handleSaveWord,
+    formalityLevel, setFormalityLevel, isSaving, scene, setScene,
+    autoTranslateEnabled, toggleAutoTranslate, handleTranslate, handleSaveWord,
   } = useTranslation({ user, userProfile, setUserProfile, savedWords, uiLang, onPaymentNeeded });
 
   const { dueWords, reviewIndex, setReviewIndex, showReviewAnswer, setShowReviewAnswer, currentReviewWord, handleReview } = useReview(user, userProfile, savedWords);
@@ -903,6 +904,12 @@ export default function App() {
               onOpenPaywall={(trigger) => { setPaymentTrigger(trigger); setShowPayment(true); }}
               onUpgrade={handleUpgrade}
               onViewSlangEntry={(term) => { setSearchQuery(term); setActiveTab('slang'); }}
+              scene={scene}
+              setScene={setScene}
+              autoTranslateEnabled={autoTranslateEnabled}
+              toggleAutoTranslate={toggleAutoTranslate}
+              savedWords={savedWords}
+              user={user}
             />
           ) : activeTab === 'grammar' ? (
             <div>

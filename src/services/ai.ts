@@ -66,6 +66,7 @@ async function callGeminiProxy(
   model: string,
   contents: string | object[],
   config?: Record<string, any>,
+  signal?: AbortSignal,
 ): Promise<any> {
   const body: Record<string, any> = {
     model,
@@ -83,6 +84,7 @@ async function callGeminiProxy(
     method: 'POST',
     headers,
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!res.ok) {
@@ -115,13 +117,14 @@ async function geminiGenerate(opts: {
   model: string;
   contents: string | { parts: { text: string }[] }[];
   config?: Record<string, any>;
+  signal?: AbortSignal;
 }): Promise<string> {
   const models = [opts.model, ...FALLBACK_MODELS.filter(m => m !== opts.model)];
 
   for (let i = 0; i < models.length; i++) {
     try {
       if (USE_PROXY) {
-        const result = await callGeminiProxy(models[i], opts.contents, opts.config);
+        const result = await callGeminiProxy(models[i], opts.contents, opts.config, opts.signal);
         aiBreadcrumb('generate.success', { model: models[i], path: 'proxy', attempt: i + 1 });
         return result.text;
       }
@@ -149,7 +152,7 @@ async function geminiGenerate(opts: {
         console.warn(`Direct API blocked (${msg.substring(0, 80)}), trying proxy...`);
         aiBreadcrumb('generate.region_fallback_to_proxy', { model: models[i] });
         try {
-          const result = await callGeminiProxy(models[i], opts.contents, opts.config);
+          const result = await callGeminiProxy(models[i], opts.contents, opts.config, opts.signal);
           aiBreadcrumb('generate.proxy_fallback_success', { model: models[i] });
           return result.text;
         } catch (proxyErr: any) {
@@ -286,13 +289,20 @@ export async function explainSlang(text: string): Promise<SlangExplanationResult
   return JSON.parse(text_);
 }
 
-export async function translateText(text: string, formalityLevel?: number): Promise<TranslationResult> {
+export async function translateText(text: string, formalityLevel?: number, scene?: 'chat' | 'business' | 'writing', signal?: AbortSignal): Promise<TranslationResult> {
   const { model } = getEffectiveConfig();
 
   let formalityPrompt = "";
   if (formalityLevel !== undefined) {
     formalityPrompt = `\nThe user has requested a specific formality level of ${formalityLevel} (1 = very casual/slang, 100 = highly academic/formal). Please ensure the 'authenticTranslation' reflects this exact formality level.`;
   }
+
+  const scenePrompts: Record<string, string> = {
+    chat: "\nTranslate in a casual, conversational tone, like texting a friend. Use contractions, slang, and informal expressions where appropriate.",
+    business: "\nTranslate in a professional, business email tone. Use polite, clear, and formal language suitable for workplace communication.",
+    writing: "\nTranslate in a formal, academic writing tone. Use precise vocabulary, complex sentence structures, and scholarly language.",
+  };
+  const scenePrompt = scene ? scenePrompts[scene] || "" : "";
 
   // Detect language direction
   const hasChinese = /[\u4e00-\u9fa5]/.test(text);
@@ -315,7 +325,7 @@ export async function translateText(text: string, formalityLevel?: number): Prom
     5. If the word is a verb, provide conjugations (past tense, past participle, present participle, present perfect example, third person singular) in 'conjugations'. For present perfect, provide a short example like "have/has + past participle". If the past tense and past participle are the same word, combine them into one entry labeled "Past Tense / Past Participle".
     6. If the word is a noun, provide plural form in 'conjugations'.
     7. If the word is an adjective, provide comparative and superlative in 'conjugations'.
-    ${formalityPrompt}
+    ${formalityPrompt}${scenePrompt}
 
     Text: "${text}"`;
   const config = {
@@ -369,7 +379,7 @@ export async function translateText(text: string, formalityLevel?: number): Prom
       required: ["original", "usages"]
     }
   };
-  const text_ = await geminiGenerate({ model, contents, config });
+  const text_ = await geminiGenerate({ model, contents, config, signal });
   return JSON.parse(text_);
 }
 
