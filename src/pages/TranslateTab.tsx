@@ -249,9 +249,9 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
           <button
             type="button"
             onClick={() => { setInputText(''); setPreviousSearchWord(null); }}
-            className="absolute left-auto right-36 sm:right-44 top-1/2 -translate-y-1/2 p-1.5 text-gray-300 hover:text-gray-500 transition-all duration-200 hover:scale-110 z-20"
+            className="absolute left-auto right-36 sm:right-44 top-1/2 -translate-y-1/2 p-2 text-gray-400 hover:text-gray-600 bg-white/60 hover:bg-white/80 rounded-full transition-all duration-200 hover:scale-110 z-20 shadow-sm"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m18 6-12 12"/><path d="m6 6 12 12"/></svg>
           </button>
         )}
         <input
