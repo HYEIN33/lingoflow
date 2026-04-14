@@ -499,7 +499,7 @@ export default function App() {
               aria-label={uiLang === 'zh' ? '排行榜' : 'Leaderboard'}
               className={cn(
                 "p-2 rounded-xl transition-all",
-                activeTab === 'leaderboard' ? "bg-violet-50/50 text-violet-500" : "hover:bg-black/[0.03] text-[#86868B] hover:text-[#1D1D1F]"
+                activeTab === 'leaderboard' ? "bg-blue-50/50 text-blue-600" : "hover:bg-black/[0.03] text-[#86868B] hover:text-[#1D1D1F]"
               )}
               title={uiLang === 'zh' ? '排行榜' : 'Leaderboard'}
             >
@@ -510,7 +510,7 @@ export default function App() {
               aria-label={uiLang === 'zh' ? '我的' : 'Profile'}
               className={cn(
                 "p-2 rounded-xl transition-all",
-                activeTab === 'profile' ? "bg-violet-50/50 text-violet-500" : "hover:bg-black/[0.03] text-[#86868B] hover:text-[#1D1D1F]"
+                activeTab === 'profile' ? "bg-blue-50/50 text-blue-600" : "hover:bg-black/[0.03] text-[#86868B] hover:text-[#1D1D1F]"
               )}
               title={uiLang === 'zh' ? '我的' : 'Profile'}
             >

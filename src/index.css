@@ -13,9 +13,9 @@
   --color-bg: #FAFAFA;
   --color-divider: #F5F5F7;
 
-  /* Single accent — violet to rose gradient */
-  --gradient-accent: linear-gradient(135deg, #8B5CF6, #EC4899);
-  --gradient-accent-subtle: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(236,72,153,0.08));
+  /* Single accent — blue to indigo gradient */
+  --gradient-accent: linear-gradient(135deg, #2563EB, #4F46E5);
+  --gradient-accent-subtle: linear-gradient(135deg, rgba(37,99,235,0.08), rgba(79,70,229,0.08));
 
   /* Liquid Glass tiers */
   --glass-1: rgba(255, 255, 255, 0.55);
@@ -30,7 +30,7 @@
   /* Shadows — ultra subtle */
   --shadow-glass: 0 2px 16px rgba(0, 0, 0, 0.04), 0 0 0 0.5px rgba(0, 0, 0, 0.02);
   --shadow-glass-hover: 0 4px 24px rgba(0, 0, 0, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.03);
-  --shadow-accent: 0 4px 16px -4px rgba(139, 92, 246, 0.25);
+  --shadow-accent: 0 4px 16px -4px rgba(37, 99, 235, 0.25);
 
   /* Typography */
   --font-display: 'Outfit', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
@@ -60,7 +60,7 @@ body {
 html { scroll-behavior: smooth; }
 
 ::selection {
-  background: rgba(139, 92, 246, 0.12);
+  background: rgba(37, 99, 235, 0.12);
   color: inherit;
 }
 
@@ -186,7 +186,7 @@ html { scroll-behavior: smooth; }
   border-radius: 50%;
   background: var(--gradient-accent);
   border: 3px solid white;
-  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
   cursor: pointer;
   transition: transform 0.2s var(--ease-apple);
 }
@@ -199,7 +199,7 @@ html { scroll-behavior: smooth; }
   border-radius: 50%;
   background: var(--gradient-accent);
   border: 3px solid white;
-  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
   cursor: pointer;
 }
 .formality-slider::-moz-range-track {
