@@ -710,7 +710,19 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                     </button>
                   </div>
 
-                  {/* Frequency Tabs */}
+                  {/* Frequency Tabs — show skeleton while streaming */}
+                  {(!translationResult.usages || translationResult.usages.length === 0) && (translationResult as any)?._isStreaming ? (
+                    <div className="mb-8 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />
+                        <span className="text-xs text-gray-400">{uiLang === 'zh' ? '正在加载详细释义...' : 'Loading details...'}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="h-9 w-20 rounded-xl bg-gray-100 animate-pulse" />
+                        <div className="h-9 w-24 rounded-xl bg-gray-100 animate-pulse" />
+                      </div>
+                    </div>
+                  ) : (
                   <div className="mb-8">
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
                       {uiLang === 'zh' ? '使用频率' : 'Usage Frequency'}
@@ -735,6 +747,7 @@ function TranslateTab(props?: Partial<TranslateTabProps>) {
                       ))}
                     </div>
                   </div>
+                  )}
 
                   <div className="space-y-8">
                     <motion.div

@@ -7,6 +7,7 @@ import { db } from '../firebase';
 import { UserProfile, SavedWord } from '../App';
 import {
   translateText,
+  translateTextStreaming,
   TranslationResult,
   explainSlang,
   SlangExplanationResult
@@ -116,12 +117,28 @@ export function useTranslation({
     });
 
     try {
-      const result = await translateText(
+      // Two-stage streaming: quick translation first, then full details
+      const result = await translateTextStreaming(
         textToTranslate,
+        (partial) => {
+          // Stage 1 callback: show quick result immediately
+          if (partial.authenticTranslation) {
+            setTranslationResult(prev => ({
+              original: partial.original,
+              pronunciation: prev?.pronunciation || '',
+              authenticTranslation: partial.authenticTranslation || '',
+              academicTranslation: partial.academicTranslation || prev?.academicTranslation || '',
+              slangTerms: prev?.slangTerms || [],
+              usages: prev?.usages || [],
+              _isStreaming: true, // flag for UI to show loading state on details
+            } as TranslationResult & { _isStreaming?: boolean }));
+          }
+        },
         userProfile?.isPro ? formalityLevel : undefined,
         scene,
         controller.signal,
       );
+      // Stage 2 complete: replace with full structured result
       setTranslationResult(result);
       setSelectedUsageIndex(0);
       lastTranslatedRef.current = textToTranslate;

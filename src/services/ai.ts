@@ -423,6 +423,92 @@ export async function translateText(text: string, formalityLevel?: number, scene
   return safeJsonParse(text_, 'translateText');
 }
 
+/**
+ * Two-stage streaming translation:
+ * Stage 1: Stream plain text → authenticTranslation + academicTranslation (1-2s visible)
+ * Stage 2: Full structured JSON → usages/examples/conjugations (background)
+ *
+ * onQuickResult fires as soon as stage 1 text arrives (partial or complete).
+ * Returns the full TranslationResult from stage 2.
+ */
+export async function translateTextStreaming(
+  text: string,
+  onQuickResult: (partial: { authenticTranslation?: string; academicTranslation?: string; original: string }) => void,
+  formalityLevel?: number,
+  scene?: 'chat' | 'business' | 'writing',
+  signal?: AbortSignal,
+): Promise<TranslationResult> {
+  validateInputLength(text);
+  const { model } = getEffectiveConfig();
+
+  const hasChinese = /[\u4e00-\u9fa5]/.test(text);
+  const langDirection = hasChinese
+    ? 'The input is Chinese. Translate to English.'
+    : 'The input is English. Translate to Chinese (中文).';
+
+  let formalityPrompt = '';
+  if (formalityLevel !== undefined) {
+    formalityPrompt = ` Formality level: ${formalityLevel}/100 (1=very casual, 100=highly formal).`;
+  }
+  const scenePrompts: Record<string, string> = {
+    chat: ' Casual conversational tone.',
+    business: ' Professional business tone.',
+    writing: ' Formal academic tone.',
+  };
+  const scenePrompt = scene ? scenePrompts[scene] || '' : '';
+
+  const quickPrompt = `${langDirection}${formalityPrompt}${scenePrompt}
+
+Translate the following text. Give EXACTLY two lines:
+Line 1: Natural/authentic translation (地道表达)
+Line 2: Formal/academic translation (学术表达)
+
+No labels, no explanations, just the two translations, one per line.
+
+Text: ${JSON.stringify(text)}`;
+
+  // Stage 1: Stream the quick translation
+  let quickText = '';
+  try {
+    if (USE_PROXY) {
+      // Proxy doesn't support streaming — call normally but fast (short prompt)
+      const result = await callGeminiProxy(model, quickPrompt, undefined, signal);
+      quickText = result.text;
+    } else {
+      const ai = getGeminiAI();
+      const stream = await ai.models.generateContentStream({
+        model,
+        contents: quickPrompt,
+      });
+      for await (const chunk of stream) {
+        if (signal?.aborted) break;
+        quickText += chunk.text || '';
+        // Parse partial lines and fire callback
+        const lines = quickText.split('\n').filter(l => l.trim());
+        onQuickResult({
+          original: text,
+          authenticTranslation: lines[0]?.trim(),
+          academicTranslation: lines[1]?.trim(),
+        });
+      }
+    }
+
+    // Final parse of quick result
+    const lines = quickText.split('\n').filter(l => l.trim());
+    onQuickResult({
+      original: text,
+      authenticTranslation: lines[0]?.trim(),
+      academicTranslation: lines[1]?.trim(),
+    });
+  } catch (e: any) {
+    aiBreadcrumb('stream.error', { error: e?.message?.substring(0, 200) });
+    // Fall through to stage 2 — it will get the full result anyway
+  }
+
+  // Stage 2: Full structured translation (reuses existing function)
+  return translateText(text, formalityLevel, scene, signal);
+}
+
 export async function checkGrammar(text: string): Promise<GrammarCheckResult> {
   validateInputLength(text);
   const { model } = getEffectiveConfig();
