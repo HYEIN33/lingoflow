@@ -40,28 +40,81 @@ function applyCors(req, res) {
   return false;
 }
 
-async function checkRateLimit(uid) {
-  const db = firestoreDb();
-  const ref = db.collection('_rate_limits').doc(uid);
-  const now = admin.firestore.Timestamp.now();
-  const minuteAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 60_000);
-  const dayAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 86_400_000);
+// In-memory rate limit counters, keyed by uid. Each entry is an array of
+// call timestamps (ms). Survives within a single Function instance; the
+// async hydrate/flush logic merges with Firestore so limits stay reasonably
+// accurate across instances.
+//
+// Trade-off vs the previous transaction-per-call design:
+//   + Saves a 50-200ms Firestore transaction on every translate call.
+//   + Faster responses, especially noticeable on cold translation clicks.
+//   - Weaker across-instance consistency. If Cloud Run spins up a second
+//     instance, that instance starts blind and a user can burst ~2x limits
+//     briefly until both instances have hydrated from Firestore.
+//   - On Function eviction, the last unflushed calls (<=10s window) may be
+//     lost. Acceptable: we'd rather slightly under-count than pay per-call
+//     Firestore latency for the 99% happy path.
+const memCounters = new Map(); // uid -> { calls: number[], lastFlush: number, hydrated: boolean }
 
-  return db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const data = snap.exists ? snap.data() : { calls: [] };
-    const calls = (data.calls || []).filter((t) => t.toMillis() > dayAgo.toMillis());
-    const lastMinute = calls.filter((t) => t.toMillis() > minuteAgo.toMillis()).length;
-    if (lastMinute >= MAX_PER_MINUTE) return { allowed: false, reason: 'minute' };
-    if (calls.length >= MAX_PER_DAY) return { allowed: false, reason: 'day' };
-    calls.push(now);
-    // Hard cap array length so that future tuning (e.g. raising MAX_PER_DAY)
-    // cannot cause unbounded document growth. Transaction atomicity guards
-    // against lost updates between concurrent invocations.
-    const trimmed = calls.slice(-MAX_PER_DAY);
-    tx.set(ref, { calls: trimmed }, { merge: true });
-    return { allowed: true };
-  });
+async function hydrateIfNeeded(uid) {
+  const entry = memCounters.get(uid) || { calls: [], lastFlush: 0, hydrated: false };
+  if (entry.hydrated) return entry;
+  try {
+    const db = firestoreDb();
+    const snap = await db.collection('_rate_limits').doc(uid).get();
+    if (snap.exists) {
+      const data = snap.data();
+      const fresh = (data.calls || [])
+        .map((t) => (typeof t?.toMillis === 'function' ? t.toMillis() : 0))
+        .filter((ms) => ms > Date.now() - 86_400_000);
+      entry.calls = fresh;
+    }
+    entry.hydrated = true;
+    memCounters.set(uid, entry);
+  } catch (e) {
+    // If Firestore is unhappy, proceed with empty in-memory state (fail-open
+    // per instance, but still capped by instance-level counts). Log to console;
+    // repeated failures show up in the Function logs.
+    console.warn('Rate limit hydrate failed for', uid, e.message);
+    entry.hydrated = true;
+    memCounters.set(uid, entry);
+  }
+  return entry;
+}
+
+const FLUSH_INTERVAL_MS = 10_000;
+
+function flushIfStale(uid, entry) {
+  const now = Date.now();
+  if (now - entry.lastFlush < FLUSH_INTERVAL_MS) return;
+  entry.lastFlush = now;
+  // Fire-and-forget. We intentionally do NOT await — the whole point is to
+  // not block the hot path. Firestore write failures are logged; the in-memory
+  // counter keeps working.
+  const snapshot = entry.calls.slice(-MAX_PER_DAY);
+  const ts = snapshot.map((ms) => admin.firestore.Timestamp.fromMillis(ms));
+  firestoreDb()
+    .collection('_rate_limits')
+    .doc(uid)
+    .set({ calls: ts }, { merge: true })
+    .catch((e) => console.warn('Rate limit flush failed for', uid, e.message));
+}
+
+async function checkRateLimit(uid) {
+  const entry = await hydrateIfNeeded(uid);
+  const now = Date.now();
+  const minuteAgo = now - 60_000;
+  const dayAgo = now - 86_400_000;
+
+  // Drop stale entries first
+  entry.calls = entry.calls.filter((ms) => ms > dayAgo);
+  const lastMinute = entry.calls.filter((ms) => ms > minuteAgo).length;
+  if (lastMinute >= MAX_PER_MINUTE) return { allowed: false, reason: 'minute' };
+  if (entry.calls.length >= MAX_PER_DAY) return { allowed: false, reason: 'day' };
+  entry.calls.push(now);
+  memCounters.set(uid, entry);
+  flushIfStale(uid, entry);
+  return { allowed: true };
 }
 
 exports.apiGenerate = onRequest(
@@ -97,13 +150,10 @@ exports.apiGenerate = onRequest(
     }
     const uid = decoded.uid;
 
-    // Per-uid rate limit (Firestore-backed, survives across function instances).
-    // Previously this was fail-OPEN as a temporary measure because admin.firestore()
-    // was hitting a NOT_FOUND against a non-existent '(default)' database. Root
-    // cause: this project's Firestore DB is named 'default' (no parens). Now
-    // using firestoreDb() which points at the real DB, so the rate limiter
-    // actually works and we restore fail-CLOSED behavior for cost safety.
-    // The catch branch still logs to Sentry so we notice if it breaks again.
+    // Per-uid rate limit, in-memory with async Firestore flush. The first
+    // call from a cold instance pays the one-time Firestore read for
+    // hydration; subsequent calls are synchronous map lookups. See
+    // checkRateLimit comments for the consistency trade-off.
     try {
       const rl = await checkRateLimit(uid);
       if (!rl.allowed) {
@@ -114,26 +164,81 @@ exports.apiGenerate = onRequest(
         return;
       }
     } catch (e) {
+      // Defensive: hydrate is already wrapped in try/catch, so this should
+      // not fire. Still, fail-CLOSED on unexpected state so we don't leak
+      // free API calls if something truly unexpected happens.
       console.error('Rate limit check failed:', e);
       res.status(503).json({ error: 'Rate limit service unavailable' });
       return;
     }
 
-    const { model, contents, config } = req.body || {};
+    const { model, contents, config, stream } = req.body || {};
     if (!model || !contents) {
       res.status(400).json({ error: 'Missing model or contents' });
       return;
     }
-    // Whitelist models to prevent users billing expensive models
+    // Whitelist models to prevent users billing expensive models. Kept narrow:
+    // only the current-gen Flash family we actually use. Older models
+    // (gemini-2.0-flash, gemini-1.5-flash) are deprecated for new users as
+    // of April 2026 — kept them out so a stale client can't force a 404 loop.
     const ALLOWED_MODELS = new Set([
       'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-2.0-flash-exp',
-      'gemini-1.5-flash',
-      'gemini-1.5-flash-8b',
+      'gemini-2.5-flash-lite',
+      'gemini-2.0-flash-lite',
     ]);
     if (!ALLOWED_MODELS.has(model)) {
       res.status(400).json({ error: 'Model not allowed' });
+      return;
+    }
+
+    const gemBody = JSON.stringify({
+      contents: Array.isArray(contents) ? contents : [{ parts: [{ text: contents }] }],
+      generationConfig: config || {},
+    });
+
+    // Streaming branch — only used by translateSimple today. Response is
+    // SSE-ish: newline-delimited JSON chunks from Gemini's streamGenerateContent
+    // proxied straight through. Client (ai.ts streamGeminiProxy) reads them
+    // incrementally so the user sees the first token at ~200-400ms instead
+    // of waiting for the full response.
+    if (stream) {
+      try {
+        const upstream = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: gemBody,
+          }
+        );
+        if (!upstream.ok || !upstream.body) {
+          const data = await upstream.json().catch(() => ({}));
+          res.status(upstream.status || 502).json({ error: data.error?.message || 'Gemini stream unavailable' });
+          return;
+        }
+        res.status(200);
+        res.set('Content-Type', 'text/event-stream');
+        res.set('Cache-Control', 'no-cache');
+        res.set('X-Accel-Buffering', 'no');
+        // Pipe upstream SSE straight to the client. Firebase Functions v2
+        // supports streaming responses; flush is implicit on write for
+        // text/event-stream content type.
+        const reader = upstream.body.getReader();
+        const decoder = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(decoder.decode(value, { stream: true }));
+        }
+        res.end();
+      } catch (e) {
+        // If we've already sent headers, we can only close; otherwise surface
+        if (!res.headersSent) {
+          res.status(500).json({ error: e.message || 'Stream error' });
+        } else {
+          res.end();
+        }
+      }
       return;
     }
 
@@ -143,10 +248,7 @@ exports.apiGenerate = onRequest(
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: Array.isArray(contents) ? contents : [{ parts: [{ text: contents }] }],
-            generationConfig: config || {},
-          }),
+          body: gemBody,
         }
       );
 

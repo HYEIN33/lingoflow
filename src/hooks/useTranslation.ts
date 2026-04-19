@@ -7,6 +7,8 @@ import { db } from '../firebase';
 import { UserProfile, SavedWord } from '../App';
 import {
   translateText,
+  translateSimple,
+  loadTranslationDetails,
   TranslationResult,
   explainSlang,
   SlangExplanationResult
@@ -40,8 +42,12 @@ export function useTranslation({
   const [showDetails, setShowDetails] = useState(false);
   const [formalityLevel, setFormalityLevel] = useState<number>(50);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   // Ref-based guard — survives async gap between parallel clicks, which setIsTranslating cannot
   const inFlightRef = useRef(false);
+  // Per-usage memo of loaded detail payloads so expanding different usages
+  // (or collapsing/re-expanding) doesn't re-fetch. Keyed by usage label.
+  const detailsCacheRef = useRef<Map<string, Awaited<ReturnType<typeof loadTranslationDetails>>>>(new Map());
 
   const handleTranslate = async (e?: React.FormEvent, overrideText?: string) => {
     e?.preventDefault();
@@ -65,8 +71,36 @@ export function useTranslation({
     setSelectedUsageIndex(0);
     setSlangInsights([]);
     markOnboardingStep('translate_word');
+
+    // Progressive rendering: fire translateSimple for a sub-second preview,
+    // then translateText in parallel for the full structured result. Whichever
+    // finishes first shows; the full result replaces the preview when ready.
+    // If translateText finishes first (rare), the preview is simply ignored.
+    const fullPromise = translateText(textToTranslate, userProfile?.isPro ? formalityLevel : undefined);
+    let fullDone = false;
+    fullPromise.finally(() => { fullDone = true; });
+
     try {
-      const result = await translateText(textToTranslate, userProfile?.isPro ? formalityLevel : undefined);
+      // Preview path — streamed, best-effort, never blocks the full path.
+      // Each chunk appends to authenticTranslation so the user sees a
+      // typewriter effect starting ~200-400ms after pressing translate.
+      // Once the full structured result lands, it replaces the preview —
+      // fullDone guard prevents any tail-end chunks from overwriting it.
+      let previewText = '';
+      translateSimple(textToTranslate, (delta) => {
+        if (fullDone) return;
+        previewText += delta;
+        setTranslationResult({
+          original: textToTranslate,
+          authenticTranslation: previewText,
+          usages: [],
+        });
+      })
+        .catch(() => {
+          // Silent: the full result will cover the user experience
+        });
+
+      const result = await fullPromise;
       setTranslationResult(result);
       setSelectedUsageIndex(0);
 
@@ -113,6 +147,58 @@ export function useTranslation({
       setIsTranslating(false);
       inFlightRef.current = false;
     }
+  };
+
+  // Fetches synonyms/antonyms/alternatives/conjugations for the currently
+  // selected usage and merges them into the cached translationResult. No-op
+  // if the details are already loaded. Triggered by TranslateTab when the
+  // user first expands "Show Details".
+  const ensureDetailsLoaded = async (usageIndex: number) => {
+    if (!translationResult) return;
+    const usage = translationResult.usages?.[usageIndex];
+    if (!usage) return;
+    const cacheKey = `${translationResult.original}::${usage.label}`;
+
+    // Already present on the usage object — nothing to do
+    if (usage.synonyms || usage.antonyms || usage.alternatives || usage.conjugations) return;
+
+    // Hot cache (different usage index pointing at same usage? unlikely but cheap)
+    const cached = detailsCacheRef.current.get(cacheKey);
+    if (cached) {
+      mergeDetailsIntoResult(usageIndex, cached);
+      return;
+    }
+
+    setIsLoadingDetails(true);
+    try {
+      const details = await loadTranslationDetails(translationResult.original, usage.label, usage.meaning);
+      detailsCacheRef.current.set(cacheKey, details);
+      mergeDetailsIntoResult(usageIndex, details);
+    } catch (e) {
+      console.warn('Failed to load translation details', e);
+      Sentry.captureException(e, { tags: { component: 'useTranslation', op: 'loadTranslationDetails' } });
+      // Surface but non-blocking — user still has the core translation
+    } finally {
+      setIsLoadingDetails(false);
+    }
+  };
+
+  const mergeDetailsIntoResult = (usageIndex: number, details: Awaited<ReturnType<typeof loadTranslationDetails>>) => {
+    setTranslationResult((prev) => {
+      if (!prev || !prev.usages) return prev;
+      const nextUsages = prev.usages.map((u, i) =>
+        i === usageIndex
+          ? {
+              ...u,
+              synonyms: details.synonyms,
+              antonyms: details.antonyms,
+              alternatives: details.alternatives,
+              conjugations: details.conjugations,
+            }
+          : u
+      );
+      return { ...prev, usages: nextUsages };
+    });
   };
 
   const handleSaveWord = async (styleTag: 'authentic' | 'academic' | 'standard' = 'standard') => {
@@ -169,7 +255,9 @@ export function useTranslation({
     formalityLevel,
     setFormalityLevel,
     isSaving,
+    isLoadingDetails,
     handleTranslate,
     handleSaveWord,
+    ensureDetailsLoaded,
   };
 }

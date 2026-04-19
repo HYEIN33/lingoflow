@@ -611,8 +611,20 @@ export default function App() {
   const {
     inputText, setInputText, isTranslating, translationResult, slangInsights, isFetchingSlang,
     selectedUsageIndex, setSelectedUsageIndex, showDetails, setShowDetails,
-    formalityLevel, setFormalityLevel, isSaving, handleTranslate, handleSaveWord,
+    formalityLevel, setFormalityLevel, isSaving, isLoadingDetails,
+    handleTranslate, handleSaveWord, ensureDetailsLoaded,
   } = useTranslation({ user, userProfile, setUserProfile, savedWords, uiLang, onPaymentNeeded });
+
+  // Fire-and-forget: when the user opens Details, lazy-load synonyms/etc for
+  // the selected usage. Cached per-usage so re-expanding is free.
+  const handleToggleDetails = (next: boolean) => {
+    setShowDetails(next);
+    if (next) { void ensureDetailsLoaded(selectedUsageIndex); }
+  };
+  const handleSelectUsage = (idx: number) => {
+    setSelectedUsageIndex(idx);
+    if (showDetails) { void ensureDetailsLoaded(idx); }
+  };
 
   const { dueWords, reviewIndex, setReviewIndex, showReviewAnswer, setShowReviewAnswer, currentReviewWord, handleReview } = useReview(user, userProfile, savedWords);
 
@@ -875,9 +887,10 @@ export default function App() {
               isTranslating={isTranslating}
               translationResult={translationResult}
               selectedUsageIndex={selectedUsageIndex}
-              setSelectedUsageIndex={setSelectedUsageIndex}
+              setSelectedUsageIndex={handleSelectUsage}
               showDetails={showDetails}
-              setShowDetails={setShowDetails}
+              setShowDetails={handleToggleDetails}
+              isLoadingDetails={isLoadingDetails}
               formalityLevel={formalityLevel}
               setFormalityLevel={setFormalityLevel}
               isFetchingSlang={isFetchingSlang}

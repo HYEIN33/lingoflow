@@ -66,6 +66,10 @@ interface TranslateTabProps {
   // Save
   isSaving: boolean;
 
+  // Lazy-loaded word-level details (synonyms/antonyms/conjugations) — shown
+  // as a small spinner next to "Show Details" while fetching.
+  isLoadingDetails?: boolean;
+
   // Audio
   loadingAudioText: string | null;
 
@@ -115,6 +119,7 @@ export default function TranslateTab({
   isFetchingSlang,
   slangInsights,
   isSaving,
+  isLoadingDetails,
   loadingAudioText,
   userProfile,
   uiLang,
@@ -460,6 +465,7 @@ export default function TranslateTab({
                       >
                         {showDetails ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                         {showDetails ? t.hideDetails : t.showDetails}
+                        {isLoadingDetails && <Loader2 className="w-3 h-3 animate-spin text-blue-400" />}
                       </button>
 
                       <AnimatePresence>

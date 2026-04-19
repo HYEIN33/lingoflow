@@ -46,10 +46,42 @@ app.post('/api/generate', async (req, res) => {
   }
 
   try {
-    const { model, contents, config } = req.body;
+    const { model, contents, config, stream } = req.body;
 
     if (!model || !contents) {
       return res.status(400).json({ error: 'Missing required fields: model, contents' });
+    }
+
+    // Streaming branch — dev-only mirror of the production Firebase Function
+    // behavior. Proxy Gemini's SSE stream straight through so translateSimple
+    // renders a typewriter effect locally.
+    if (stream) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+      const upstream = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents, generationConfig: config }),
+      });
+      if (!upstream.ok || !upstream.body) {
+        const errBody = await upstream.json().catch(() => ({}));
+        return res.status(upstream.status || 502).json({ error: errBody.error?.message || `Gemini stream error: ${upstream.status}` });
+      }
+      res.status(200);
+      res.set('Content-Type', 'text/event-stream');
+      res.set('Cache-Control', 'no-cache');
+      res.set('X-Accel-Buffering', 'no');
+      const reader = upstream.body.getReader();
+      const decoder = new TextDecoder();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          res.write(decoder.decode(value, { stream: true }));
+        }
+      } finally {
+        res.end();
+      }
+      return;
     }
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
@@ -68,7 +100,8 @@ app.post('/api/generate', async (req, res) => {
     res.json(data);
   } catch (error: any) {
     console.error('Proxy error:', error.message);
-    res.status(500).json({ error: error.message });
+    if (!res.headersSent) res.status(500).json({ error: error.message });
+    else res.end();
   }
 });
 
