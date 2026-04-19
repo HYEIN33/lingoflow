@@ -27,13 +27,23 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.3.1',
+    date: '2026-04-20',
+    title: '课堂同传：问 AI 模式上线',
+    changes: [
+      '课堂上有问题？底部直接「问 AI」，它会根据老师刚才讲的内容用中文回答你',
+      '听不懂的时候不用手忙脚乱找按钮，打字就行',
+      '原来的「听不懂」红按钮撤了，因为不够灵活',
+    ],
+    isMajor: false,
+  },
+  {
     version: '0.3.0',
     date: '2026-04-20',
     title: '课堂同传（内测）',
     changes: [
       '新增「课堂同传」Tab：上课听不懂时点开始，屏幕上实时出中文字幕',
-      '支持 Zoom / Teams 窗口音频 和 麦克风两种来源',
-      '听不懂某一段？按红色「听不懂」按钮 → 15 秒回放 + 深度解释',
+      '支持网课（Zoom / Teams 标签页）和线下课（麦克风）两种场景',
       '下课自动保存这节课的笔记到云端',
     ],
     isMajor: true,
