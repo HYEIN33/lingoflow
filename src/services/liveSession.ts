@@ -139,11 +139,17 @@ export async function startLiveSession(
   const { token, model } = await mintEphemeralToken();
 
   cb.onStatusChange('connecting');
+  // eslint-disable-next-line no-console
+  console.info('[live] capturing audio, source=', opts.audioSource);
   const mediaStream = await captureAudioStream(opts.audioSource);
+  // eslint-disable-next-line no-console
+  console.info('[live] got MediaStream, tracks=', mediaStream.getTracks().length);
 
   // Gemini Live WebSocket URL — the ephemeral token goes in as the
   // `access_token` query param in v1alpha.
   const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?access_token=${encodeURIComponent(token)}`;
+  // eslint-disable-next-line no-console
+  console.info('[live] opening WebSocket…');
   const ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
 
@@ -154,11 +160,25 @@ export async function startLiveSession(
   let recentWriteOffset = 0;
   let recentFilled = false;
 
-  const audioCtx = new AudioContext({ sampleRate: 48000 }); // native
-  await audioCtx.audioWorklet.addModule('/audio-worklets/pcm16-worklet.js');
-  const sourceNode = audioCtx.createMediaStreamSource(mediaStream);
-  const worklet = new AudioWorkletNode(audioCtx, 'pcm16-worklet');
-  sourceNode.connect(worklet);
+  // iOS Safari sometimes rejects new AudioContext in a non-user-gesture
+  // continuation. We keep it here (after getUserMedia resolved, which IS
+  // part of the gesture chain) and surface errors instead of swallowing.
+  // eslint-disable-next-line no-console
+  console.info('[live] creating AudioContext + worklet…');
+  let audioCtx: AudioContext;
+  let worklet: AudioWorkletNode;
+  let sourceNode: MediaStreamAudioSourceNode;
+  try {
+    audioCtx = new AudioContext({ sampleRate: 48000 });
+    await audioCtx.audioWorklet.addModule('/audio-worklets/pcm16-worklet.js');
+    sourceNode = audioCtx.createMediaStreamSource(mediaStream);
+    worklet = new AudioWorkletNode(audioCtx, 'pcm16-worklet');
+    sourceNode.connect(worklet);
+  } catch (e: any) {
+    mediaStream.getTracks().forEach((t) => t.stop());
+    try { ws.close(); } catch { /* not open yet */ }
+    throw new Error(`AudioWorklet init failed: ${e?.message || e} — 你的浏览器可能不支持（iOS 建议用 Safari 15+ 或 Chrome）`);
+  }
   // We don't connect to destination — we're consuming, not playing back.
 
   const langInstruction =
@@ -166,11 +186,22 @@ export async function startLiveSession(
       ? 'You are translating a university classroom for a Chinese international student. Output ONLY the Chinese translation of what the speaker is saying, in natural, fluent Mandarin. If the speaker is already speaking Chinese, echo verbatim. Do not add commentary, headers, or notes. Never refuse — always translate.'
       : 'Translate to the target language only.';
 
+  // Hard timeout on the WS handshake. Without this the "connecting…" state
+  // could spin forever (e.g. a CSP block silently drops the upgrade).
+  const HANDSHAKE_TIMEOUT_MS = 10000;
   await new Promise<void>((resolve, reject) => {
     let opened = false;
+    const timer = setTimeout(() => {
+      if (!opened) {
+        try { ws.close(); } catch { /* already closing */ }
+        reject(new Error('WebSocket 连接超时 (10s) — 检查网络或稍后重试'));
+      }
+    }, HANDSHAKE_TIMEOUT_MS);
     ws.addEventListener('open', () => {
       opened = true;
-      // Required first message for Live: setup.
+      clearTimeout(timer);
+      // eslint-disable-next-line no-console
+      console.info('[live] WebSocket open, sending setup…');
       ws.send(
         JSON.stringify({
           setup: {
@@ -187,13 +218,19 @@ export async function startLiveSession(
       cb.onStatusChange('live');
       resolve();
     });
-    ws.addEventListener('error', (e) => {
-      if (!opened) reject(new Error('WebSocket connection failed'));
-      else cb.onStatusChange('error', (e as any).message || 'socket error');
+    ws.addEventListener('error', () => {
+      clearTimeout(timer);
+      if (!opened) reject(new Error('WebSocket 连接失败 — 可能是 CSP / 网络问题'));
+      else cb.onStatusChange('error', 'socket error');
     });
-    ws.addEventListener('close', () => {
-      // Fires when Gemini or network drops us. No reconnect in Spike.
-      cb.onStatusChange('stopped');
+    ws.addEventListener('close', (ev) => {
+      clearTimeout(timer);
+      if (!opened) {
+        // Closed before open — Gemini rejected the handshake.
+        reject(new Error(`WebSocket 被拒绝 (code=${ev.code})，可能是 token 过期或模型不可用`));
+      } else {
+        cb.onStatusChange('stopped');
+      }
     });
   });
 

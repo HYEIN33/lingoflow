@@ -114,7 +114,26 @@ function friendlyStartError(e: any, source: 'tab' | 'mic', lang: 'en' | 'zh'): s
       ? '拿不到翻译服务的通行证，稍后再试。'
       : "Couldn't get a translation session token. Try again in a moment.";
   }
-  // WebSocket
+  // AudioWorklet init (Safari <15 / ancient browsers)
+  if (/AudioWorklet|worklet|audioContext/i.test(msg)) {
+    return zh
+      ? '你的浏览器不支持课堂同传的音频处理。请用最新的 Chrome / Safari 15+ / Edge。'
+      : 'Your browser lacks the audio support needed for live translation. Use latest Chrome, Safari 15+, or Edge.';
+  }
+  // WebSocket handshake timeout — most often a CSP / firewall / corporate
+  // network block, less often a Gemini outage.
+  if (/\u8d85\u65f6|timeout/i.test(msg) && /WebSocket|\u8fde\u63a5/i.test(msg)) {
+    return zh
+      ? '连不上翻译服务（10 秒超时）。换个网络再试，或确认没被公司 / 学校防火墙拦截。'
+      : 'Translation service timed out after 10s. Try a different network or check firewall.';
+  }
+  // WebSocket rejected before open — expired token or model not available
+  if (/\u88ab\u62d2\u7edd|WebSocket was rejected/i.test(msg)) {
+    return zh
+      ? '翻译服务拒绝连接，可能是会话过期。重新按开始试试。'
+      : 'Translation service refused the connection — likely an expired session. Tap Start again.';
+  }
+  // Generic WebSocket / network catch-all
   if (/WebSocket|socket|network/i.test(msg)) {
     return zh
       ? '连不上翻译服务。检查网络，再按开始。'
