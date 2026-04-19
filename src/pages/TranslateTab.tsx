@@ -17,7 +17,7 @@
  *   - Pro upsell card (non-Pro users only)
  *   - Back button for synonym/antonym navigation
  */
-import React, { useRef } from 'react';
+import React, { memo, useRef, useState, useEffect } from 'react';
 import {
   Plus,
   BookOpen,
@@ -30,12 +30,28 @@ import {
   MicOff,
   MessageSquare,
   Zap,
+  ZapOff,
+  Bookmark,
+  BookmarkCheck,
+  ThumbsUp,
+  ThumbsDown,
+  Heart,
+  Share2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TranslationResult, SlangExplanationResult } from '../services/ai';
 import { cn } from '../lib/utils';
 import { Language, translations } from '../i18n';
-import { UserProfile } from '../App';
+import { UserProfile, SavedWord } from '../App';
+import { TranslateScene } from '../hooks/useTranslation';
+import { User } from 'firebase/auth';
+import { db } from '../firebase';
+import { collection, addDoc, Timestamp } from 'firebase/firestore';
+import * as Sentry from '@sentry/react';
+import { toast } from 'sonner';
+import { trackEvent } from '../utils/analytics';
+import { useTranslateContext } from '../contexts/TranslateContext';
+import { TranslationSkeleton, SlangInsightSkeleton } from '../components/Skeleton';
 
 interface SearchHistoryItem {
   text: string;
@@ -99,45 +115,115 @@ interface TranslateTabProps {
   onOpenPaywall: (trigger: string) => void;
   onUpgrade: () => void;
   onViewSlangEntry: (term: string) => void;
+
+  // Scene switcher
+  scene: TranslateScene;
+  setScene: (s: TranslateScene) => void;
+
+  // Auto-translate toggle
+  autoTranslateEnabled: boolean;
+  toggleAutoTranslate: (enabled: boolean) => void;
+
+  // For bookmark dedup check
+  savedWords: SavedWord[];
+  user: User | null;
 }
 
-export default function TranslateTab({
-  inputText,
-  setInputText,
-  isTranslating,
-  translationResult,
-  selectedUsageIndex,
-  setSelectedUsageIndex,
-  showDetails,
-  setShowDetails,
-  formalityLevel,
-  setFormalityLevel,
-  isFetchingSlang,
-  slangInsights,
-  isSaving,
-  loadingAudioText,
-  userProfile,
-  uiLang,
-  searchHistory,
-  removeFromHistory,
-  clearHistory,
-  previousSearchWord,
-  setPreviousSearchWord,
-  isExtractingPhoto,
-  onPhotoCapture,
-  isListening,
-  onToggleListening,
-  onTranslate,
-  onSearchWord,
-  onGoBack,
-  onSaveWord,
-  onSpeak,
-  onOpenPaywall,
-  onUpgrade,
-  onViewSlangEntry,
-}: TranslateTabProps) {
+function TranslateTab(props?: Partial<TranslateTabProps>) {
+  // Use context if available (production), fall back to props (tests)
+  const ctxRaw = (() => { try { return useTranslateContext(); } catch { return null; } })();
+  const {
+    inputText, setInputText, isTranslating, translationResult,
+    selectedUsageIndex, setSelectedUsageIndex, showDetails, setShowDetails,
+    formalityLevel, setFormalityLevel, isFetchingSlang, slangInsights, isSaving,
+    loadingAudioText, userProfile, uiLang, searchHistory, removeFromHistory, clearHistory,
+    previousSearchWord, setPreviousSearchWord, isExtractingPhoto, onPhotoCapture,
+    isListening, onToggleListening, onTranslate, onSearchWord, onGoBack,
+    onSaveWord, onSpeak, onOpenPaywall, onUpgrade, onViewSlangEntry,
+    scene, setScene, autoTranslateEnabled, toggleAutoTranslate, savedWords, user,
+  } = (ctxRaw || props) as TranslateTabProps;
   const t = translations[uiLang];
   const photoInputRef = useRef<HTMLInputElement>(null);
+
+  // Feedback state: track which translation the user has rated
+  const [feedbackGiven, setFeedbackGiven] = useState<'up' | 'down' | null>(null);
+  const [feedbackReason, setFeedbackReason] = useState('');
+  const [showFeedbackReason, setShowFeedbackReason] = useState(false);
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [suggestedTranslation, setSuggestedTranslation] = useState('');
+
+  // Reset feedback state when a new translation arrives
+  useEffect(() => {
+    setFeedbackGiven(null);
+    setFeedbackReason('');
+    setShowFeedbackReason(false);
+    setIsSubmittingFeedback(false);
+    setSuggestedTranslation('');
+  }, [translationResult?.original]);
+
+  // Check if current translation is already saved
+  const isAlreadySaved = (styleTag: string) => {
+    if (!translationResult) return false;
+    return savedWords.some(w => w.original === translationResult.original && w.styleTag === styleTag);
+  };
+
+  const handleFeedback = async (rating: 'up' | 'down') => {
+    if (!user || !translationResult || feedbackGiven || isSubmittingFeedback) return;
+    if (rating === 'down') {
+      setShowFeedbackReason(true);
+      return; // wait for reason submission
+    }
+    await submitFeedback(rating);
+  };
+
+  const submitFeedback = async (rating: 'up' | 'down', reason?: string) => {
+    if (!user || !translationResult || isSubmittingFeedback) return;
+    setIsSubmittingFeedback(true);
+    try {
+      // Dedup: check if user already submitted feedback for this exact query in the last hour
+      const q = translationResult.original;
+      const oneHourAgo = new Date(Date.now() - 3600_000);
+      try {
+        const existing = await import('firebase/firestore').then(m =>
+          m.getDocs(m.query(
+            collection(db, 'feedback'),
+            m.where('uid', '==', user.uid),
+            m.where('query', '==', q),
+            m.where('timestamp', '>', Timestamp.fromDate(oneHourAgo)),
+            m.limit(1),
+          ))
+        );
+        if (!existing.empty) {
+          toast(uiLang === 'zh' ? '你已经反馈过了' : 'Already submitted feedback');
+          setFeedbackGiven(rating);
+          return;
+        }
+      } catch (dedupErr) {
+        // Dedup check failed (e.g. missing index) — proceed with write anyway
+        console.warn('Feedback dedup check failed, proceeding:', dedupErr);
+      }
+
+      await addDoc(collection(db, 'feedback'), {
+        uid: user.uid,
+        query: translationResult.original,
+        result: translationResult.authenticTranslation || translationResult.academicTranslation || '',
+        scene,
+        rating,
+        reason: reason || '',
+        timestamp: Timestamp.now(),
+      });
+      setFeedbackGiven(rating);
+      trackEvent('feedback_submit', { rating, has_reason: !!reason });
+      toast.success(uiLang === 'zh' ? '感谢反馈！' : 'Thanks for your feedback!');
+      setShowFeedbackReason(false);
+    } catch (e: any) {
+      console.error('Feedback write failed:', e);
+      Sentry.captureException(e, { tags: { component: 'TranslateTab', op: 'feedback.write' } });
+      toast.error(uiLang === 'zh' ? '反馈提交失败' : 'Feedback failed');
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -149,11 +235,12 @@ export default function TranslateTab({
           onChange={(e) => setInputText(e.target.value.slice(0, 2000))}
           placeholder={t.inputPlaceholder}
           maxLength={2000}
-          className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-40 sm:pr-48 text-lg sm:text-xl shadow-xl shadow-gray-200/50 outline-none transition-all placeholder:text-gray-300"
+          className="w-full glass-card rounded-3xl py-5 sm:py-7 pl-6 sm:pl-8 pr-44 sm:pr-48 md:pr-52 text-lg sm:text-xl outline-none transition-all duration-300 placeholder:text-gray-300/80 text-gray-800 focus:shadow-[0_0_0_2px_rgba(37,99,235,0.15),inset_0_1px_24px_rgba(37,99,235,0.06)] hover:shadow-[var(--shadow-card-hover)]"
+          style={{ boxShadow: 'var(--shadow-card)' }}
         />
         {/* Character count — only when typing long text */}
         {inputText.length > 200 && (
-          <div className="absolute -bottom-6 right-4 text-[10px] text-gray-400 font-mono">
+          <div className="absolute -bottom-7 right-4 text-[10px] text-gray-400/70 font-mono tracking-wider">
             {inputText.length} / 2000
           </div>
         )}
@@ -162,9 +249,9 @@ export default function TranslateTab({
           <button
             type="button"
             onClick={() => { setInputText(''); setPreviousSearchWord(null); }}
-            className="absolute left-auto right-36 sm:right-44 top-1/2 -translate-y-1/2 p-1.5 text-gray-300 hover:text-gray-500 transition-colors z-20"
+            className="absolute left-auto right-36 sm:right-44 top-1/2 -translate-y-1/2 p-2 text-gray-400 hover:text-gray-600 bg-white/60 hover:bg-white/80 rounded-full transition-all duration-200 hover:scale-110 z-20 shadow-sm"
           >
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m18 6-12 12"/><path d="m6 6 12 12"/></svg>
           </button>
         )}
         <input
@@ -175,13 +262,14 @@ export default function TranslateTab({
           onChange={onPhotoCapture}
           className="hidden"
         />
-        <div className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 sm:gap-2 z-20">
+        <div className="absolute right-2.5 sm:right-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 sm:gap-2 z-20">
           <button
             type="button"
             onClick={() => photoInputRef.current?.click()}
             disabled={isExtractingPhoto}
-            className="p-3 sm:p-4 rounded-2xl transition-all hover:scale-105 active:scale-95 shadow-lg cursor-pointer bg-blue-100 text-blue-600 shadow-blue-100"
+            className="p-3 sm:p-4 rounded-2xl transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer bg-blue-50/80 text-blue-600 hover:bg-blue-100 backdrop-blur-sm shadow-sm focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
             title={uiLang === 'zh' ? '拍照翻译' : 'Photo Translate'}
+            aria-label={uiLang === 'zh' ? '拍照翻译' : 'Photo Translate'}
           >
             {isExtractingPhoto
               ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" />
@@ -189,81 +277,121 @@ export default function TranslateTab({
           </button>
           <button
             type="button"
+            onClick={() => {
+              const next = !autoTranslateEnabled;
+              toggleAutoTranslate(next);
+              // First-time explanation
+              if (next && !localStorage.getItem('memeflow_auto_translate_explained')) {
+                toast(uiLang === 'zh' ? '输入即译已开启：打字停顿后自动翻译，无需点提交' : 'Auto-translate on: translates automatically as you type');
+                try { localStorage.setItem('memeflow_auto_translate_explained', '1'); } catch {}
+              }
+            }}
+            className={cn(
+              "p-2.5 rounded-xl transition-all duration-200 cursor-pointer relative group",
+              autoTranslateEnabled ? "text-amber-500 hover:text-amber-600 bg-amber-50/60" : "text-gray-300 hover:text-gray-400"
+            )}
+            title={autoTranslateEnabled
+              ? (uiLang === 'zh' ? '输入即译：开（打字自动翻译）' : 'Auto-translate: On')
+              : (uiLang === 'zh' ? '输入即译：关（点击开启自动翻译）' : 'Auto-translate: Off (click to enable)')}
+            aria-label={uiLang === 'zh' ? '输入即译' : 'Auto-translate'}
+            aria-pressed={autoTranslateEnabled}
+          >
+            {autoTranslateEnabled ? <Zap className="w-4 h-4 fill-current" /> : <ZapOff className="w-4 h-4" />}
+          </button>
+          <button
+            type="button"
             onClick={onToggleListening}
             className={cn(
-              "p-2 rounded-xl transition-all cursor-pointer",
-              isListening ? "bg-red-500 text-white" : "text-gray-300 hover:text-gray-400"
+              "p-2.5 rounded-xl transition-all duration-200 cursor-pointer",
+              isListening ? "bg-red-500 text-white shadow-lg shadow-red-200 animate-pulse" : "text-gray-300 hover:text-gray-400"
             )}
+            aria-label={isListening ? (uiLang === 'zh' ? '停止录音' : 'Stop recording') : (uiLang === 'zh' ? '语音输入' : 'Voice input')}
+            aria-pressed={isListening}
           >
             {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
           </button>
           <button
             type="submit"
             disabled={isTranslating || !inputText.trim()}
-            className="bg-blue-600 text-white p-3 sm:p-4 rounded-2xl disabled:opacity-50 transition-all hover:scale-105 active:scale-95 shadow-lg shadow-blue-200"
+            className="bg-gradient-to-r from-blue-600 to-indigo-500 text-white p-3 sm:p-4 rounded-2xl disabled:opacity-40 transition-all duration-200 hover:scale-105 active:scale-95 shadow-lg shadow-blue-200/60 hover:shadow-blue-300/60 focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+            aria-label={uiLang === 'zh' ? '翻译' : 'Translate'}
           >
             {isTranslating ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" /> : <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />}
           </button>
         </div>
       </form>
 
-      {/* Formality Slider (Pro-gated) */}
-      <div
-        className={cn(
-          "bg-white/60 backdrop-blur-md border border-white/60 rounded-2xl p-4 shadow-sm relative group",
-          !userProfile?.isPro && "opacity-60 cursor-not-allowed"
-        )}
-      >
-        {!userProfile?.isPro && (
-          <div
-            className="absolute inset-0 z-10 cursor-pointer"
-            onClick={() => onOpenPaywall('slider')}
-            title={uiLang === 'zh' ? 'Pro 功能 · 升级解锁' : 'Pro Feature · Upgrade to Unlock'}
-          />
-        )}
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-semibold text-gray-600">{uiLang === 'zh' ? '口语/俚语' : 'Casual/Slang'}</span>
-          <span className="text-sm font-bold text-blue-600">
-            {uiLang === 'zh' ? '正式程度' : 'Formality'}: {formalityLevel}
-            {!userProfile?.isPro && <span className="ml-2 text-[10px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded uppercase">Pro</span>}
-          </span>
-          <span className="text-sm font-semibold text-gray-600">{uiLang === 'zh' ? '学术/正式' : 'Academic/Formal'}</span>
+      {/* Scene Switcher + Progress — right below input */}
+      {/* Auto-translate progress indicator */}
+      {isTranslating && (
+        <div className="h-0.5 bg-blue-100 rounded-full overflow-hidden -mt-4">
+          <div className="h-full bg-blue-600 rounded-full animate-pulse w-full" />
         </div>
-        <input
-          type="range"
-          min="1"
-          max="100"
-          value={formalityLevel}
-          onChange={(e) => setFormalityLevel(Number(e.target.value))}
-          disabled={!userProfile?.isPro}
-          className="w-full h-2 bg-gray-200 rounded-lg appearance-none accent-blue-600"
-        />
+      )}
+
+      {/* Scene Switcher — compact inline chips */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[10px] text-gray-400/80 font-semibold mr-0.5 uppercase tracking-wider">{uiLang === 'zh' ? '场景' : 'Tone'}</span>
+        {([
+          { key: 'chat' as const, zh: '聊天', en: 'Chat' },
+          { key: 'business' as const, zh: '商务', en: 'Business' },
+          { key: 'writing' as const, zh: '写作', en: 'Writing' },
+        ]).map(({ key, zh, en }) => (
+          <button
+            key={key}
+            onClick={() => { setScene(key); trackEvent('scene_switch', { scene: key }); }}
+            className={cn(
+              "px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all duration-200",
+              scene === key
+                ? "bg-gradient-to-r from-blue-600 to-indigo-500 text-white shadow-md shadow-blue-200/50"
+                : "glass-card text-gray-400 hover:text-blue-500 hover:shadow-sm"
+            )}
+          >
+            {uiLang === 'zh' ? zh : en}
+          </button>
+        ))}
       </div>
+
+      {/* Formality Slider (Pro only — after scene chips, less prominent) */}
+      {userProfile?.isPro && (
+        <div className="flex items-center gap-3 px-1">
+          <span className="text-[10px] text-gray-400/80 font-semibold whitespace-nowrap uppercase tracking-wider">{uiLang === 'zh' ? '正式度' : 'Formal'}</span>
+          <input
+            type="range"
+            min="1"
+            max="100"
+            value={formalityLevel}
+            onChange={(e) => setFormalityLevel(Number(e.target.value))}
+            className="formality-slider flex-1 h-2 rounded-full appearance-none cursor-pointer"
+          />
+          <span className="text-[11px] font-bold tabular-nums w-7 text-right gradient-text">{formalityLevel}</span>
+        </div>
+      )}
 
       {/* Search History (only before a result exists) */}
       {!translationResult && searchHistory.length > 0 && (
-        <div className="bg-white/60 backdrop-blur-md border border-white/60 rounded-2xl p-4 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">
+        <div className="glass-card rounded-2xl px-4 py-3" style={{ boxShadow: 'var(--shadow-card)' }}>
+          <div className="flex items-center justify-between mb-2.5">
+            <h3 className="text-[10px] font-black text-gray-400/80 uppercase tracking-[0.2em]">
               {uiLang === 'zh' ? '搜索记录' : 'Search History'}
             </h3>
-            <button onClick={clearHistory} className="text-[10px] text-gray-400 hover:text-red-400 font-medium transition-colors">
+            <button onClick={clearHistory} className="text-[10px] text-gray-400 hover:text-red-400 font-semibold transition-colors duration-200">
               {uiLang === 'zh' ? '清空' : 'Clear'}
             </button>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5">
             {searchHistory.slice(0, 10).map((item, i) => (
               <div key={i} className="group flex items-center">
                 <button
                   onClick={() => onSearchWord(item.text)}
-                  className="bg-gray-50 hover:bg-blue-50 text-gray-600 hover:text-blue-600 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors max-w-[200px] truncate"
+                  className="glass-card hover:bg-blue-50/60 text-gray-500 hover:text-blue-600 px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 max-w-[180px] truncate"
                   title={item.text}
                 >
                   {item.text.length > 15 ? item.text.slice(0, 15) + '...' : item.text}
                 </button>
                 <button
                   onClick={() => removeFromHistory(item.text)}
-                  className="ml-0.5 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                  className="ml-0.5 text-gray-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all duration-200 text-xs"
                 >
                   ×
                 </button>
@@ -271,6 +399,34 @@ export default function TranslateTab({
             ))}
           </div>
         </div>
+      )}
+
+      {/* Quick examples for new users (no history, no result) */}
+      {!translationResult && searchHistory.length === 0 && !inputText && (
+        <div className="text-center py-4">
+          <p className="text-sm text-gray-400/70 mb-3">{uiLang === 'zh' ? '试试翻译：' : 'Try translating:'}</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {['我在弄咖啡', 'plot twist', 'no cap', '这个项目太牛了'].map((ex) => (
+              <button
+                key={ex}
+                onClick={() => onSearchWord(ex)}
+                className="px-3.5 py-1.5 glass-card hover:bg-blue-50/60 text-gray-500 hover:text-blue-600 text-xs font-medium rounded-xl transition-all duration-200 hover:shadow-sm"
+              >
+                {ex}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Screen reader announcement for translation result */}
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {translationResult ? (uiLang === 'zh' ? '翻译完成' : 'Translation complete') : ''}
+      </div>
+
+      {/* Translation Loading Skeleton */}
+      {isTranslating && !translationResult && (
+        <TranslationSkeleton />
       )}
 
       {/* Translation Result */}
@@ -281,8 +437,12 @@ export default function TranslateTab({
         //   sentence  - short sentence (< 200 chars), compact single column
         //   paragraph - long text (>= 200 chars), tightest fonts for readability
         const txt = (inputText || '').trim();
-        const wordCount = txt.split(/\s+/).filter(Boolean).length;
-        const isSentence = wordCount > 3 || txt.length > 20;
+        // Chinese has no spaces — count Chinese characters as individual words
+        const chineseChars = (txt.match(/[\u4e00-\u9fa5]/g) || []).length;
+        const wordCount = chineseChars > 0
+          ? chineseChars + txt.split(/\s+/).filter(Boolean).length
+          : txt.split(/\s+/).filter(Boolean).length;
+        const isSentence = wordCount > 3 || txt.length > 8;
         const isParagraph = txt.length >= 200;
         const translationFontCls = isParagraph
           ? "text-xs sm:text-sm leading-relaxed"
@@ -297,22 +457,31 @@ export default function TranslateTab({
         const textPadRight = isSentence ? "" : "pr-8";
 
         return (
-          <div className={cn("grid grid-cols-1 gap-8", !isSentence && "lg:grid-cols-3")}>
+          <div className={cn("grid grid-cols-1 gap-8", !isSentence && slangInsights.length > 0 && "lg:grid-cols-3")}>
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className={cn("bg-white rounded-3xl p-5 sm:p-8 shadow-xl border border-gray-100 space-y-8 overflow-hidden", !isSentence && "lg:col-span-2")}
+              className={cn("liquid-glass rounded-3xl p-5 sm:p-8 space-y-8 overflow-hidden relative", !isSentence && slangInsights.length > 0 && "lg:col-span-2")}
+              style={{ boxShadow: 'var(--shadow-card)' }}
             >
               {/* Dual Column Translation */}
               {(translationResult.authenticTranslation || translationResult.academicTranslation) && (
                 <div className={cn("grid grid-cols-1 gap-4", !isSentence && "lg:grid-cols-2")}>
                   {/* Authentic Column */}
                   {translationResult.authenticTranslation && (
-                    <div className="bg-blue-50/50 rounded-2xl p-4 sm:p-6 border border-blue-100 relative overflow-hidden">
-                      <h3 className="text-xs font-black text-blue-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                        <Zap className="w-3 h-3 fill-current" />
-                        {uiLang === 'zh' ? '地道表达 (Authentic)' : 'Authentic Expression'}
-                      </h3>
+                    <motion.div
+                      initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ delay: 0.1, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                      className="warm-card rounded-2xl p-4 sm:p-6 relative overflow-hidden border-l-4 border-l-blue-400"
+                    >
+                      {/* Social post header */}
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-6 h-6 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-full flex items-center justify-center">
+                          <Zap className="w-3 h-3 text-white fill-current" />
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] gradient-text">{uiLang === 'zh' ? '地道表达' : 'AUTHENTIC'}</span>
+                      </div>
                       <p className={cn("text-gray-900 font-medium break-words", translationFontCls, textPadRight)}>
                         {translationResult.authenticTranslation}
                       </p>
@@ -323,22 +492,34 @@ export default function TranslateTab({
                         <Volume2 className="w-5 h-5" />
                         {isSentence && <span>{uiLang === 'zh' ? '朗读' : 'Listen'}</span>}
                       </button>
-                      <button
-                        onClick={() => onSaveWord('authentic')}
-                        disabled={isSaving}
-                        className="mt-4 flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-700 transition-colors"
-                      >
-                        <Plus className="w-3 h-3" />
-                        {uiLang === 'zh' ? '存入地道表达' : 'Save as Authentic'}
-                      </button>
-                    </div>
+                      {/* Social action bar — heart save + speaker */}
+                      <div className="mt-4 pt-3 border-t border-gray-100/50 flex items-center gap-4">
+                        <button
+                          onClick={() => onSaveWord('authentic')}
+                          disabled={isSaving || isAlreadySaved('authentic')}
+                          className={cn(
+                            "flex items-center gap-1.5 text-sm font-bold transition-all duration-300 disabled:opacity-50",
+                            isAlreadySaved('authentic') ? "text-blue-600" : "text-gray-400 hover:text-blue-600"
+                          )}
+                          title={uiLang === 'zh' ? '收藏' : 'Save'}
+                        >
+                          <Heart className={cn("w-5 h-5 transition-transform", isAlreadySaved('authentic') && "fill-current scale-110")} />
+                          {uiLang === 'zh' ? (isAlreadySaved('authentic') ? '已收藏' : '收藏') : (isAlreadySaved('authentic') ? 'Saved' : 'Save')}
+                        </button>
+                      </div>
+                    </motion.div>
                   )}
                   {/* Academic Column */}
                   {translationResult.academicTranslation && (
-                    <div className="bg-gray-50 rounded-2xl p-4 sm:p-6 border border-gray-200 relative overflow-hidden">
-                      <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
-                        <BookOpen className="w-3 h-3" />
-                        {uiLang === 'zh' ? '学术表达 (Academic)' : 'Academic Expression'}
+                    <motion.div
+                      initial={{ opacity: 0, y: 16, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      transition={{ delay: 0.25, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+                      className="warm-card rounded-2xl p-4 sm:p-6 relative overflow-hidden border-l-4 border-l-purple-400"
+                    >
+                      <h3 className="text-[10px] font-black uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+                        <BookOpen className="w-3 h-3 text-gray-500" />
+                        <span className="text-transparent bg-clip-text bg-gradient-to-r from-gray-600 to-purple-600">{uiLang === 'zh' ? '学术表达 (ACADEMIC)' : 'ACADEMIC EXPRESSION'}</span>
                       </h3>
                       <p className={cn("text-gray-900 font-medium break-words", translationFontCls, textPadRight)}>
                         {translationResult.academicTranslation}
@@ -350,15 +531,138 @@ export default function TranslateTab({
                         <Volume2 className="w-5 h-5" />
                         {isSentence && <span>{uiLang === 'zh' ? '朗读' : 'Listen'}</span>}
                       </button>
-                      <button
-                        onClick={() => onSaveWord('academic')}
-                        disabled={isSaving}
-                        className="mt-4 flex items-center gap-1 text-xs font-bold text-gray-500 hover:text-gray-700 transition-colors"
-                      >
-                        <Plus className="w-3 h-3" />
-                        {uiLang === 'zh' ? '存入学术表达' : 'Save as Academic'}
-                      </button>
-                    </div>
+                      <div className="mt-4 flex items-center gap-3">
+                        <button
+                          onClick={() => onSaveWord('academic')}
+                          disabled={isSaving || isAlreadySaved('academic')}
+                          className="flex items-center gap-1.5 text-xs font-bold text-gray-500 hover:text-gray-700 transition-all duration-200 disabled:opacity-50 hover:gap-2"
+                          title={uiLang === 'zh' ? '收藏' : 'Save'}
+                        >
+                          {isAlreadySaved('academic')
+                            ? <BookmarkCheck className="w-4 h-4 fill-current" />
+                            : <Bookmark className="w-4 h-4" />}
+                          {uiLang === 'zh' ? (isAlreadySaved('academic') ? '已收藏' : '收藏') : (isAlreadySaved('academic') ? 'Saved' : 'Save')}
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+              )}
+
+              {/* Inline Slang Chips — visible in sentence/paragraph mode where sidebar is hidden */}
+              {isSentence && slangInsights.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+                    {uiLang === 'zh' ? '检测到俚语：' : 'Slang detected:'}
+                  </span>
+                  {slangInsights.map((insight) => (
+                    <button
+                      key={insight.term}
+                      onClick={() => { trackEvent('slang_chip_click', { term: insight.term }); onViewSlangEntry(insight.term); }}
+                      className="px-2.5 py-1 text-xs font-medium bg-blue-50/60 text-indigo-500 rounded-xl border border-blue-100/60 hover:bg-blue-100 transition-all duration-200 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1"
+                      title={insight.meaning}
+                    >
+                      {insight.term}
+                    </button>
+                  ))}
+                  {isFetchingSlang && (
+                    <Loader2 className="w-3 h-3 animate-spin text-indigo-400" />
+                  )}
+                </div>
+              )}
+
+              {/* Social reaction bar — ❤️ / 💔 / Share */}
+              {user && (
+                <div className="flex items-center gap-4">
+                  <span className="text-xs text-gray-400">
+                    {uiLang === 'zh' ? '觉得如何？' : 'How was it?'}
+                  </span>
+                  <button
+                    onClick={() => handleFeedback('up')}
+                    disabled={!!feedbackGiven || isSubmittingFeedback}
+                    className={cn(
+                      "flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-300",
+                      feedbackGiven === 'up' ? "text-blue-600 bg-blue-50 scale-105" : "text-gray-400 hover:text-blue-600 hover:bg-blue-50",
+                      feedbackGiven && feedbackGiven !== 'up' && "opacity-30"
+                    )}
+                    aria-label={uiLang === 'zh' ? '翻译质量好' : 'Good translation'}
+                  >
+                    {isSubmittingFeedback && !feedbackGiven ? <Loader2 className="w-4 h-4 animate-spin" /> : <Heart className={cn("w-4 h-4", feedbackGiven === 'up' && "fill-current")} />}
+                    <span className="text-xs">{uiLang === 'zh' ? '赞' : 'Like'}</span>
+                  </button>
+                  <button
+                    onClick={() => handleFeedback('down')}
+                    disabled={!!feedbackGiven || isSubmittingFeedback}
+                    className={cn(
+                      "flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-300",
+                      feedbackGiven === 'down' ? "text-gray-600 bg-gray-100" : "text-gray-400 hover:text-gray-600 hover:bg-gray-100",
+                      feedbackGiven && feedbackGiven !== 'down' && "opacity-30"
+                    )}
+                    aria-label={uiLang === 'zh' ? '翻译质量差' : 'Poor translation'}
+                  >
+                    <ThumbsDown className="w-4 h-4" />
+                    <span className="text-xs">{uiLang === 'zh' ? '不太对' : 'Off'}</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      const text = `${translationResult?.original} → ${translationResult?.authenticTranslation || translationResult?.academicTranslation || ''} — via MemeFlow`;
+                      navigator.clipboard.writeText(text).catch(() => {});
+                      toast.success(uiLang === 'zh' ? '已复制到剪贴板' : 'Copied!');
+                    }}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium text-gray-400 hover:text-indigo-500 hover:bg-pink-50 transition-all duration-300 ml-auto"
+                  >
+                    <Share2 className="w-4 h-4" />
+                    <span className="text-xs">{uiLang === 'zh' ? '分享' : 'Share'}</span>
+                  </button>
+                  {showFeedbackReason && (
+                    <form
+                      className="flex flex-col gap-2 flex-1"
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        // Submit suggestion to translation_suggestions if provided
+                        if (suggestedTranslation.trim() && user && translationResult) {
+                          try {
+                            await addDoc(collection(db, 'translation_suggestions'), {
+                              uid: user.uid,
+                              query: translationResult.original,
+                              originalResult: translationResult.authenticTranslation || '',
+                              suggestion: suggestedTranslation.trim(),
+                              timestamp: Timestamp.now(),
+                            });
+                            trackEvent('translation_suggestion_submit');
+                          } catch (err) {
+                            Sentry.captureException(err, { tags: { component: 'TranslateTab' } });
+                          }
+                        }
+                        submitFeedback('down', feedbackReason);
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={feedbackReason}
+                          onChange={(e) => setFeedbackReason(e.target.value)}
+                          placeholder={uiLang === 'zh' ? '哪里不好？(选填)' : 'What went wrong? (optional)'}
+                          maxLength={500}
+                          className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-400"
+                        />
+                        <button
+                          type="submit"
+                          disabled={isSubmittingFeedback}
+                          className="text-xs font-bold text-blue-600 hover:text-blue-700 disabled:opacity-50 shrink-0"
+                        >
+                          {uiLang === 'zh' ? '提交' : 'Submit'}
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        value={suggestedTranslation}
+                        onChange={(e) => setSuggestedTranslation(e.target.value)}
+                        placeholder={uiLang === 'zh' ? '更好的翻译是？(选填，帮助我们改进)' : 'Better translation? (optional, helps us improve)'}
+                        maxLength={500}
+                        className="text-xs border border-gray-200 rounded-lg px-3 py-1.5 outline-none focus:border-blue-400"
+                      />
+                    </form>
                   )}
                 </div>
               )}
@@ -406,7 +710,19 @@ export default function TranslateTab({
                     </button>
                   </div>
 
-                  {/* Frequency Tabs */}
+                  {/* Frequency Tabs — show skeleton while streaming */}
+                  {(!translationResult.usages || translationResult.usages.length === 0) && (translationResult as any)?._isStreaming ? (
+                    <div className="mb-8 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                        <span className="text-xs text-gray-400">{uiLang === 'zh' ? '正在加载详细释义...' : 'Loading details...'}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="h-9 w-20 rounded-xl bg-gray-100 animate-pulse" />
+                        <div className="h-9 w-24 rounded-xl bg-gray-100 animate-pulse" />
+                      </div>
+                    </div>
+                  ) : (
                   <div className="mb-8">
                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
                       {uiLang === 'zh' ? '使用频率' : 'Usage Frequency'}
@@ -431,6 +747,7 @@ export default function TranslateTab({
                       ))}
                     </div>
                   </div>
+                  )}
 
                   <div className="space-y-8">
                     <motion.div
@@ -619,12 +936,7 @@ export default function TranslateTab({
                   <div className="h-px bg-white/20 mb-4" />
 
                   {isFetchingSlang ? (
-                    <div className="flex flex-col items-center py-8 gap-3">
-                      <Loader2 className="w-8 h-8 animate-spin text-blue-200" />
-                      <p className="text-xs text-blue-200 animate-pulse">
-                        {uiLang === 'zh' ? '正在解析文化背景...' : 'Decoding cultural context...'}
-                      </p>
-                    </div>
+                    <SlangInsightSkeleton />
                   ) : slangInsights.length > 0 ? (
                     <div className="space-y-6">
                       {slangInsights.map((insight, idx) => (
@@ -679,3 +991,5 @@ export default function TranslateTab({
     </div>
   );
 }
+
+export default memo(TranslateTab);

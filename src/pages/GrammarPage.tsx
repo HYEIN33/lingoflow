@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2, ChevronRight, CheckCircle, AlertCircle, Mic, MicOff } from 'lucide-react';
+import { Loader2, ChevronRight, CheckCircle, AlertCircle, Mic, MicOff, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import { GrammarCheckResult } from '../services/ai';
 import { cn } from '../lib/utils';
@@ -33,8 +33,18 @@ export default function GrammarPage(props: GrammarPageProps) {
           onChange={(e) => setGrammarInput(e.target.value)}
           placeholder={t.grammarPlaceholder}
           rows={4}
-          className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-28 sm:pr-32 text-lg shadow-xl shadow-gray-200/50 outline-none transition-all placeholder:text-gray-300 resize-none"
+          className="w-full glass-card border-2 border-transparent focus:border-blue-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-28 sm:pr-32 text-lg shadow-[var(--shadow-card)] focus:shadow-[var(--shadow-card-hover)] outline-none transition-all placeholder:text-gray-300 resize-none"
         />
+        {grammarInput && (
+          <button
+            type="button"
+            onClick={() => setGrammarInput('')}
+            className="absolute right-28 sm:right-32 top-4 text-gray-400 hover:text-gray-600 p-1 rounded-lg hover:bg-gray-100 transition-colors z-20"
+            aria-label={uiLang === 'zh' ? '清除输入' : 'Clear input'}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
         <div className="absolute right-2 sm:right-4 bottom-4 flex items-center gap-1 sm:gap-2 z-20">
           <button
             type="button"
@@ -55,6 +65,28 @@ export default function GrammarPage(props: GrammarPageProps) {
           </button>
         </div>
       </form>
+
+      {/* Example prompts when no result yet */}
+      {!grammarResult && !grammarInput && (
+        <div className="text-center py-6">
+          <p className="text-sm text-gray-400 mb-3">{uiLang === 'zh' ? '试试这些：' : 'Try these:'}</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {[
+              'I have went to the store yesterday',
+              'She don\'t like coffee',
+              'Me and him is friends',
+            ].map((ex) => (
+              <button
+                key={ex}
+                onClick={() => setGrammarInput(ex)}
+                className="px-4 py-2 glass-card hover:bg-blue-50 text-gray-500 hover:text-blue-600 text-xs font-medium rounded-xl transition-all hover:scale-[1.03] active:scale-[0.97] hover:shadow-sm"
+              >
+                {ex}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Grammar Result */}
       {grammarResult && (

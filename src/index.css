@@ -1,1 +1,209 @@
 @import "tailwindcss";
+
+/* ========== MemeFlow — Apple Liquid Glass Design System ========== */
+
+:root {
+  /* Text hierarchy — Apple-style grays */
+  --color-text-primary: #1D1D1F;
+  --color-text-secondary: #86868B;
+  --color-text-tertiary: #C7C7CC;
+  --color-text-quaternary: #D1D1D6;
+
+  /* Surfaces */
+  --color-bg: #FAFAFA;
+  --color-divider: #F5F5F7;
+
+  /* Single accent — blue to indigo gradient */
+  --gradient-accent: linear-gradient(135deg, #2563EB, #4F46E5);
+  --gradient-accent-subtle: linear-gradient(135deg, rgba(37,99,235,0.08), rgba(79,70,229,0.08));
+
+  /* Liquid Glass tiers */
+  --glass-1: rgba(255, 255, 255, 0.55);
+  --glass-2: rgba(255, 255, 255, 0.65);
+  --glass-3: rgba(255, 255, 255, 0.75);
+  --glass-blur-sm: 16px;
+  --glass-blur-md: 24px;
+  --glass-blur-lg: 32px;
+  --glass-saturate: 1.8;
+  --glass-border: rgba(255, 255, 255, 0.7);
+
+  /* Shadows — ultra subtle */
+  --shadow-glass: 0 2px 16px rgba(0, 0, 0, 0.04), 0 0 0 0.5px rgba(0, 0, 0, 0.02);
+  --shadow-glass-hover: 0 4px 24px rgba(0, 0, 0, 0.06), 0 0 0 0.5px rgba(0, 0, 0, 0.03);
+  --shadow-accent: 0 4px 16px -4px rgba(37, 99, 235, 0.25);
+
+  /* Typography */
+  --font-display: 'Outfit', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+
+  /* Radius */
+  --radius-glass: 24px;
+  --radius-button: 16px;
+  --radius-pill: 999px;
+
+  /* Apple easing */
+  --ease-apple: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ========== Base ========== */
+
+* { font-family: var(--font-display); }
+
+body {
+  font-family: var(--font-display);
+  background: var(--color-bg);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+html { scroll-behavior: smooth; }
+
+::selection {
+  background: rgba(37, 99, 235, 0.12);
+  color: inherit;
+}
+
+/* Scrollbar — nearly invisible */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.08); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.15); }
+
+/* ========== Liquid Glass Layers ========== */
+
+/* Light glass — background panels, tab bar */
+.glass {
+  background: var(--glass-1);
+  backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-glass);
+}
+
+/* Medium glass — content cards */
+.glass-card {
+  background: var(--glass-2);
+  backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-glass);
+  border-radius: var(--radius-glass);
+  transition: box-shadow 0.4s var(--ease-apple), transform 0.4s var(--ease-apple);
+}
+.glass-card:hover {
+  box-shadow: var(--shadow-glass-hover);
+}
+
+/* Heavy glass — header, elevated panels */
+.glass-heavy {
+  background: var(--glass-3);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(2);
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(2);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  box-shadow: var(--shadow-glass);
+}
+
+/* Recessed glass — secondary info, quotes */
+.glass-recessed {
+  background: rgba(245, 245, 247, 0.5);
+  backdrop-filter: blur(var(--glass-blur-sm));
+  -webkit-backdrop-filter: blur(var(--glass-blur-sm));
+  border: 1px solid rgba(0, 0, 0, 0.03);
+  border-radius: var(--radius-glass);
+}
+
+/* Legacy compat */
+.liquid-glass { composes: glass; }
+.liquid-glass-heavy { composes: glass-heavy; }
+.warm-card {
+  background: var(--glass-2);
+  backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--shadow-glass);
+  border-radius: var(--radius-glass);
+  transition: box-shadow 0.4s var(--ease-apple);
+}
+.warm-card:hover { box-shadow: var(--shadow-glass-hover); }
+
+/* ========== Gradient Accent ========== */
+
+.gradient-text {
+  background: var(--gradient-accent);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-border {
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  position: relative;
+}
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: var(--gradient-accent);
+  opacity: 0.3;
+  z-index: -1;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  -webkit-mask-composite: xor;
+  padding: 1px;
+}
+
+/* Gradient CTA button */
+.btn-accent {
+  background: var(--gradient-accent);
+  color: white;
+  font-weight: 600;
+  border-radius: var(--radius-button);
+  box-shadow: var(--shadow-accent);
+  transition: opacity 0.3s var(--ease-apple), transform 0.3s var(--ease-apple);
+}
+.btn-accent:hover { opacity: 0.92; }
+.btn-accent:active { transform: scale(0.97); }
+
+/* ========== Formality Slider ========== */
+
+.formality-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: linear-gradient(90deg, var(--color-divider) 0%, #E5E5EA 100%);
+  border-radius: 999px;
+  outline: none;
+}
+.formality-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--gradient-accent);
+  border: 3px solid white;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+  cursor: pointer;
+  transition: transform 0.2s var(--ease-apple);
+}
+.formality-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+}
+.formality-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--gradient-accent);
+  border: 3px solid white;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+  cursor: pointer;
+}
+.formality-slider::-moz-range-track {
+  background: linear-gradient(90deg, var(--color-divider), #E5E5EA);
+  height: 6px;
+  border-radius: 999px;
+}

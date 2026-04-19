@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Vite Dev Server",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--host=0.0.0.0", "--port", "5174"],
+      "port": 5174
+    },
+    {
+      "name": "API Proxy Server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:api"],
+      "port": 3100
+    },
+    {
+      "name": "Firebase Emulators",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["firebase", "emulators:start"],
+      "port": 4000
+    }
+  ]
+}

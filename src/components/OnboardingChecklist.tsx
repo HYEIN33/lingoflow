@@ -70,7 +70,7 @@ export function OnboardingChecklist({ uiLang, onDismiss }: OnboardingChecklistPr
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -10 }}
-        className="mb-4 bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200/60 rounded-2xl p-5 shadow-sm relative"
+        className="mb-4 bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200/60 rounded-3xl p-5 sm:p-8 shadow-xl relative"
       >
         <button
           onClick={() => {

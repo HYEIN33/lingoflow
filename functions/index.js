@@ -15,8 +15,14 @@ function firestoreDb() {
 }
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const MAX_PER_MINUTE = 30;
-const MAX_PER_DAY = 300;
+// Rate limits: Pro users get generous limits, free users get tighter ones
+const PRO_PER_MINUTE = 15;
+const PRO_PER_DAY = 200;
+const FREE_PER_MINUTE = 10;
+const FREE_PER_DAY = 50;
+// Legacy aliases used by checkRateLimit
+let MAX_PER_MINUTE = PRO_PER_MINUTE;
+let MAX_PER_DAY = PRO_PER_DAY;
 
 // Allowed origins — anything else gets a hard CORS reject
 const ALLOWED_ORIGINS = new Set([
@@ -65,7 +71,7 @@ async function checkRateLimit(uid) {
 }
 
 exports.apiGenerate = onRequest(
-  { secrets: ['GEMINI_API_KEY'], cors: false },
+  { secrets: ['GEMINI_API_KEY'], cors: false, minInstances: 1, timeoutSeconds: 60 },
   async (req, res) => {
     const corsOk = applyCors(req, res);
     if (req.method === 'OPTIONS') {
@@ -97,6 +103,19 @@ exports.apiGenerate = onRequest(
     }
     const uid = decoded.uid;
 
+    // Server-side Pro verification — read Firestore, don't trust the client
+    let isPro = false;
+    try {
+      const userSnap = await firestoreDb().collection('users').doc(uid).get();
+      isPro = userSnap.exists && userSnap.data()?.isPro === true;
+    } catch (e) {
+      // If Firestore read fails, default to free tier (fail-safe)
+      console.warn('Pro status check failed, defaulting to free tier:', e.message);
+    }
+    // Apply tier-based rate limits
+    MAX_PER_MINUTE = isPro ? PRO_PER_MINUTE : FREE_PER_MINUTE;
+    MAX_PER_DAY = isPro ? PRO_PER_DAY : FREE_PER_DAY;
+
     // Per-uid rate limit (Firestore-backed, survives across function instances).
     // Previously this was fail-OPEN as a temporary measure because admin.firestore()
     // was hitting a NOT_FOUND against a non-existent '(default)' database. Root
@@ -127,8 +146,7 @@ exports.apiGenerate = onRequest(
     // Whitelist models to prevent users billing expensive models
     const ALLOWED_MODELS = new Set([
       'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-2.0-flash-exp',
+      'gemini-2.5-flash-lite',
       'gemini-1.5-flash',
       'gemini-1.5-flash-8b',
     ]);

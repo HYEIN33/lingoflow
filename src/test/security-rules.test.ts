@@ -59,6 +59,35 @@ describe('firestore.rules — security audit', () => {
     expect(rules).toMatch(/match\s*\/slang_reports\/\{/);
   });
 
+  it('feedback collection read gated to admin or own uid', () => {
+    const section = rules.match(/match\s*\/feedback\/\{[^}]*\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    // Admins can read all; users can read their own feedback (for dedup)
+    expect(section![0]).toMatch(/allow read:\s*if isAdmin\(\)/);
+    expect(section![0]).toMatch(/resource\.data\.uid\s*==\s*request\.auth\.uid/);
+    expect(section![0]).toMatch(/allow create:\s*if isAuthenticated\(\)/);
+    // Must NOT allow update or delete by users
+    expect(section![0]).toMatch(/allow update,\s*delete:\s*if false/);
+  });
+
+  it('feedback create enforces field whitelist via hasOnly', () => {
+    const section = rules.match(/match\s*\/feedback\/\{[^}]*\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toContain("'uid'");
+    expect(section![0]).toContain("'query'");
+    expect(section![0]).toContain("'result'");
+    expect(section![0]).toContain("'rating'");
+    expect(section![0]).toContain("'reason'");
+    expect(section![0]).toContain("'timestamp'");
+    expect(section![0]).toContain("'scene'");
+  });
+
+  it('feedback rating constrained to up/down', () => {
+    const section = rules.match(/match\s*\/feedback\/\{[^}]*\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toMatch(/rating\s*in\s*\['up',\s*'down'\]/);
+  });
+
   it('slang_reports reads gated to admin only', () => {
     const section = rules.match(/match\s*\/slang_reports\/\{[^}]*\}[\s\S]*?\n\s*\}/);
     expect(section).toBeTruthy();
@@ -165,6 +194,39 @@ describe('storage.rules — security audit', () => {
     expect(section).toBeTruthy();
     expect(section![0]).toMatch(/isImage\(\)\s*&&\s*sizeUnder/);
     expect(section![0]).toMatch(/isVideo\(\)\s*&&\s*sizeUnder/);
+  });
+});
+
+describe('translation_suggestions rules — security audit', () => {
+  const rules = readFileSync(firestoreRulesPath, 'utf-8');
+
+  it('translation_suggestions collection exists and is admin-read-only', () => {
+    const section = rules.match(/match\s*\/translation_suggestions\/\{[^}]*\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toMatch(/allow read:\s*if isAdmin\(\)/);
+    expect(section![0]).toMatch(/allow create:\s*if isAuthenticated\(\)/);
+  });
+
+  it('translation_suggestions enforces field whitelist via hasOnly', () => {
+    const section = rules.match(/match\s*\/translation_suggestions\/\{[^}]*\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toContain("'uid'");
+    expect(section![0]).toContain("'query'");
+    expect(section![0]).toContain("'suggestion'");
+    expect(section![0]).toContain("'timestamp'");
+  });
+
+  it('translation_suggestions enforces suggestion size constraints', () => {
+    const section = rules.match(/match\s*\/translation_suggestions\/\{[^}]*\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toMatch(/suggestion\.size\(\)\s*>\s*0/);
+    expect(section![0]).toMatch(/suggestion\.size\(\)\s*<=\s*500/);
+  });
+
+  it('translation_suggestions blocks update and delete', () => {
+    const section = rules.match(/match\s*\/translation_suggestions\/\{[^}]*\}[\s\S]*?\n\s*\}/);
+    expect(section).toBeTruthy();
+    expect(section![0]).toMatch(/allow update,\s*delete:\s*if false/);
   });
 });
 

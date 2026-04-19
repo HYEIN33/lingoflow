@@ -37,6 +37,7 @@ interface WordbookPageProps {
   onDeleteFolder: (id: string) => void;
   onSetActiveFolder: (id: string | null) => void;
   onMoveWordsToFolder: (wordIds: string[], folderId: string | null) => void;
+  onNavigateToTranslate?: () => void;
 }
 
 export default function WordbookPage(props: WordbookPageProps) {
@@ -46,7 +47,7 @@ export default function WordbookPage(props: WordbookPageProps) {
     selectedUsageIndex, setSelectedUsageIndex, showDetails, setShowDetails,
     loadingAudioText, uiLang, onSpeak, onDeleteWord,
     folders, wordFolderMap, activeFolderId, onCreateFolder, onRenameFolder,
-    onDeleteFolder, onSetActiveFolder, onMoveWordsToFolder
+    onDeleteFolder, onSetActiveFolder, onMoveWordsToFolder, onNavigateToTranslate
   } = props;
 
   const t = translations[uiLang];
@@ -294,6 +295,11 @@ export default function WordbookPage(props: WordbookPageProps) {
           <p className="text-gray-300 text-sm mt-2">
             {uiLang === 'zh' ? '翻译单词后点击保存，就会出现在这里' : 'Translate a word and save it to see it here'}
           </p>
+          {onNavigateToTranslate && (
+            <button onClick={onNavigateToTranslate} className="mt-4 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors">
+              {uiLang === 'zh' ? '去翻译' : 'Go Translate'}
+            </button>
+          )}
         </div>
       ) : (
         /* ======================== LIST VIEW ======================== */
@@ -309,8 +315,17 @@ export default function WordbookPage(props: WordbookPageProps) {
                   placeholder={t.search}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none transition-all"
+                  className="w-full pl-10 pr-9 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none transition-all"
                 />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-0.5"
+                    aria-label={uiLang === 'zh' ? '清除搜索' : 'Clear search'}
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
               <button
                 onClick={() => { setBatchMode(!batchMode); setSelectedWordIds(new Set()); }}
@@ -489,7 +504,10 @@ export default function WordbookPage(props: WordbookPageProps) {
               <motion.div
                 layout
                 key={word.id}
-                className="bg-white rounded-2xl border border-gray-100 hover:border-blue-200 transition-all shadow-sm hover:shadow-md"
+                className={cn(
+                  "bg-white rounded-3xl border border-gray-100 hover:border-blue-200 transition-all shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-card-hover)] overflow-hidden border-l-4",
+                  word.styleTag === 'authentic' ? "border-l-blue-500" : word.styleTag === 'academic' ? "border-l-purple-500" : "border-l-gray-200"
+                )}
               >
                 <div
                   onClick={() => batchMode ? toggleWordSelection(word.id) : setSelectedWordbookItem(word)}
@@ -506,6 +524,12 @@ export default function WordbookPage(props: WordbookPageProps) {
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
+                      {word.interval != null && (
+                        <span className={cn(
+                          "w-2 h-2 rounded-full shrink-0",
+                          word.interval > 21 ? "bg-green-400" : word.interval > 0 ? "bg-yellow-400" : "bg-red-400"
+                        )} title={word.interval > 21 ? (uiLang === 'zh' ? '已掌握' : 'Mastered') : word.interval > 0 ? (uiLang === 'zh' ? '学习中' : 'Learning') : (uiLang === 'zh' ? '该复习了' : 'Due for review')} />
+                      )}
                       <h3 className="text-base font-bold text-gray-900 truncate">{word.original}</h3>
                       {word.styleTag && word.styleTag !== 'standard' && (
                         <span className={cn(
@@ -517,6 +541,9 @@ export default function WordbookPage(props: WordbookPageProps) {
                       )}
                     </div>
                     <p className="text-sm text-gray-500 truncate mt-0.5">{word.usages?.[0]?.meaningZh || ''}</p>
+                    {(word.authenticTranslation || word.academicTranslation) && (
+                      <p className="text-xs text-gray-400 truncate mt-0.5">→ {(word.authenticTranslation || word.academicTranslation || '').slice(0, 60)}</p>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button
