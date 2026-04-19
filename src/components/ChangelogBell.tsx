@@ -51,11 +51,18 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
 
   const handleOpen = () => {
     setIsOpen(true);
-    // Mark as seen as soon as they open — opening IS acknowledgment.
-    // If they close without reading, fine — they had the chance.
+    // Write lastSeen to localStorage immediately so the red dot disappears
+    // on the bell right away and doesn't come back after reload. But we
+    // deliberately do NOT setLastSeen(currentVersion) here — keeping the
+    // React state at its old value for this session means the entries
+    // still render their "New" pills. That's the whole point of the modal:
+    // the user needs to SEE which entries are new. Previously setState
+    // fired on click and the pills disappeared on the very next render —
+    // the user opened the modal and saw a flat history with nothing
+    // highlighted. On reload, lastSeen is fresh from localStorage, so the
+    // pills are gone as intended.
     if (hasUnseen) {
       writeLastSeen(currentVersion);
-      setLastSeen(currentVersion);
     }
   };
 
@@ -79,7 +86,13 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            // z-[100] > the app header's sticky z-10 and any tab bar's
+            // blur layer. `isolate` creates a new stacking context so the
+            // overlay can't be pierced by sticky siblings below.
+            // bg-black/60 replaces /40 — previously the page behind was
+            // bleeding through and the user saw tabs + search history
+            // through the modal.
+            className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] isolate flex items-center justify-center p-4"
             onClick={() => setIsOpen(false)}
           >
             <motion.div
@@ -87,7 +100,7 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.98 }}
               transition={{ duration: 0.2 }}
-              className="bg-white rounded-3xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col"
+              className="bg-white rounded-3xl shadow-2xl max-w-lg w-full max-h-[80vh] overflow-hidden flex flex-col relative"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
@@ -116,19 +129,23 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
                   // setLastSeen already updated, so the ribbon disappears
                   // from the current render. Also intentional.
                   return (
-                    <div key={entry.version} className="relative">
-                      {isUnseen && (
-                        <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider">
-                          New
-                        </span>
-                      )}
-                      <div className="flex items-baseline gap-3 mb-2">
+                    <div key={entry.version}>
+                      {/* Top row: version + date + optional NEW pill. Inline
+                          instead of absolutely positioned — the old -top-2
+                          -right-2 pill was getting clipped by the modal's
+                          rounded-3xl + overflow-hidden container. */}
+                      <div className="flex items-center flex-wrap gap-2 mb-2">
                         <span className="font-black text-blue-600 text-sm">
                           v{entry.version}
                         </span>
                         <span className="text-xs text-gray-400">{entry.date}</span>
+                        {isUnseen && (
+                          <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                            New
+                          </span>
+                        )}
                       </div>
-                      <h3 className="font-bold text-gray-900 text-base mb-3">
+                      <h3 className="font-bold text-gray-900 text-base mb-3 leading-snug">
                         {entry.title}
                       </h3>
                       <ul className="space-y-2">
