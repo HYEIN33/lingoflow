@@ -49,6 +49,19 @@ export function useTranslation({
   // (or collapsing/re-expanding) doesn't re-fetch. Keyed by usage label.
   const detailsCacheRef = useRef<Map<string, Awaited<ReturnType<typeof loadTranslationDetails>>>>(new Map());
 
+  // Resets the translate surface back to its "no result yet" state. Called by
+  // the Clear (×) button in the input box so the user can get back to the
+  // search history + trending meme list after reading a translation.
+  // Without this, clearing the input keeps the old result on screen because
+  // the history/trending UI is gated on `!translationResult`.
+  const clearTranslation = () => {
+    setInputText('');
+    setTranslationResult(null);
+    setShowDetails(false);
+    setSelectedUsageIndex(0);
+    setSlangInsights([]);
+  };
+
   const handleTranslate = async (e?: React.FormEvent, overrideText?: string) => {
     e?.preventDefault();
     const textToTranslate = overrideText || inputText;
@@ -259,5 +272,6 @@ export function useTranslation({
     handleTranslate,
     handleSaveWord,
     ensureDetailsLoaded,
+    clearTranslation,
   };
 }

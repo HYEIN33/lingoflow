@@ -263,3 +263,106 @@ exports.apiGenerate = onRequest(
     }
   }
 );
+
+// ─────────────────────────────────────────────────────────────────────────
+// Classroom live translation — ephemeral token minting for Gemini Live.
+// Called by the ClassroomTab before opening the WebSocket. We hold the
+// real Gemini API key on the server and hand the client a short-lived
+// token scoped to one Live session. The client connects directly to
+// Gemini — audio never traverses this Function, so cost scales with user
+// minutes not our bandwidth.
+//
+// Google Cloud quota limits sit on the API key side (see Console →
+// APIs & Services → Gemini API → Quotas) — we rely on those to cap
+// spend. This Function only authenticates the user and mints the token.
+exports.liveToken = onRequest(
+  { secrets: ['GEMINI_API_KEY'], cors: false, timeoutSeconds: 30 },
+  async (req, res) => {
+    const corsOk = applyCors(req, res);
+    if (req.method === 'OPTIONS') {
+      res.status(corsOk ? 204 : 403).end();
+      return;
+    }
+    if (!corsOk) {
+      res.status(403).json({ error: 'Origin not allowed' });
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed' });
+      return;
+    }
+
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) {
+      res.status(401).json({ error: 'Missing auth token' });
+      return;
+    }
+    let decoded;
+    try {
+      decoded = await admin.auth().verifyIdToken(token);
+    } catch {
+      res.status(401).json({ error: 'Invalid auth token' });
+      return;
+    }
+
+    // Same rate-limit policy as apiGenerate — classroom usage counts
+    // against the same per-user budget so a misbehaving client can't
+    // spin up thousands of tokens and eat into the quota.
+    try {
+      const rl = await checkRateLimit(decoded.uid);
+      if (!rl.allowed) {
+        res.status(429).json({ error: 'Rate limit — try again shortly' });
+        return;
+      }
+    } catch (e) {
+      console.error('liveToken rate limit failed:', e);
+      res.status(503).json({ error: 'Rate limit service unavailable' });
+      return;
+    }
+
+    // Mint a v1alpha ephemeral auth token. Single use, expires in 10 min.
+    // (User must start the Live session within this window; once the
+    // WebSocket is open the session is independent of the token.)
+    //
+    // Endpoint: POST /v1alpha/auth_tokens?key=<API_KEY>
+    //
+    // Accepted fields are `uses` and `expire_time` ONLY — the REST schema
+    // does NOT accept the `live_connect_constraints` field that appears in
+    // the JS SDK's LiveEphemeralParameters type. Sending that field returns
+    // HTTP 400 "Unknown name live_connect_constraints" (verified 2026-04-20).
+    // Max expiry is 20h per Google's policy; we use 10 min. The tradeoff
+    // of an unconstrained token is that a stolen token could open any Live
+    // model, but the 10-min single-use window makes that window tiny.
+    const expireTime = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    try {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1alpha/auth_tokens?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uses: 1,
+            expire_time: expireTime,
+          }),
+        }
+      );
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        console.error('liveToken mint failed:', err);
+        res.status(r.status).json({ error: err.error?.message || 'Token mint failed' });
+        return;
+      }
+      const payload = await r.json();
+      // `name` is the token string the client uses as its API key for Live.
+      res.json({
+        token: payload.name,
+        expireTime,
+        model: 'gemini-2.0-flash-live-001',
+      });
+    } catch (e) {
+      console.error('liveToken error:', e);
+      res.status(500).json({ error: e.message || 'Internal error' });
+    }
+  }
+);

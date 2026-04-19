@@ -96,6 +96,9 @@ interface TranslateTabProps {
 
   // Actions
   onTranslate: (e?: React.FormEvent) => void;
+  // Called by the × button in the input box. Wipes input AND result so the
+  // user returns to the search-history + trending-memes landing view.
+  onClear: () => void;
   onSearchWord: (word: string) => void;
   onGoBack: () => void;
   onSaveWord: (styleTag?: 'authentic' | 'academic' | 'standard') => void;
@@ -133,6 +136,7 @@ export default function TranslateTab({
   isListening,
   onToggleListening,
   onTranslate,
+  onClear,
   onSearchWord,
   onGoBack,
   onSaveWord,
@@ -162,11 +166,15 @@ export default function TranslateTab({
             {inputText.length} / 2000
           </div>
         )}
-        {/* Clear button */}
-        {inputText && (
+        {/* Clear button — wipes the translation surface back to the landing
+            view (search history + trending memes). Previously this only
+            cleared inputText, leaving the old translation visible on screen,
+            so users who finished reading a word couldn't see their history
+            again without reloading. */}
+        {(inputText || translationResult) && (
           <button
             type="button"
-            onClick={() => { setInputText(''); setPreviousSearchWord(null); }}
+            onClick={() => { onClear(); setPreviousSearchWord(null); }}
             className="absolute left-auto right-36 sm:right-44 top-1/2 -translate-y-1/2 p-1.5 text-gray-300 hover:text-gray-500 transition-colors z-20"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>

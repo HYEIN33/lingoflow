@@ -1,4 +1,4 @@
-import React, { useState, useEffect, Component, ReactNode, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, Component, ReactNode, lazy, Suspense } from 'react';
 import * as Sentry from '@sentry/react';
 import { toast } from 'sonner';
 import {
@@ -38,7 +38,8 @@ import {
   MessageSquare,
   Zap,
   Trophy,
-  UserCircle
+  UserCircle,
+  Headphones
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
@@ -55,6 +56,8 @@ import {
 import { cn } from './lib/utils';
 import { Language, translations } from './i18n';
 import { APP_VERSION, APP_ENV, IS_STAGING } from './version';
+import ChangelogBell from './components/ChangelogBell';
+import ChangelogToast from './components/ChangelogToast';
 import { useAuth } from './hooks/useAuth';
 import { useAudio } from './hooks/useAudio';
 import { useSpeechRecognition } from './hooks/useSpeechRecognition';
@@ -185,20 +188,29 @@ interface SortableTabProps {
   tab: { id: string; label: string; icon: any; count?: number };
   isActive: boolean;
   onSelect: () => void;
-  isPro: boolean;
 }
-function SortableTab({ tab, isActive, onSelect, isPro }: SortableTabProps) {
-  const sortable = useSortable({ id: tab.id, disabled: !isPro });
+// Tab reordering is open to every signed-in user (free tier included) —
+// the tab they drag to position 0 becomes their default landing tab on
+// next app open. Previously this was Pro-gated via `disabled: !isPro`,
+// but the "first-tab-is-landing" UX only works if every user can actually
+// reorder. Kept the prop-less signature so future Pro-only features can be
+// added without reintroducing the old gate.
+function SortableTab({ tab, isActive, onSelect }: SortableTabProps) {
+  const sortable = useSortable({ id: tab.id });
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = sortable;
-  // dnd-kit's Translate-based transform is what actually moves the
-  // button during drag. The Button stays rendered in-place, but its
-  // transform translates it under the user's finger.
+  // dnd-kit tracks the raw pointer offset in `transform.{x,y,scaleX,scaleY}`.
+  // For a horizontal-only tab row the Y axis is pure visual distraction —
+  // users who nudge up/down mid-drag saw the tab float off the bar.
+  // Lock Y to 0 and let the horizontal sorting strategy handle everything
+  // else. Scale is untouched so dnd-kit's optional scale animation still works.
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    transform: transform
+      ? CSS.Transform.toString({ ...transform, y: 0 })
+      : undefined,
     transition,
     opacity: isDragging ? 0.65 : 1,
     zIndex: isDragging ? 20 : 1,
-    touchAction: isPro ? 'none' : undefined,
+    touchAction: 'none',
   };
   return (
     <div
@@ -236,6 +248,7 @@ const UserProfileComponent = lazy(() => import('./components/UserProfile'));
 const GrammarPage = lazy(() => import('./pages/GrammarPage'));
 const ReviewPage = lazy(() => import('./pages/ReviewPage'));
 const WordbookPage = lazy(() => import('./pages/WordbookPage'));
+const ClassroomTab = lazy(() => import('./pages/ClassroomTab'));
 
 function LazyFallback() {
   return (
@@ -524,8 +537,17 @@ export default function App() {
     return <MaintenancePage />;
   }
 
-  const [activeTab, setActiveTab] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile'>('slang');
-  // Slang is the primary USP, always default tab
+  // Starts at 'slang' as a safe SSR/first-paint fallback. The real default
+  // is the first tab in the user's tabOrder — synced in via a useEffect
+  // below once userProfile loads. If the user manually switches tabs before
+  // profile load finishes, we respect their choice and skip the sync (see
+  // userSwitchedTabRef).
+  const [activeTab, setActiveTabState] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile' | 'classroom'>('slang');
+  const userSwitchedTabRef = useRef(false);
+  const setActiveTab: typeof setActiveTabState = (value) => {
+    userSwitchedTabRef.current = true;
+    setActiveTabState(value);
+  };
   const [showPayment, setShowPayment] = useState(false);
   const [paymentTrigger, setPaymentTrigger] = useState('default');
 
@@ -612,7 +634,7 @@ export default function App() {
     inputText, setInputText, isTranslating, translationResult, slangInsights, isFetchingSlang,
     selectedUsageIndex, setSelectedUsageIndex, showDetails, setShowDetails,
     formalityLevel, setFormalityLevel, isSaving, isLoadingDetails,
-    handleTranslate, handleSaveWord, ensureDetailsLoaded,
+    handleTranslate, handleSaveWord, ensureDetailsLoaded, clearTranslation,
   } = useTranslation({ user, userProfile, setUserProfile, savedWords, uiLang, onPaymentNeeded });
 
   // Fire-and-forget: when the user opens Details, lazy-load synonyms/etc for
@@ -745,9 +767,30 @@ export default function App() {
     handleTabOrderChange(newOrder);
   };
 
-  const defaultTabs = ['slang', 'translate', 'grammar', 'history', 'review'];
+  const defaultTabs = ['slang', 'translate', 'classroom', 'grammar', 'history', 'review'];
   const rawOrder = userProfile?.tabOrder || defaultTabs;
   const fullOrder = [...rawOrder, ...defaultTabs.filter(t => !rawOrder.includes(t))];
+
+  // On first userProfile load, land the user on the first tab in their
+  // saved order. Whatever they dragged to position 0 becomes their home
+  // screen. We bail out if they've already clicked a tab since mount —
+  // their intent beats the saved preference. Only fires once per session
+  // because `tabOrder` array identity changes each render; the ref guard
+  // prevents re-syncing after every tabOrder mutation.
+  const syncedInitialTabRef = useRef(false);
+  useEffect(() => {
+    if (syncedInitialTabRef.current) return;
+    if (userSwitchedTabRef.current) return;
+    if (!userProfile) return;
+    const firstTab = fullOrder[0];
+    if (firstTab && firstTab !== activeTab) {
+      setActiveTabState(firstTab as typeof activeTab);
+    }
+    syncedInitialTabRef.current = true;
+    // fullOrder is computed every render but we only care about the first
+    // non-null userProfile — the ref above ensures we only fire once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userProfile]);
   const tabs = fullOrder.map(id => {
     switch(id) {
       case 'translate': return { id, label: t.translateTab, icon: Search };
@@ -755,6 +798,7 @@ export default function App() {
       case 'review': return { id, label: t.reviewTab, icon: BookOpen };
       case 'grammar': return { id, label: t.grammarTab, icon: PenTool };
       case 'slang': return { id, label: t.slangTab, icon: MessageSquare };
+      case 'classroom': return { id, label: uiLang === 'zh' ? '课堂同传' : 'Classroom', icon: Headphones };
       // AI is now integrated into Review tab
       default: return { id, label: '', icon: Search };
     }
@@ -778,6 +822,9 @@ export default function App() {
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-300/30 rounded-full blur-3xl pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-300/30 rounded-full blur-3xl pointer-events-none"></div>
 
+      {/* Pops the "v0.2.0 is here" toast once per release for returning users */}
+      <ChangelogToast currentVersion={APP_VERSION} />
+
       {/* Header */}
       <header className="bg-white/40 backdrop-blur-md border-b border-white/50 sticky top-0 z-10 shadow-sm">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
@@ -792,6 +839,7 @@ export default function App() {
             >
               v{APP_VERSION}
             </span>
+            <ChangelogBell currentVersion={APP_VERSION} />
             {userProfile?.isPro && (
               <span className="ml-2 px-2 py-0.5 bg-gradient-to-r from-amber-400 to-orange-500 text-white text-[10px] font-black rounded-full shadow-sm uppercase tracking-wider">
                 {t.proBadge}
@@ -872,7 +920,6 @@ export default function App() {
                   tab={tab}
                   isActive={activeTab === tab.id}
                   onSelect={() => setActiveTab(tab.id as any)}
-                  isPro={!!userProfile?.isPro}
                 />
               ))}
             </div>
@@ -909,6 +956,7 @@ export default function App() {
               isListening={isListening}
               onToggleListening={toggleListening}
               onTranslate={handleTranslateWithHistory}
+              onClear={clearTranslation}
               onSearchWord={handleSearchWord}
               onGoBack={handleGoBack}
               onSaveWord={handleSaveWord}
@@ -999,6 +1047,10 @@ export default function App() {
                 />
               )}
               <SlangDictionary uiLang={uiLang} initialSearchTerm={searchQuery} />
+            </div>
+          ) : activeTab === 'classroom' ? (
+            <div>
+              <ClassroomTab uiLang={uiLang} />
             </div>
           ) : activeTab === 'leaderboard' ? (
             <div>

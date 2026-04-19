@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/react';
 import { toast } from 'sonner';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, orderBy, limit, serverTimestamp, onSnapshot, getDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { Search, Plus, ThumbsUp, AlertCircle, Loader2, MessageSquare, Volume2, Image as ImageIcon, Video, Film, X, Mic, Wand2, Flag, Share2, Send, ChevronDown } from 'lucide-react';
+import { Search, Plus, ThumbsUp, AlertCircle, Loader2, MessageSquare, Volume2, Image as ImageIcon, Video, Film, X, Mic, Wand2, Flag, Share2, Send, ChevronDown, ChevronUp } from 'lucide-react';
 import { validateSlangMeaning, generateSpeech, generateSlangExample, suggestSlangMeaning } from '../services/ai';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -173,6 +173,26 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
   const [showAddForm, setShowAddForm] = useState(false);
   const [showGuidelines, setShowGuidelines] = useState(false);
   const [recentSlangs, setRecentSlangs] = useState<Slang[]>([]);
+  // Browse-entries panel can be collapsed into just a title + chevron so
+  // users who don't care about the scroll of tag-style terms can reclaim
+  // vertical space on their home screen. Persisted so the preference
+  // sticks across reloads.
+  const [browseCollapsed, setBrowseCollapsed] = useState<boolean>(
+    () => typeof window !== 'undefined' && localStorage.getItem('memeflow_browse_collapsed') === 'true'
+  );
+  const toggleBrowseCollapsed = () => {
+    const next = !browseCollapsed;
+    setBrowseCollapsed(next);
+    try { localStorage.setItem('memeflow_browse_collapsed', String(next)); } catch { /* quota */ }
+  };
+  const [trendingCollapsed, setTrendingCollapsed] = useState<boolean>(
+    () => typeof window !== 'undefined' && localStorage.getItem('memeflow_trending_collapsed') === 'true'
+  );
+  const toggleTrendingCollapsed = () => {
+    const next = !trendingCollapsed;
+    setTrendingCollapsed(next);
+    try { localStorage.setItem('memeflow_trending_collapsed', String(next)); } catch { /* quota */ }
+  };
   const [trendingTerms, setTrendingTerms] = useState<{ term: string; count: number }[]>([]);
   const [trendingRefresh, setTrendingRefresh] = useState(0);
 
@@ -1074,56 +1094,107 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
       )}
       </div>
 
-      {/* Weekly trending — always visible */}
+      {/* Weekly trending — collapsible. When collapsed, the outer container
+          tightens (px-4 py-2, no mb-3 on the button) so it doesn't look like
+          a half-empty card. When expanded it grows back to p-4 with breathing
+          room above the list. */}
       {!currentSlang && !showAddForm && trendingTerms.length > 0 && (
-        <div className="bg-white/70 rounded-2xl p-4 border border-white/60 shadow-sm">
-          <h3 className="text-sm font-bold text-gray-500 mb-3">
-            {uiLang === 'zh' ? '📊 本周搜索榜' : '📊 Trending This Week'}
-          </h3>
-          <div className="space-y-1.5">
-            {trendingTerms.map((item, idx) => (
-              <button
-                key={item.term}
-                onClick={() => doSearch(item.term)}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-blue-50 transition-colors text-left"
+        <div className={cn(
+          "bg-white/70 rounded-2xl border border-white/60 shadow-sm transition-[padding] duration-200",
+          trendingCollapsed ? "px-4 py-2" : "p-4"
+        )}>
+          <button
+            onClick={toggleTrendingCollapsed}
+            className={cn(
+              "flex items-center gap-1.5 text-sm font-bold text-gray-500 hover:text-gray-700 transition-colors w-full",
+              !trendingCollapsed && "mb-3"
+            )}
+            aria-expanded={!trendingCollapsed}
+          >
+            <span>{uiLang === 'zh' ? '大家都在搜' : 'Trending This Week'}</span>
+            {trendingCollapsed
+              ? <ChevronDown className="w-4 h-4" />
+              : <ChevronUp className="w-4 h-4" />}
+          </button>
+          <AnimatePresence initial={false}>
+            {!trendingCollapsed && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
               >
-                <span className={cn(
-                  "w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black",
-                  idx === 0 ? "bg-red-100 text-red-600" :
-                  idx === 1 ? "bg-orange-100 text-orange-600" :
-                  idx === 2 ? "bg-yellow-100 text-yellow-600" :
-                  "bg-gray-100 text-gray-500"
-                )}>
-                  {idx + 1}
-                </span>
-                <span className="flex-1 text-sm font-semibold text-gray-800">{item.term}</span>
-                <span className="text-xs text-gray-400">{item.count} {uiLang === 'zh' ? '次' : 'searches'}</span>
-              </button>
-            ))}
-          </div>
+                <div className="space-y-1.5">
+                  {trendingTerms.map((item, idx) => (
+                    <button
+                      key={item.term}
+                      onClick={() => doSearch(item.term)}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-blue-50 transition-colors text-left"
+                    >
+                      {/* Previously red/orange/yellow/gray — retired the
+                          rainbow in favor of a monochrome blue gradient so
+                          the ranking badges don't fight the rest of the
+                          page's blue palette. Depth still conveys rank. */}
+                      <span className={cn(
+                        "w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black",
+                        idx === 0 ? "bg-blue-600 text-white" :
+                        idx === 1 ? "bg-blue-100 text-blue-600" :
+                        idx === 2 ? "bg-blue-50 text-blue-500" :
+                        "bg-gray-100 text-gray-500"
+                      )}>
+                        {idx + 1}
+                      </span>
+                      <span className="flex-1 text-sm font-semibold text-gray-800">{item.term}</span>
+                      <span className="text-xs text-gray-400">{item.count} {uiLang === 'zh' ? '次' : 'searches'}</span>
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       )}
 
       {/* Feed: browse + guidelines (shown when no search active) */}
       {!searchTerm && !currentSlang && !showAddForm && (
         <div className="space-y-4">
-          {/* Browse entries */}
+          {/* Browse entries — collapsible. Clicking the title bar toggles
+              the tag list below; preference is persisted so users who
+              always want it collapsed only have to click once. */}
           {recentSlangs.length > 0 && (
             <div>
-              <h3 className="text-sm font-bold text-gray-500 mb-3">
-                {uiLang === 'zh' ? '🔥 浏览词条' : '🔥 Browse Entries'}
-              </h3>
-              <div className="flex flex-wrap gap-2">
-                {recentSlangs.map((slang) => (
-                  <button
-                    key={slang.id}
-                    onClick={() => doSearch(slang.term)}
-                    className="px-3 py-1.5 bg-white/60 border border-white/60 rounded-xl text-sm font-medium text-gray-700 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 transition-colors"
+              <button
+                onClick={toggleBrowseCollapsed}
+                className="flex items-center gap-1.5 text-sm font-bold text-gray-500 hover:text-gray-700 transition-colors mb-3"
+                aria-expanded={!browseCollapsed}
+              >
+                <span>{uiLang === 'zh' ? '浏览词条' : 'Browse Entries'}</span>
+                {browseCollapsed
+                  ? <ChevronDown className="w-4 h-4" />
+                  : <ChevronUp className="w-4 h-4" />}
+              </button>
+              <AnimatePresence initial={false}>
+                {!browseCollapsed && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
                   >
-                    {slang.term}
-                  </button>
-                ))}
-              </div>
+                    <div className="flex flex-wrap gap-2">
+                      {recentSlangs.map((slang) => (
+                        <button
+                          key={slang.id}
+                          onClick={() => doSearch(slang.term)}
+                          className="px-3 py-1.5 bg-white/60 border border-white/60 rounded-xl text-sm font-medium text-gray-700 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 transition-colors"
+                        >
+                          {slang.term}
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
           )}
 
@@ -1133,7 +1204,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
               onClick={() => setShowGuidelines(!showGuidelines)}
               className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
             >
-              📖 {uiLang === 'zh' ? (showGuidelines ? '收起贡献准则' : '查看贡献准则') : (showGuidelines ? 'Hide Guidelines' : 'View Contribution Guidelines')}
+              {uiLang === 'zh' ? (showGuidelines ? '收起贡献准则' : '查看贡献准则') : (showGuidelines ? 'Hide Guidelines' : 'View Contribution Guidelines')}
             </button>
           )}
           <AnimatePresence>

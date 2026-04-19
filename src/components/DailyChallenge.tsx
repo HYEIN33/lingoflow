@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { collection, query, getDocs, where, orderBy, limit as firestoreLimit } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Zap, ChevronDown, ChevronUp, Eye } from 'lucide-react';
+import { Zap, ChevronDown, ChevronUp, Eye, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface DailyChallengeProps {
@@ -26,8 +26,16 @@ export function DailyChallenge({ uiLang }: DailyChallengeProps) {
   const [revealed, setRevealed] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  const todayKey = `daily_challenge_${new Date().toISOString().split('T')[0]}`;
+  // Per-day dismissal for the "completed" bar. User can tap × after
+  // finishing today to get the bar off their home screen until tomorrow,
+  // when a fresh challenge rolls out. No-op if they haven't completed yet
+  // (no × is rendered in that state).
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayKey = `daily_challenge_${todayStr}`;
+  const dismissKey = `daily_challenge_dismissed_${todayStr}`;
+  const [dismissed, setDismissed] = useState<boolean>(
+    () => typeof window !== 'undefined' && localStorage.getItem(dismissKey) === 'true'
+  );
 
   useEffect(() => {
     // Check if already completed today
@@ -87,9 +95,19 @@ export function DailyChallenge({ uiLang }: DailyChallengeProps) {
   };
 
   if (loading || (!slang && !completed)) return null;
+  // User tapped × after completing today → hide entirely until tomorrow,
+  // when a fresh `todayStr` makes `dismissKey` a different localStorage key
+  // and the bar naturally reappears for the new challenge.
+  if (completed && dismissed) return null;
+
+  const handleDismiss = (e: React.MouseEvent) => {
+    e.stopPropagation();  // don't toggle isExpanded when tapping ×
+    localStorage.setItem(dismissKey, 'true');
+    setDismissed(true);
+  };
 
   return (
-    <div className="mb-4">
+    <div className="mb-4 relative">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="w-full flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/60 rounded-2xl px-4 py-3 text-left hover:shadow-sm transition-shadow"
@@ -105,7 +123,22 @@ export function DailyChallenge({ uiLang }: DailyChallengeProps) {
             </span>
           )}
         </div>
-        {isExpanded ? <ChevronUp className="w-4 h-4 text-amber-500" /> : <ChevronDown className="w-4 h-4 text-amber-500" />}
+        <div className="flex items-center gap-1">
+          {isExpanded ? <ChevronUp className="w-4 h-4 text-amber-500" /> : <ChevronDown className="w-4 h-4 text-amber-500" />}
+          {completed && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={handleDismiss}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleDismiss(e as any); }}
+              className="ml-1 p-1 text-amber-400 hover:text-amber-700 hover:bg-amber-100 rounded-md transition-colors cursor-pointer"
+              title={uiLang === 'zh' ? '今日关闭（明日重新出现）' : 'Hide for today'}
+              aria-label={uiLang === 'zh' ? '关闭今日挑战' : 'Dismiss today\'s challenge'}
+            >
+              <X className="w-4 h-4" />
+            </span>
+          )}
+        </div>
       </button>
 
       <AnimatePresence>

@@ -105,6 +105,37 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
+// Live token minting — dev-only shim that mirrors the Firebase Function
+// behavior (minus the Firebase Auth check, since local dev doesn't have
+// the verified ID tokens handy and we trust whoever's running the proxy
+// on localhost). In prod the real Function validates the user.
+app.post('/api/live-token', async (_req, res) => {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return res.status(500).json({ error: 'API key not configured' });
+  // REST schema accepts uses + expire_time only; live_connect_constraints
+  // (from the JS SDK type) is NOT valid here. See functions/index.js for
+  // the verification. Max expiry is 20h.
+  const expireTime = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  try {
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1alpha/auth_tokens?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uses: 1, expire_time: expireTime }),
+      }
+    );
+    if (!r.ok) {
+      const errBody = await r.json().catch(() => ({}));
+      return res.status(r.status).json({ error: errBody.error?.message || `Token mint failed: ${r.status}` });
+    }
+    const data = await r.json();
+    res.json({ token: data.name, expireTime, model: 'gemini-2.0-flash-live-001' });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Health check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', rateLimit: RATE_LIMIT, window: '1m' });

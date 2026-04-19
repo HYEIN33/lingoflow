@@ -246,5 +246,56 @@ service cloud.firestore {
                     (request.resource.data.createdAt is timestamp || request.resource.data.createdAt == request.time);
       allow update, delete: if isAdmin();
     }
+
+    // Classroom live-translation sessions (Spike). Each document stores a
+    // user's full post-class transcript + notes for later review. User owns
+    // their own sessions end to end; no public read, no cross-user access.
+    //
+    // Shape:
+    //   - uid: string (owner, must match request.auth.uid)
+    //   - mode: 'tutorial' | 'lecture'
+    //   - audioSource: 'tab' | 'mic'
+    //   - startedAt: timestamp
+    //   - endedAt: timestamp | null (null while session is live)
+    //   - transcript: string (post-class full bilingual text)
+    //   - title: string (user-editable, optional)
+    match /classSessions/{sessionId} {
+      allow read, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow create: if isAuthenticated() &&
+                    request.resource.data.uid == request.auth.uid &&
+                    request.resource.data.mode in ['tutorial', 'lecture'] &&
+                    request.resource.data.audioSource in ['tab', 'mic'] &&
+                    (request.resource.data.startedAt is timestamp || request.resource.data.startedAt == request.time);
+      allow update: if isAuthenticated() && resource.data.uid == request.auth.uid;
+    }
+
+    // Confusion signals — anonymized data flywheel for the slang dictionary.
+    // Every time a user taps "I didn't get that" or double-clicks a subtitle
+    // term, we log one row with NO user identifier. These feed future
+    // slang-dictionary quality work: "what terms confuse international
+    // students in which subjects?". Write-only for users; read-only for
+    // admins. The lack of `uid` in the shape is load-bearing — this is
+    // how we stay on the right side of "anonymized" promises in the ToS.
+    match /confusionSignals/{signalId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() &&
+                    request.resource.data.term is string &&
+                    request.resource.data.term.size() > 0 &&
+                    request.resource.data.term.size() < 200 &&
+                    request.resource.data.mode in ['tutorial', 'lecture'] &&
+                    (!('subject' in request.resource.data) ||
+                      (request.resource.data.subject is string &&
+                       request.resource.data.subject.size() < 100)) &&
+                    (!('contextSnippet' in request.resource.data) ||
+                      (request.resource.data.contextSnippet is string &&
+                       request.resource.data.contextSnippet.size() < 500)) &&
+                    (request.resource.data.createdAt is timestamp || request.resource.data.createdAt == request.time) &&
+                    // The critical invariant: NO uid on the doc. If someone
+                    // tries to attach identity, reject. Keep the dataset clean
+                    // so we can legitimately call it anonymized.
+                    !('uid' in request.resource.data) &&
+                    !('userId' in request.resource.data);
+      allow update, delete: if isAdmin();
+    }
   }
 }
