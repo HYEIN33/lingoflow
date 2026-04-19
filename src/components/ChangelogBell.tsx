@@ -12,6 +12,7 @@
  * the user already acknowledged via the bell.
  */
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Bell, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CHANGELOG, compareVersions, entriesNewerThan } from '../data/changelog';
@@ -80,19 +81,22 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
         )}
       </button>
 
+      {createPortal(
       <AnimatePresence>
         {isOpen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            // z-[100] > the app header's sticky z-10 and any tab bar's
-            // blur layer. `isolate` creates a new stacking context so the
-            // overlay can't be pierced by sticky siblings below.
-            // bg-black/60 replaces /40 — previously the page behind was
-            // bleeding through and the user saw tabs + search history
-            // through the modal.
-            className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] isolate flex items-center justify-center p-4"
+            // Rendered into document.body via React Portal. Reason: the
+            // <Bell> button lives inside <header> which applies
+            // `backdrop-blur-md`. A backdrop-filter ancestor breaks
+            // `position: fixed` — the fixed element gets constrained to
+            // the ancestor's box instead of the viewport. Previously the
+            // modal was showing up as a small panel in the middle of the
+            // page, not covering the whole screen. Portal-ing out of the
+            // header fixes the containing block to the viewport.
+            className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4"
             onClick={() => setIsOpen(false)}
           >
             <motion.div
@@ -173,7 +177,9 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
             </motion.div>
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>,
+      document.body
+      )}
     </>
   );
 }
