@@ -91,7 +91,7 @@ type Status =
 // Rendering them in the same stream means the user sees their questions
 // in the context where they asked them, not in a separate chat panel.
 type StreamItem =
-  | { kind: 'line'; id: number; translation: string; transcription: string; finalized: boolean }
+  | { kind: 'line'; id: number; translation: string; transcription: string; finalized: boolean; streamKey?: string }
   | { kind: 'qa'; id: number; question: string; answer: string; pending: boolean };
 
 // Convert raw exceptions from startLiveSession (permissions, network, token,
@@ -322,6 +322,18 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
     setStream((prev) => {
       let next = [...prev];
       for (const pair of pairs) {
+        // If a streaming delta already filled this paragraph, the final
+        // call is just reconciliation: find the stream bubble matching
+        // pair.en and overwrite translation with the trimmed final zh.
+        const streamIdx = next.findIndex((it) =>
+          it.kind === 'line' && (it as any).streamKey && it.transcription === pair.en
+        );
+        if (streamIdx >= 0) {
+          const it = next[streamIdx] as any;
+          next[streamIdx] = { ...it, translation: pair.zh };
+          continue;
+        }
+
         // Realtime mode: session emits one pair per sentence with en
         // exactly matching the single finalized line. 1:1 match, no merge.
         if (translationMode === 'realtime') {
@@ -394,6 +406,70 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
 
   const appendTranscriptionDelta = (delta: string, isFinal: boolean) => {
     upsertLiveLine(delta, isFinal);
+  };
+
+  // Streaming translation handler. On the FIRST delta of a new streamKey
+  // we collapse all un-translated finalized lines into one bubble and
+  // stamp it with the streamKey. Subsequent deltas append to that same
+  // bubble's `translation` field, giving the user character-by-character
+  // Chinese as Gemini generates it. The final onTranslationBatch call
+  // reconciles any trailing whitespace/trim.
+  const applyTranslationStreamDelta = (key: string, en: string, deltaZh: string) => {
+    setStream((prev) => {
+      let next = [...prev];
+      // Is there already a bubble for this stream key? Append delta.
+      const existingIdx = next.findIndex((it) => it.kind === 'line' && (it as any).streamKey === key);
+      if (existingIdx >= 0) {
+        const it = next[existingIdx] as any;
+        next[existingIdx] = { ...it, translation: (it.translation || '') + deltaZh };
+        return next;
+      }
+      // First delta: in paragraph mode collapse un-translated finalized
+      // lines; in realtime mode match by exact en.
+      if (translationMode === 'realtime') {
+        for (let i = next.length - 1; i >= 0; i--) {
+          const it = next[i];
+          if (it.kind !== 'line') continue;
+          if (!it.finalized || it.translation) continue;
+          if (it.transcription === en) {
+            next[i] = { ...it, translation: deltaZh, streamKey: key };
+            return next;
+          }
+        }
+        // Fallback: oldest un-translated finalized line.
+        for (let i = 0; i < next.length; i++) {
+          const it = next[i];
+          if (it.kind === 'line' && it.finalized && !it.translation) {
+            next[i] = { ...it, translation: deltaZh, streamKey: key };
+            return next;
+          }
+        }
+        next.push({
+          kind: 'line', id: itemCounter.current++, translation: deltaZh,
+          transcription: en, finalized: true, streamKey: key,
+        });
+        return next;
+      }
+      // Paragraph mode: merge all un-translated finalized lines into one.
+      const indices: number[] = [];
+      for (let i = 0; i < next.length; i++) {
+        const it = next[i];
+        if (it.kind === 'line' && it.finalized && !it.translation) indices.push(i);
+      }
+      if (indices.length === 0) {
+        next.push({
+          kind: 'line', id: itemCounter.current++, translation: deltaZh,
+          transcription: en, finalized: true, streamKey: key,
+        });
+        return next;
+      }
+      const firstIdx = indices[0];
+      const first = next[firstIdx] as any;
+      const merged = en || indices.map((i) => (next[i] as any).transcription).join(' ');
+      next[firstIdx] = { ...first, transcription: merged, translation: deltaZh, streamKey: key };
+      for (let k = indices.length - 1; k >= 1; k--) next.splice(indices[k], 1);
+      return next;
+    });
   };
 
   const finalizeCurrentLine = () => {
@@ -529,6 +605,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           },
           onTranslationBatch: applyTranslationBatch,
           onTranscriptionDelta: appendTranscriptionDelta,
+          onTranslationStreamDelta: applyTranslationStreamDelta,
           onTranslationPending: (pending, key) => {
             setPendingTranslations((prev) => {
               const next = new Set(prev);

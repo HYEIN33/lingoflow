@@ -27,6 +27,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.2.5',
+    date: '2026-04-20',
+    title: '课堂同传：中文边生成边打字',
+    changes: [
+      'Gemini 翻译接入流式输出：英文攒够触发后，中文不再等整段返回，而是一个字一个字往屏幕上打',
+      '感知延迟从 4-8 秒降到 1-3 秒',
+    ],
+    isMajor: false,
+  },
+  {
     version: '0.2.4',
     date: '2026-04-20',
     title: '课堂同传：翻译更快了',

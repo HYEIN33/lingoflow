@@ -60,6 +60,13 @@ export interface LiveSessionCallbacks {
    * so the UI can match start→end across overlapping translations.
    */
   onTranslationPending?: (pending: boolean, key: string) => void;
+  /**
+   * Streaming translation deltas. Fired as Gemini streams the Chinese
+   * back, chunk by chunk. The UI accumulates deltas into a single
+   * bubble keyed by `key`, matched to the English paragraph via `en`.
+   * Followed by onTranslationBatch with the full pair when done.
+   */
+  onTranslationStreamDelta?: (key: string, en: string, deltaZh: string) => void;
 }
 
 export interface LiveSessionOptions {
@@ -349,20 +356,24 @@ export async function startLiveSession(
     const key = `pg-${++pendingKeyCounter}`;
     cb.onTranslationPending?.(true, key);
     flushing = flushing
-      .then(() => translateBatch(batch))
+      .then(() => translateBatch(batch, key))
       .finally(() => { cb.onTranslationPending?.(false, key); });
   };
 
   // Retry helper: most Gemini failures are transient 503s during peak
   // load. Two retries with exponential backoff (500ms, 1500ms) recovers
   // ~95% of them without the user ever seeing the placeholder.
-  const translateWithRetry = async (prompt: string, label: string): Promise<string> => {
+  const translateWithRetry = async (
+    prompt: string,
+    label: string,
+    onChunk?: (delta: string) => void,
+  ): Promise<string> => {
     const delays = [0, 500, 1500];
     let lastErr: unknown;
     for (let i = 0; i < delays.length; i++) {
       if (delays[i] > 0) await new Promise((r) => setTimeout(r, delays[i]));
       try {
-        return await translateSimple(prompt);
+        return await translateSimple(prompt, onChunk);
       } catch (err) {
         lastErr = err;
         // eslint-disable-next-line no-console
@@ -372,7 +383,7 @@ export async function startLiveSession(
     throw lastErr;
   };
 
-  const translateBatch = async (batch: string[]) => {
+  const translateBatch = async (batch: string[], streamKey?: string) => {
     // Paragraph-mode translation: join ALL sentences in the batch into
     // a single English paragraph, send it to Gemini as one piece, and
     // receive one Chinese paragraph back. No sentinel splitting, no
@@ -395,11 +406,17 @@ Rules:
 English paragraph:
 ${englishParagraph}`;
     try {
-      const zh = (await translateWithRetry(prompt, 'paragraph')).trim();
-      // The UI is happier with one {en, zh} pair representing the whole
-      // paragraph than N pairs. Callsite keys translations by exact en
-      // match; join with a space so a single pair matches the single
-      // joined English block we display.
+      // Stream deltas to the UI as Gemini generates the Chinese, so the
+      // user sees translation start within ~1s of the English flushing
+      // — not after waiting for the full paragraph to be generated.
+      const onChunk = streamKey
+        ? (delta: string) => {
+            cb.onTranslationStreamDelta?.(streamKey, englishParagraph, delta);
+          }
+        : undefined;
+      const zh = (await translateWithRetry(prompt, 'paragraph', onChunk)).trim();
+      // Final batch event for callers that don't handle streaming deltas
+      // (and to reconcile any trailing whitespace trim).
       cb.onTranslationBatch([{ en: englishParagraph, zh }]);
     } catch (err) {
       // eslint-disable-next-line no-console
@@ -459,7 +476,7 @@ ${englishParagraph}`;
           const key = `rt-${++pendingKeyCounter}`;
           cb.onTranslationPending?.(true, key);
           flushing = flushing
-            .then(() => translateBatch([text]))
+            .then(() => translateBatch([text], key))
             .finally(() => { cb.onTranslationPending?.(false, key); });
           return;
         }
