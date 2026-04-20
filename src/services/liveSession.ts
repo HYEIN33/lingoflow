@@ -305,19 +305,27 @@ export async function startLiveSession(
   // Timing tuned to beat EasyNoteAI on latency. Their cadence appears to
   // be ~30-60s accumulation before a translate call; we aim for 6-15s
   // typical. The user still reads coherent paragraphs, just sooner.
-  // Paragraph triggers (rewritten 2026-04-20 after per-sentence output
-  // regression): drive flushing by SEMANTIC CONTENT, not by silence
-  // timers.
-  //   - Primary: accumulated finalized sentences hit MIN_SENTENCES or
-  //     MIN_CHARS. That's when we have a real translatable paragraph.
-  //   - Secondary: MAX_WAIT_MS hard cap so a continuous speaker still
-  //     gets translation eventually (prevents starvation).
-  // The silence/pause timer is GONE — video-lecture pauses between
-  // sentences routinely ran long enough to trigger per-sentence flushes,
-  // which was the exact bug users complained about.
-  const PARAGRAPH_MIN_SENTENCES = 3;   // flush after 3 complete sentences
-  const PARAGRAPH_MIN_CHARS = 160;     // or 160 English chars, whichever first
-  const PARAGRAPH_MAX_WAIT_MS = 16000; // absolute ceiling for non-stop speech
+  // Paragraph triggers (topic-aware, 2026-04-20):
+  //   Goal: ship the paragraph at a natural TOPIC boundary so Gemini
+  //   gets a self-contained chunk — better translation quality AND
+  //   better subjective feel (the user reads a complete thought).
+  //
+  //   We approximate topic boundary with a hybrid rule:
+  //     1. HARD_FLOOR: refuse to flush before we've got at least this
+  //        much material (guarantees a paragraph is substantive).
+  //     2. HARD_CEILING: once we hit this much, flush immediately
+  //        (guarantees the paragraph isn't absurd).
+  //     3. BETWEEN FLOOR AND CEILING: flush when the speaker TAKES A
+  //        LONG PAUSE (≥ TOPIC_GAP_MS). Sentence-internal pauses are
+  //        1-3s; topic-switch pauses are ≥ 4s, so this threshold
+  //        cleanly separates "same topic, breathing" from "new topic".
+  //     4. MAX_WAIT safety net for monologues with no long gaps.
+  const PARAGRAPH_FLOOR_SENTENCES = 2; // don't flush on gap until 2 sentences in
+  const PARAGRAPH_FLOOR_CHARS = 80;    // or 80 chars, whichever first
+  const PARAGRAPH_CEILING_SENTENCES = 5; // flush once we hit 5 sentences no matter what
+  const PARAGRAPH_CEILING_CHARS = 260; // or 260 chars
+  const PARAGRAPH_TOPIC_GAP_MS = 4000; // 4s silence after floor = topic boundary
+  const PARAGRAPH_MAX_WAIT_MS = 17000; // absolute ceiling for non-stop speech
   const BATCH_SENTINEL = '|||';       // legacy, unused in new path but
                                       // referenced elsewhere — keep defined.
   let pendingBatch: string[] = [];
@@ -455,27 +463,41 @@ ${englishParagraph}`;
 
         pendingBatch.push(text);
 
-        // Paragraph-mode trigger logic (content-driven):
-        //   - Count complete sentences by end punctuation (. ? !). If
-        //     we've got MIN_SENTENCES full sentences, ship the paragraph.
-        //   - Or if accumulated chars hit MIN_CHARS, ship it (covers
-        //     speakers who don't land clean sentence boundaries).
-        //   - MAX_WAIT timer is the safety net for continuous monologue
-        //     with no punctuation (Deepgram smart_format usually adds it
-        //     but we don't want to bet the UI on that).
+        // Topic-aware paragraph flushing (see constants above for why).
         const accumulatedText = pendingBatch.join(' ');
         const accumulatedChars = accumulatedText.length;
         const sentenceCount = (accumulatedText.match(/[.!?](\s|$)/g) || []).length;
-        if (sentenceCount >= PARAGRAPH_MIN_SENTENCES || accumulatedChars >= PARAGRAPH_MIN_CHARS) {
+
+        // Rule 2: ceiling — flush now, don't wait for a gap.
+        if (sentenceCount >= PARAGRAPH_CEILING_SENTENCES || accumulatedChars >= PARAGRAPH_CEILING_CHARS) {
           void flushBatch();
-        } else if (batchStartTime === 0) {
-          // Arm the max-wait safety net once per paragraph. Never reset.
-          batchStartTime = Date.now();
-          setTimeout(() => {
-            if (pendingBatch.length > 0 && Date.now() - batchStartTime >= PARAGRAPH_MAX_WAIT_MS - 100) {
+        } else {
+          // Rule 3: topic-gap flush. Arm (or re-arm) a timer that fires
+          // TOPIC_GAP_MS after THIS is_final. If no new is_final
+          // arrives before then, it's a topic boundary — flush iff
+          // we've crossed the floor.
+          if (batchTimer) clearTimeout(batchTimer);
+          batchTimer = setTimeout(() => {
+            batchTimer = null;
+            if (pendingBatch.length === 0) return;
+            const t = pendingBatch.join(' ');
+            const sc = (t.match(/[.!?](\s|$)/g) || []).length;
+            const cc = t.length;
+            if (sc >= PARAGRAPH_FLOOR_SENTENCES || cc >= PARAGRAPH_FLOOR_CHARS) {
               void flushBatch();
             }
-          }, PARAGRAPH_MAX_WAIT_MS);
+            // else: below floor, keep waiting; MAX_WAIT will rescue us.
+          }, PARAGRAPH_TOPIC_GAP_MS);
+
+          // Rule 4: arm MAX_WAIT once per paragraph, never reset.
+          if (batchStartTime === 0) {
+            batchStartTime = Date.now();
+            setTimeout(() => {
+              if (pendingBatch.length > 0 && Date.now() - batchStartTime >= PARAGRAPH_MAX_WAIT_MS - 100) {
+                void flushBatch();
+              }
+            }, PARAGRAPH_MAX_WAIT_MS);
+          }
         }
       }
     });
