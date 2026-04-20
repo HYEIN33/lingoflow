@@ -91,7 +91,7 @@ type Status =
 // Rendering them in the same stream means the user sees their questions
 // in the context where they asked them, not in a separate chat panel.
 type StreamItem =
-  | { kind: 'line'; id: number; translation: string; transcription: string; finalized: boolean; streamKey?: string }
+  | { kind: 'line'; id: number; translation: string; transcription: string; finalized: boolean }
   | { kind: 'qa'; id: number; question: string; answer: string; pending: boolean };
 
 // Convert raw exceptions from startLiveSession (permissions, network, token,
@@ -322,18 +322,6 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
     setStream((prev) => {
       let next = [...prev];
       for (const pair of pairs) {
-        // If a streaming delta already filled this paragraph, the final
-        // call is just reconciliation: find the stream bubble matching
-        // pair.en and overwrite translation with the trimmed final zh.
-        const streamIdx = next.findIndex((it) =>
-          it.kind === 'line' && (it as any).streamKey && it.transcription === pair.en
-        );
-        if (streamIdx >= 0) {
-          const it = next[streamIdx] as any;
-          next[streamIdx] = { ...it, translation: pair.zh };
-          continue;
-        }
-
         // Realtime mode: session emits one pair per sentence with en
         // exactly matching the single finalized line. 1:1 match, no merge.
         if (translationMode === 'realtime') {
@@ -394,8 +382,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
         const first = next[firstIdx] as {
           kind: 'line'; id: number; translation: string; transcription: string; finalized: boolean;
         };
-        // EasyNoteAI-style: paragraph-joined prose (spaces, not newlines).
-        const mergedTranscription = indices.map((i) => (next[i] as any).transcription).join(' ');
+        const mergedTranscription = pair.en || indices.map((i) => (next[i] as any).transcription).join(' ');
         next[firstIdx] = { ...first, transcription: mergedTranscription, translation: pair.zh };
         for (let k = indices.length - 1; k >= 1; k--) {
           next.splice(indices[k], 1);
@@ -407,79 +394,6 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
 
   const appendTranscriptionDelta = (delta: string, isFinal: boolean) => {
     upsertLiveLine(delta, isFinal);
-  };
-
-  // Streaming translation handler. On the FIRST delta of a new streamKey
-  // we collapse all un-translated finalized lines into one bubble and
-  // stamp it with the streamKey. Subsequent deltas append to that same
-  // bubble's `translation` field, giving the user character-by-character
-  // Chinese as Gemini generates it. The final onTranslationBatch call
-  // reconciles any trailing whitespace/trim.
-  const applyTranslationStreamDelta = (key: string, en: string, deltaZh: string) => {
-    setStream((prev) => {
-      let next = [...prev];
-      // Is there already a bubble for this stream key? Append delta.
-      const existingIdx = next.findIndex((it) => it.kind === 'line' && (it as any).streamKey === key);
-      if (existingIdx >= 0) {
-        const it = next[existingIdx] as any;
-        next[existingIdx] = { ...it, translation: (it.translation || '') + deltaZh };
-        return next;
-      }
-      // First delta: in paragraph mode collapse un-translated finalized
-      // lines; in realtime mode match by exact en.
-      if (translationMode === 'realtime') {
-        for (let i = next.length - 1; i >= 0; i--) {
-          const it = next[i];
-          if (it.kind !== 'line') continue;
-          if (!it.finalized || it.translation) continue;
-          if (it.transcription === en) {
-            next[i] = { ...it, translation: deltaZh, streamKey: key };
-            return next;
-          }
-        }
-        // Fallback: oldest un-translated finalized line.
-        for (let i = 0; i < next.length; i++) {
-          const it = next[i];
-          if (it.kind === 'line' && it.finalized && !it.translation) {
-            next[i] = { ...it, translation: deltaZh, streamKey: key };
-            return next;
-          }
-        }
-        next.push({
-          kind: 'line', id: itemCounter.current++, translation: deltaZh,
-          transcription: en, finalized: true, streamKey: key,
-        });
-        return next;
-      }
-      // Paragraph mode: merge all un-translated finalized lines into one.
-      const indices: number[] = [];
-      for (let i = 0; i < next.length; i++) {
-        const it = next[i];
-        if (it.kind === 'line' && it.finalized && !it.translation) indices.push(i);
-      }
-      if (indices.length === 0) {
-        next.push({
-          kind: 'line', id: itemCounter.current++, translation: deltaZh,
-          transcription: en, finalized: true, streamKey: key,
-        });
-        return next;
-      }
-      const firstIdx = indices[0];
-      const first = next[firstIdx] as any;
-      // Join with newlines (not spaces) so each original sentence is
-      // visually distinct. Users reported "吞掉英文" / "上一秒还在下一
-      // 秒没了" when we collapsed to a single prose line — they couldn't
-      // tell their earlier English was still there, just merged. Keeping
-      // newlines preserves the 1-line-per-utterance layout users expect.
-      // EasyNoteAI-style: English is ONE continuous paragraph (no per-
-      // sentence line breaks). Users read it as prose above the Chinese
-      // paragraph. Visual distinctness between paragraphs comes from
-      // spacing between bubbles, not from within.
-      const merged = indices.map((i) => (next[i] as any).transcription).join(' ');
-      next[firstIdx] = { ...first, transcription: merged, translation: deltaZh, streamKey: key };
-      for (let k = indices.length - 1; k >= 1; k--) next.splice(indices[k], 1);
-      return next;
-    });
   };
 
   const finalizeCurrentLine = () => {
@@ -496,17 +410,10 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
     });
   };
 
-  // Auto-scroll to latest content — but ONLY if the user is already at
-  // (or near) the bottom. If they've scrolled up to read earlier text,
-  // respect that: don't yank them back down every time a new bubble
-  // arrives. "Near bottom" = within 80px, to tolerate line-height jitter.
+  // Auto-scroll to latest content as the stream grows.
   useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
-    if (distanceFromBottom <= 80) {
-      el.scrollTop = el.scrollHeight;
-    }
+    if (!scrollerRef.current) return;
+    scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
   }, [stream]);
 
   // Live Notes refresh trigger. Runs on every stream change, guarded by
@@ -622,7 +529,6 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           },
           onTranslationBatch: applyTranslationBatch,
           onTranscriptionDelta: appendTranscriptionDelta,
-          onTranslationStreamDelta: applyTranslationStreamDelta,
           onTranslationPending: (pending, key) => {
             setPendingTranslations((prev) => {
               const next = new Set(prev);
@@ -1156,7 +1062,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           the bit of class that triggered them. */}
       <div
         ref={scrollerRef}
-        className="bg-white/60 backdrop-blur-md border border-white/60 rounded-3xl p-5 min-h-[320px] max-h-[50vh] overflow-y-auto space-y-6 shadow-sm"
+        className="bg-white/60 backdrop-blur-md border border-white/60 rounded-3xl p-5 min-h-[320px] max-h-[50vh] overflow-y-auto space-y-3 shadow-sm"
       >
         {stream.length === 0 && status !== 'live' && (
           <div className="text-center text-gray-400 py-16 text-sm">
@@ -1168,9 +1074,9 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
         {stream.map((item) => {
           if (item.kind === 'line') {
             return (
-              <div key={`l-${item.id}`} className={`space-y-2 ${item.finalized ? 'opacity-80' : ''}`}>
+              <div key={`l-${item.id}`} className={`space-y-1 ${item.finalized ? 'opacity-80' : ''}`}>
                 {item.transcription && (
-                  <p className="text-sm text-gray-400 leading-relaxed">{item.transcription}</p>
+                  <p className="text-xs text-gray-400 leading-relaxed">{item.transcription}</p>
                 )}
                 <p className={`leading-relaxed ${
                   item.finalized

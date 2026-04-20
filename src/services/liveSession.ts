@@ -60,13 +60,6 @@ export interface LiveSessionCallbacks {
    * so the UI can match start→end across overlapping translations.
    */
   onTranslationPending?: (pending: boolean, key: string) => void;
-  /**
-   * Streaming translation deltas. Fired as Gemini streams the Chinese
-   * back, chunk by chunk. The UI accumulates deltas into a single
-   * bubble keyed by `key`, matched to the English paragraph via `en`.
-   * Followed by onTranslationBatch with the full pair when done.
-   */
-  onTranslationStreamDelta?: (key: string, en: string, deltaZh: string) => void;
 }
 
 export interface LiveSessionOptions {
@@ -312,22 +305,19 @@ export async function startLiveSession(
   // Timing tuned to beat EasyNoteAI on latency. Their cadence appears to
   // be ~30-60s accumulation before a translate call; we aim for 6-15s
   // typical. The user still reads coherent paragraphs, just sooner.
-  // Paragraph triggers — topic-aware ladder restored 2026-04-20 per
-  // user request to revert trigger logic while keeping streaming UI.
-  //   FLOOR (2 sentences or 80 chars): refuse to flush on a gap before
-  //     we've got substantive material.
-  //   CEILING (5 sentences or 260 chars): flush immediately regardless
-  //     of pauses once we've accumulated enough.
-  //   TOPIC_GAP_MS (4s silence after floor): flush when the speaker
-  //     takes a long pause — sentence-internal pauses are 1-3s, topic-
-  //     switch pauses are >= 4s.
-  //   MAX_WAIT_MS (17s): monologue safety net.
-  const PARAGRAPH_FLOOR_SENTENCES = 2;
-  const PARAGRAPH_FLOOR_CHARS = 80;
-  const PARAGRAPH_CEILING_SENTENCES = 5;
-  const PARAGRAPH_CEILING_CHARS = 260;
-  const PARAGRAPH_TOPIC_GAP_MS = 4000;
-  const PARAGRAPH_MAX_WAIT_MS = 17000;
+  // Paragraph triggers (rewritten 2026-04-20 after per-sentence output
+  // regression): drive flushing by SEMANTIC CONTENT, not by silence
+  // timers.
+  //   - Primary: accumulated finalized sentences hit MIN_SENTENCES or
+  //     MIN_CHARS. That's when we have a real translatable paragraph.
+  //   - Secondary: MAX_WAIT_MS hard cap so a continuous speaker still
+  //     gets translation eventually (prevents starvation).
+  // The silence/pause timer is GONE — video-lecture pauses between
+  // sentences routinely ran long enough to trigger per-sentence flushes,
+  // which was the exact bug users complained about.
+  const PARAGRAPH_MIN_SENTENCES = 3;   // flush after 3 complete sentences
+  const PARAGRAPH_MIN_CHARS = 160;     // or 160 English chars, whichever first
+  const PARAGRAPH_MAX_WAIT_MS = 16000; // absolute ceiling for non-stop speech
   const BATCH_SENTINEL = '|||';       // legacy, unused in new path but
                                       // referenced elsewhere — keep defined.
   let pendingBatch: string[] = [];
@@ -348,24 +338,20 @@ export async function startLiveSession(
     const key = `pg-${++pendingKeyCounter}`;
     cb.onTranslationPending?.(true, key);
     flushing = flushing
-      .then(() => translateBatch(batch, key))
+      .then(() => translateBatch(batch))
       .finally(() => { cb.onTranslationPending?.(false, key); });
   };
 
   // Retry helper: most Gemini failures are transient 503s during peak
   // load. Two retries with exponential backoff (500ms, 1500ms) recovers
   // ~95% of them without the user ever seeing the placeholder.
-  const translateWithRetry = async (
-    prompt: string,
-    label: string,
-    onChunk?: (delta: string) => void,
-  ): Promise<string> => {
+  const translateWithRetry = async (prompt: string, label: string): Promise<string> => {
     const delays = [0, 500, 1500];
     let lastErr: unknown;
     for (let i = 0; i < delays.length; i++) {
       if (delays[i] > 0) await new Promise((r) => setTimeout(r, delays[i]));
       try {
-        return await translateSimple(prompt, onChunk);
+        return await translateSimple(prompt);
       } catch (err) {
         lastErr = err;
         // eslint-disable-next-line no-console
@@ -375,7 +361,7 @@ export async function startLiveSession(
     throw lastErr;
   };
 
-  const translateBatch = async (batch: string[], streamKey?: string) => {
+  const translateBatch = async (batch: string[]) => {
     // Paragraph-mode translation: join ALL sentences in the batch into
     // a single English paragraph, send it to Gemini as one piece, and
     // receive one Chinese paragraph back. No sentinel splitting, no
@@ -398,18 +384,12 @@ Rules:
 English paragraph:
 ${englishParagraph}`;
     try {
-      // Non-streaming path: Gemini 3 flash-preview with thinkingLevel:'low'
-      // is faster end-to-end than streaming w/o thinking control. Streaming
-      // helped perceived latency but regressed total time (streaming
-      // upstream currently forbids thinkingConfig — see functions/index.js
-      // streamSafeConfig hack — so it runs with default thinking which is
-      // slower). Until Gemini fixes the streaming thinkingConfig contract,
-      // the simpler non-stream path wins on actual latency.
       const zh = (await translateWithRetry(prompt, 'paragraph')).trim();
+      // The UI is happier with one {en, zh} pair representing the whole
+      // paragraph than N pairs. Callsite keys translations by exact en
+      // match; join with a space so a single pair matches the single
+      // joined English block we display.
       cb.onTranslationBatch([{ en: englishParagraph, zh }]);
-      // Fire a single stream-delta so the UI's streaming-bubble path still
-      // creates a paragraph bubble (keeps the streamKey-based merge working).
-      if (streamKey) cb.onTranslationStreamDelta?.(streamKey, englishParagraph, zh);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('[live] paragraph translate failed after retries:', err);
@@ -468,44 +448,34 @@ ${englishParagraph}`;
           const key = `rt-${++pendingKeyCounter}`;
           cb.onTranslationPending?.(true, key);
           flushing = flushing
-            .then(() => translateBatch([text], key))
+            .then(() => translateBatch([text]))
             .finally(() => { cb.onTranslationPending?.(false, key); });
           return;
         }
 
         pendingBatch.push(text);
 
-        // Topic-aware paragraph flushing:
-        //   - If ceiling hit, flush immediately.
-        //   - Else arm a topic-gap timer; it only flushes if floor is met.
-        //   - MAX_WAIT safety net armed once per paragraph, never reset.
+        // Paragraph-mode trigger logic (content-driven):
+        //   - Count complete sentences by end punctuation (. ? !). If
+        //     we've got MIN_SENTENCES full sentences, ship the paragraph.
+        //   - Or if accumulated chars hit MIN_CHARS, ship it (covers
+        //     speakers who don't land clean sentence boundaries).
+        //   - MAX_WAIT timer is the safety net for continuous monologue
+        //     with no punctuation (Deepgram smart_format usually adds it
+        //     but we don't want to bet the UI on that).
         const accumulatedText = pendingBatch.join(' ');
         const accumulatedChars = accumulatedText.length;
         const sentenceCount = (accumulatedText.match(/[.!?](\s|$)/g) || []).length;
-
-        if (sentenceCount >= PARAGRAPH_CEILING_SENTENCES || accumulatedChars >= PARAGRAPH_CEILING_CHARS) {
+        if (sentenceCount >= PARAGRAPH_MIN_SENTENCES || accumulatedChars >= PARAGRAPH_MIN_CHARS) {
           void flushBatch();
-        } else {
-          if (batchTimer) clearTimeout(batchTimer);
-          batchTimer = setTimeout(() => {
-            batchTimer = null;
-            if (pendingBatch.length === 0) return;
-            const t = pendingBatch.join(' ');
-            const sc = (t.match(/[.!?](\s|$)/g) || []).length;
-            const cc = t.length;
-            if (sc >= PARAGRAPH_FLOOR_SENTENCES || cc >= PARAGRAPH_FLOOR_CHARS) {
+        } else if (batchStartTime === 0) {
+          // Arm the max-wait safety net once per paragraph. Never reset.
+          batchStartTime = Date.now();
+          setTimeout(() => {
+            if (pendingBatch.length > 0 && Date.now() - batchStartTime >= PARAGRAPH_MAX_WAIT_MS - 100) {
               void flushBatch();
             }
-          }, PARAGRAPH_TOPIC_GAP_MS);
-
-          if (batchStartTime === 0) {
-            batchStartTime = Date.now();
-            setTimeout(() => {
-              if (pendingBatch.length > 0 && Date.now() - batchStartTime >= PARAGRAPH_MAX_WAIT_MS - 100) {
-                void flushBatch();
-              }
-            }, PARAGRAPH_MAX_WAIT_MS);
-          }
+          }, PARAGRAPH_MAX_WAIT_MS);
         }
       }
     });
@@ -615,76 +585,30 @@ ${englishParagraph}`;
     cb.onStatusChange('error', '连接已断开，请按「开始」重新连接');
   };
 
-  // Health monitor with auto-recovery. The previous version only
-  // surfaced errors; users reported "卡住没音频输入，按暂停再继续才好"
-  // which means the WS stayed open but PCM stopped flowing. Root
-  // causes we now self-heal from:
-  //   (a) AudioContext suspended (tab backgrounded, OS sleep) → resume()
-  //   (b) track.muted (airpods glitch, other app stole mic) → force reconnect
-  //       after a grace period so transient mutes don't spam reconnects
-  //   (c) no PCM sent in N seconds despite not paused → force reconnect
-  //       (catches the "worklet silently stopped" case)
-  // Pause state declared early so healthTimer can reference it.
-  let paused = false;
-  let lastPcmSentAt = Date.now();
-  worklet.port.addEventListener('message', () => { lastPcmSentAt = Date.now(); });
-  let mutedSince = 0;
-  const healthTimer = setInterval(async () => {
-    if (userStopped || paused) return;
+  // Periodically probe the mediaStream health. If the OS/browser mutes
+  // the mic behind our back (airpods disconnect mid-session, another app
+  // takes exclusive mic access on Windows, tab share stopped), the
+  // WebSocket stays open but nothing flows — UI claims "正在监听" while
+  // the mic is dead. Surface this to the user.
+  const healthTimer = setInterval(() => {
+    if (userStopped) return;
     const t = mediaStream.getAudioTracks()[0];
     if (!t) return;
-
-    // (a) AudioContext suspended. Just resume it.
-    if (audioCtx.state === 'suspended') {
-      try {
-        await audioCtx.resume();
-        // eslint-disable-next-line no-console
-        console.info('[live] health: resumed suspended AudioContext');
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.warn('[live] health: AudioContext resume failed:', e);
-      }
-    }
-
-    // (d) Track ended — device physically gone. Can't recover.
     if (t.readyState === 'ended') {
       clearInterval(healthTimer);
       cb.onStatusChange('error', '录音已停止（设备断开或分享被取消），请重新按「开始」');
-      return;
-    }
-
-    // (b) Track muted — tolerate for 6s, then force a full reconnect.
-    if (t.muted) {
-      if (mutedSince === 0) mutedSince = Date.now();
-      const mutedFor = Date.now() - mutedSince;
-      if (mutedFor > 6000) {
-        // eslint-disable-next-line no-console
-        console.warn('[live] health: track muted > 6s, forcing reconnect');
-        mutedSince = 0;
-        lastPcmSentAt = Date.now(); // reset so (c) doesn't also fire
-        void reconnect();
-        return;
-      }
-    } else {
-      mutedSince = 0;
-    }
-
-    // (c) No PCM delivered for 8s despite active + unmuted track. Means
-    // the worklet silently stopped or the mediaStream pipeline broke
-    // without signaling. Force a reconnect.
-    const silentFor = Date.now() - lastPcmSentAt;
-    if (silentFor > 8000) {
+    } else if (t.muted) {
+      // Muted ≠ ended — Chrome flips `muted` when AirPods disconnect or
+      // the user toggles OS mic privacy. Surface as warning not error.
       // eslint-disable-next-line no-console
-      console.warn('[live] health: no PCM for 8s, forcing reconnect');
-      lastPcmSentAt = Date.now();
-      void reconnect();
+      console.warn('[live] mic track is muted — audio may not reach Deepgram');
     }
-  }, 2000);
+  }, 5000);
 
-  // (paused is declared earlier above for healthTimer visibility.)
-  // When paused === true, worklet PCM is dropped on the floor instead
+  // Pause state — when true, worklet PCM is dropped on the floor instead
   // of being sent to Deepgram. The WebSocket stays open (keepAlive fires
   // every 8s) so resume is instantaneous.
+  let paused = false;
 
   // Pipe PCM from the worklet to Deepgram.
   worklet.port.onmessage = (ev) => {
