@@ -27,6 +27,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.2.8',
+    date: '2026-04-20',
+    title: '修课堂翻译失败的 bug',
+    changes: [
+      '部分情况翻译直接报「翻译失败」，已修复：流式接口遇到问题会自动回退到普通接口重试',
+    ],
+    isMajor: false,
+  },
+  {
     version: '0.2.7',
     date: '2026-04-20',
     title: '课堂同传：触发逻辑回退到原方案',

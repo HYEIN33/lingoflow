@@ -202,9 +202,18 @@ exports.apiGenerate = onRequest(
       return;
     }
 
+    // For the streaming endpoint, strip thinkingConfig before sending
+    // upstream. The v1beta streamGenerateContent endpoint has been
+    // observed to reject the request when thinkingConfig.thinkingLevel
+    // (the Gemini 3 field) is present, which surfaces as "翻译失败" to
+    // the user. 3-flash-preview is already fast enough without the
+    // hint, so dropping it costs us nothing.
+    const streamSafeConfig = { ...(config || {}) };
+    delete streamSafeConfig.thinkingConfig;
+
     const gemBody = JSON.stringify({
       contents: Array.isArray(contents) ? contents : [{ parts: [{ text: contents }] }],
-      generationConfig: config || {},
+      generationConfig: stream ? streamSafeConfig : (config || {}),
     });
 
     // Streaming branch — only used by translateSimple today. Response is
@@ -224,6 +233,18 @@ exports.apiGenerate = onRequest(
         );
         if (!upstream.ok || !upstream.body) {
           const data = await upstream.json().catch(() => ({}));
+          // Log the exact upstream failure so we can diagnose production
+          // "翻译失败" reports. Includes the status, error body, and the
+          // model+config shape that upstream rejected.
+          console.error('[stream] upstream rejected', {
+            status: upstream.status,
+            model,
+            errorMessage: data?.error?.message,
+            errorStatus: data?.error?.status,
+            errorCode: data?.error?.code,
+            generationConfigKeys: Object.keys(config || {}),
+            thinkingConfig: (config && config.thinkingConfig) || null,
+          });
           res.status(upstream.status || 502).json({ error: data.error?.message || 'Gemini stream unavailable' });
           return;
         }

@@ -646,8 +646,25 @@ Guidelines:
 
 Input:
 ${text}`;
-  const result = await geminiGenerate({ model, contents, onChunk });
-  return result.trim();
+  try {
+    const result = await geminiGenerate({ model, contents, onChunk });
+    return result.trim();
+  } catch (e: any) {
+    // If streaming failed, retry WITHOUT streaming. Keeps translations
+    // working even if the streaming endpoint regresses for some reason
+    // (seen 2026-04-20: gemini-3-flash-preview streamGenerateContent
+    // rejected with thinkingConfig present). The non-stream path is
+    // already proven.
+    if (onChunk) {
+      // eslint-disable-next-line no-console
+      console.warn('[translate] streaming failed, retrying without stream:', e?.message);
+      const result = await geminiGenerate({ model, contents });
+      // Feed the full result as one "chunk" so the UI still shows it.
+      onChunk(result);
+      return result.trim();
+    }
+    throw e;
+  }
 }
 
 export async function getReviewHint(word: string, meaningZh: string): Promise<string> {
