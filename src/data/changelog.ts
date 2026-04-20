@@ -27,6 +27,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.2.6',
+    date: '2026-04-20',
+    title: '课堂同传：触发逻辑精简成"字数+停顿"双条件',
+    changes: [
+      '整段翻译触发回归简单：攒够 120 字就翻，或者停顿 2.5 秒就翻，先到先赢',
+      '去掉原来复杂的「句数下限+上限+话题间隔」多层判断',
+    ],
+    isMajor: false,
+  },
+  {
     version: '0.2.5',
     date: '2026-04-20',
     title: '课堂同传：中文边生成边打字',
