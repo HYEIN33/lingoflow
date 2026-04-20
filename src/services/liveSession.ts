@@ -53,6 +53,13 @@ export interface LiveSessionCallbacks {
    * will follow.
    */
   onTranscriptionDelta?: (delta: string, isFinal: boolean) => void;
+  /**
+   * Translation progress indicator. Fired when a translate call starts
+   * and when it finishes. The UI renders a subtle "翻译中…" placeholder
+   * while pending is true. `key` is a unique id for the in-flight batch
+   * so the UI can match start→end across overlapping translations.
+   */
+  onTranslationPending?: (pending: boolean, key: string) => void;
 }
 
 export interface LiveSessionOptions {
@@ -73,6 +80,16 @@ export interface LiveSessionOptions {
    */
   course?: string;
   keyterms?: string[];
+  /**
+   * Translation cadence:
+   *   'paragraph' (default) — accumulate 3-4 sentences or a long pause,
+   *     then translate the whole paragraph in one Gemini call. Smooth
+   *     prose, slightly higher latency.
+   *   'realtime' — translate each finalized sentence immediately. Lower
+   *     latency per sentence but produces fragmented, repetitive-feeling
+   *     Chinese without cross-sentence context.
+   */
+  translationMode?: 'paragraph' | 'realtime';
 }
 
 export interface LiveSessionHandle {
@@ -288,23 +305,19 @@ export async function startLiveSession(
   // Timing tuned to beat EasyNoteAI on latency. Their cadence appears to
   // be ~30-60s accumulation before a translate call; we aim for 6-15s
   // typical. The user still reads coherent paragraphs, just sooner.
-  // Paragraph triggers (tuned 2026-04-20 after users reported per-sentence
-  // output on video-lecture audio):
-  //   - MIN_CHARS: flush once paragraph is "long enough", ~3-4 sentences.
-  //   - PAUSE_MS: how long a silence has to last before we treat it as
-  //     a paragraph break. Video lectures often have 2-3s pauses between
-  //     sentences that are still within the same paragraph, so this MUST
-  //     be generous or we end up translating every sentence individually.
-  //   - HARD_MIN_CHARS: even if the pause timer fires, never flush a
-  //     stubbornly short batch (<60 chars = ~1 short sentence). Force
-  //     the user to either (a) hit 60 chars, (b) hit MAX_WAIT, or
-  //     (c) stop speaking long enough for PAUSE_MS. This is the fix
-  //     that actually eliminates the "1-sentence-at-a-time" feeling.
-  //   - MAX_WAIT_MS: absolute ceiling for continuous speech.
-  const PARAGRAPH_MIN_CHARS = 180;     // ~3-4 spoken sentences of English
-  const PARAGRAPH_HARD_MIN_CHARS = 60; // never flush less than this on pause
-  const PARAGRAPH_PAUSE_MS = 4500;     // 4.5s silence = real paragraph break
-  const PARAGRAPH_MAX_WAIT_MS = 18000; // hard cap for non-stop speech
+  // Paragraph triggers (rewritten 2026-04-20 after per-sentence output
+  // regression): drive flushing by SEMANTIC CONTENT, not by silence
+  // timers.
+  //   - Primary: accumulated finalized sentences hit MIN_SENTENCES or
+  //     MIN_CHARS. That's when we have a real translatable paragraph.
+  //   - Secondary: MAX_WAIT_MS hard cap so a continuous speaker still
+  //     gets translation eventually (prevents starvation).
+  // The silence/pause timer is GONE — video-lecture pauses between
+  // sentences routinely ran long enough to trigger per-sentence flushes,
+  // which was the exact bug users complained about.
+  const PARAGRAPH_MIN_SENTENCES = 3;   // flush after 3 complete sentences
+  const PARAGRAPH_MIN_CHARS = 160;     // or 160 English chars, whichever first
+  const PARAGRAPH_MAX_WAIT_MS = 16000; // absolute ceiling for non-stop speech
   const BATCH_SENTINEL = '|||';       // legacy, unused in new path but
                                       // referenced elsewhere — keep defined.
   let pendingBatch: string[] = [];
@@ -312,6 +325,7 @@ export async function startLiveSession(
   let batchStartTime = 0; // wall-clock when the current paragraph started
   let flushing: Promise<void> = Promise.resolve();
 
+  let pendingKeyCounter = 0;
   const flushBatch = async () => {
     if (batchTimer) {
       clearTimeout(batchTimer);
@@ -321,7 +335,11 @@ export async function startLiveSession(
     const batch = pendingBatch;
     pendingBatch = [];
     batchStartTime = 0; // reset so next paragraph starts its own max-wait clock
-    flushing = flushing.then(() => translateBatch(batch));
+    const key = `pg-${++pendingKeyCounter}`;
+    cb.onTranslationPending?.(true, key);
+    flushing = flushing
+      .then(() => translateBatch(batch))
+      .finally(() => { cb.onTranslationPending?.(false, key); });
   };
 
   // Retry helper: most Gemini failures are transient 503s during peak
@@ -421,45 +439,43 @@ ${englishParagraph}`;
       }
       if (isFinal) {
         transcript += (transcript ? '\n' : '') + text;
+
+        // Realtime mode: translate each sentence as it finalizes, no
+        // batching. Chinese appears seconds after the English, but with
+        // no cross-sentence context (jumpier prose). Opt-in for users
+        // who need absolute low latency over natural flow.
+        if (opts.translationMode === 'realtime') {
+          const key = `rt-${++pendingKeyCounter}`;
+          cb.onTranslationPending?.(true, key);
+          flushing = flushing
+            .then(() => translateBatch([text]))
+            .finally(() => { cb.onTranslationPending?.(false, key); });
+          return;
+        }
+
         pendingBatch.push(text);
 
-        // Paragraph-mode trigger logic:
-        //   - If the accumulated English is long enough (>= MIN_CHARS),
-        //     we've got a translatable paragraph. Flush now.
-        //   - Otherwise, start/refresh the pause timer: if PAUSE_MS of
-        //     silence goes by with no new is_final, that's a paragraph
-        //     break and we flush whatever we have.
-        //   - As a hard cap, a MAX_WAIT_MS timer is started on the
-        //     first is_final of the paragraph and is NEVER reset —
-        //     guarantees continuous speech still flushes eventually.
-        const accumulatedChars = pendingBatch.reduce((n, s) => n + s.length, 0);
-        if (accumulatedChars >= PARAGRAPH_MIN_CHARS) {
+        // Paragraph-mode trigger logic (content-driven):
+        //   - Count complete sentences by end punctuation (. ? !). If
+        //     we've got MIN_SENTENCES full sentences, ship the paragraph.
+        //   - Or if accumulated chars hit MIN_CHARS, ship it (covers
+        //     speakers who don't land clean sentence boundaries).
+        //   - MAX_WAIT timer is the safety net for continuous monologue
+        //     with no punctuation (Deepgram smart_format usually adds it
+        //     but we don't want to bet the UI on that).
+        const accumulatedText = pendingBatch.join(' ');
+        const accumulatedChars = accumulatedText.length;
+        const sentenceCount = (accumulatedText.match(/[.!?](\s|$)/g) || []).length;
+        if (sentenceCount >= PARAGRAPH_MIN_SENTENCES || accumulatedChars >= PARAGRAPH_MIN_CHARS) {
           void flushBatch();
-        } else {
-          // Pause timer: resets on each new is_final. If the speaker
-          // pauses for PARAGRAPH_PAUSE_MS, AND we have at least
-          // HARD_MIN_CHARS accumulated, flush. If we're still under the
-          // hard min, keep waiting — a single short sentence followed
-          // by a long pause should NOT be flushed alone. The MAX_WAIT
-          // timer guarantees we eventually flush no matter what.
-          if (batchTimer) clearTimeout(batchTimer);
-          batchTimer = setTimeout(() => {
-            batchTimer = null;
-            const chars = pendingBatch.reduce((n, s) => n + s.length, 0);
-            if (pendingBatch.length > 0 && chars >= PARAGRAPH_HARD_MIN_CHARS) {
+        } else if (batchStartTime === 0) {
+          // Arm the max-wait safety net once per paragraph. Never reset.
+          batchStartTime = Date.now();
+          setTimeout(() => {
+            if (pendingBatch.length > 0 && Date.now() - batchStartTime >= PARAGRAPH_MAX_WAIT_MS - 100) {
               void flushBatch();
             }
-          }, PARAGRAPH_PAUSE_MS);
-          // Max-wait timer: set once per paragraph, never reset. Prevents
-          // a non-stop speaker from starving the user of any translation.
-          if (batchStartTime === 0) {
-            batchStartTime = Date.now();
-            setTimeout(() => {
-              if (pendingBatch.length > 0 && Date.now() - batchStartTime >= PARAGRAPH_MAX_WAIT_MS - 100) {
-                void flushBatch();
-              }
-            }, PARAGRAPH_MAX_WAIT_MS);
-          }
+          }, PARAGRAPH_MAX_WAIT_MS);
         }
       }
     });

@@ -218,6 +218,26 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
   const [question, setQuestion] = useState('');
   const [isAsking, setIsAsking] = useState(false);
 
+  // Translation mode: paragraph (smooth, slight delay) vs realtime (per
+  // sentence, low latency but jumpier). Persisted so users don't have to
+  // re-pick every session. Default is paragraph because video-lecture
+  // content reads much better in chunks.
+  const TRANSLATION_MODE_KEY = 'memeflow_classroom_translation_mode';
+  const [translationMode, setTranslationMode] = useState<'paragraph' | 'realtime'>(() => {
+    try {
+      const v = localStorage.getItem(TRANSLATION_MODE_KEY);
+      return v === 'realtime' ? 'realtime' : 'paragraph';
+    } catch { return 'paragraph'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(TRANSLATION_MODE_KEY, translationMode); } catch { /* quota */ }
+  }, [translationMode]);
+
+  // In-flight translation indicator — a Set of batch keys currently
+  // translating. We render a "翻译中…" placeholder whenever the set is
+  // non-empty so users know the Chinese is on its way and not broken.
+  const [pendingTranslations, setPendingTranslations] = useState<Set<string>>(new Set());
+
   // Users who've already learned what the AI chat bar does can dismiss
   // the hint so their home screen stays compact. Persisted across reloads
   // since the lesson doesn't need to be re-taught each session.
@@ -302,7 +322,45 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
     setStream((prev) => {
       let next = [...prev];
       for (const pair of pairs) {
-        // Collect indices of un-translated finalized lines in order.
+        // Realtime mode: session emits one pair per sentence with en
+        // exactly matching the single finalized line. 1:1 match, no merge.
+        if (translationMode === 'realtime') {
+          let matched = false;
+          for (let i = next.length - 1; i >= 0; i--) {
+            const item = next[i];
+            if (item.kind !== 'line') continue;
+            if (!item.finalized) continue;
+            if (item.translation) continue;
+            if (item.transcription === pair.en) {
+              next[i] = { ...item, translation: pair.zh };
+              matched = true;
+              break;
+            }
+          }
+          if (!matched) {
+            for (let i = 0; i < next.length; i++) {
+              const item = next[i];
+              if (item.kind === 'line' && item.finalized && !item.translation) {
+                next[i] = { ...item, translation: pair.zh };
+                matched = true;
+                break;
+              }
+            }
+          }
+          if (!matched) {
+            next.push({
+              kind: 'line',
+              id: itemCounter.current++,
+              translation: pair.zh,
+              transcription: pair.en,
+              finalized: true,
+            });
+          }
+          continue;
+        }
+
+        // Paragraph mode: session joined N sentences into one `en`; merge
+        // all un-translated finalized lines into the first, drop the rest.
         const indices: number[] = [];
         for (let i = 0; i < next.length; i++) {
           const item = next[i];
@@ -311,7 +369,6 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           }
         }
         if (indices.length === 0) {
-          // Nothing to merge into — append a fresh paragraph bubble.
           next.push({
             kind: 'line',
             id: itemCounter.current++,
@@ -321,17 +378,12 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           });
           continue;
         }
-        // Merge: first un-translated line carries the full paragraph.
         const firstIdx = indices[0];
         const first = next[firstIdx] as {
           kind: 'line'; id: number; translation: string; transcription: string; finalized: boolean;
         };
-        // Prefer the server-side joined paragraph for transcription so
-        // it matches the zh exactly. Falls back to the line's own text
-        // if the server somehow sent an empty en.
         const mergedTranscription = pair.en || indices.map((i) => (next[i] as any).transcription).join(' ');
         next[firstIdx] = { ...first, transcription: mergedTranscription, translation: pair.zh };
-        // Drop the rest (in reverse so indices stay valid).
         for (let k = indices.length - 1; k >= 1; k--) {
           next.splice(indices[k], 1);
         }
@@ -458,7 +510,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
         localStorage.setItem(COURSE_CUSTOM_KEY, customCourse);
       } catch { /* quota */ }
       const handle = await startLiveSession(
-        { audioSource, mode, targetLang: 'zh-CN', course, keyterms },
+        { audioSource, mode, targetLang: 'zh-CN', course, keyterms, translationMode },
         {
           onStatusChange: (s, detail) => {
             setStatus(s);
@@ -477,6 +529,13 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           },
           onTranslationBatch: applyTranslationBatch,
           onTranscriptionDelta: appendTranscriptionDelta,
+          onTranslationPending: (pending, key) => {
+            setPendingTranslations((prev) => {
+              const next = new Set(prev);
+              if (pending) next.add(key); else next.delete(key);
+              return next;
+            });
+          },
         }
       );
       sessionRef.current = handle;
@@ -839,6 +898,42 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           )}
         </div>
 
+        {/* Translation mode — paragraph (default, smooth) vs realtime
+            (per-sentence, low latency but jumpier). Disabled while live
+            so mid-session flips don't leave orphaned in-flight batches. */}
+        <div className="flex items-center gap-2 bg-white/60 border border-gray-100 rounded-2xl p-1">
+          {(['paragraph', 'realtime'] as const).map((m) => {
+            const active = translationMode === m;
+            return (
+              <button
+                key={m}
+                type="button"
+                disabled={isLive || isBusy}
+                onClick={() => setTranslationMode(m)}
+                className={
+                  'flex-1 py-2 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ' +
+                  (active
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'text-gray-600 hover:bg-gray-50')
+                }
+              >
+                {m === 'paragraph'
+                  ? (uiLang === 'zh' ? '整段翻译（推荐）' : 'Paragraph (recommended)')
+                  : (uiLang === 'zh' ? '实时翻译' : 'Realtime')}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-gray-400 -mt-1 px-1 leading-relaxed">
+          {translationMode === 'paragraph'
+            ? (uiLang === 'zh'
+                ? '几句英文攒成一段再翻，中文更顺，延迟几秒'
+                : 'Accumulates a few sentences for smoother Chinese; a few seconds of lag')
+            : (uiLang === 'zh'
+                ? '每句话讲完立刻翻译，延迟最低，但中文会碎一些'
+                : 'Translates each sentence immediately; lowest lag but jumpier')}
+        </p>
+
         {audioSource === 'tab' && !isLive && (
           <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 border border-gray-100">
             {uiLang === 'zh' ? (
@@ -1016,6 +1111,12 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
             </div>
           );
         })}
+        {pendingTranslations.size > 0 && (
+          <div className="flex items-center gap-2 text-xs text-indigo-500 px-1 py-1">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            <span>{uiLang === 'zh' ? '翻译中…' : 'Translating…'}</span>
+          </div>
+        )}
       </div>
 
       {/* Live structured notes — refreshes in the background every 45s

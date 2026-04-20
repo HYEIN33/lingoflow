@@ -677,11 +677,11 @@ export async function getReviewHint(word: string, meaningZh: string): Promise<st
 export interface LiveNotes {
   title: string;                  // one-line topic (e.g. "滑雪运动介绍")
   overview: string[];             // 2-4 bullets, user-facing summary
-  vocabulary: Array<{             // key terms with definition + note
-    term: string;                 // English term
-    meaning: string;              // short Chinese gloss
-    note?: string;                // optional longer note / example
-  }>;
+  // NOTE: `vocabulary` was removed on 2026-04-20 — user feedback said
+  // the panel is too dense with it; Overview + KeyPoints is enough.
+  // Field kept optional in type only for backward-compat with any
+  // in-flight notes objects still in memory after deploy.
+  vocabulary?: Array<{ term: string; meaning: string; note?: string }>;
   keyPoints: string[];            // 3-6 teaching-point bullets
 }
 
@@ -712,25 +712,18 @@ export async function generateLiveNotes(
 ${courseLine}Below is the raw English transcript of the class so far. Produce polished, structured study notes for the student in CHINESE. Goals:
 - Surface the main topic of the class.
 - Summarize what the teacher has covered so far in 2-4 bullets.
-- Extract vocabulary the student should remember: target phrases the teacher is actively teaching, plus any technical or idiomatic terms worth noting.
 - Highlight the key learning points in 3-6 bullets a student should revisit when reviewing.
 
 Return STRICT JSON matching this TypeScript type:
 {
   "title": string,                // one-line Chinese title of the topic
   "overview": string[],           // 2-4 Chinese summary bullets
-  "vocabulary": Array<{
-    "term": string,               // English term as spoken
-    "meaning": string,            // concise Chinese gloss
-    "note"?: string               // optional: 1 sentence extra context
-  }>,
   "keyPoints": string[]           // 3-6 Chinese bullets of teaching points
 }
 
 Rules:
 - Output ONLY the JSON object, no markdown fences, no prose around it.
-- All free-text fields are in Chinese unless they are English vocabulary terms.
-- Vocabulary "term" is always the English phrase as the teacher used it.
+- All free-text fields are in Chinese.
 - Do NOT invent content not in the transcript.
 - If the transcript is very short or off-topic, produce whatever notes are possible — empty arrays are allowed.
 
@@ -744,21 +737,9 @@ ${transcript}`;
       properties: {
         title: { type: Type.STRING },
         overview: { type: Type.ARRAY, items: { type: Type.STRING } },
-        vocabulary: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              term: { type: Type.STRING },
-              meaning: { type: Type.STRING },
-              note: { type: Type.STRING },
-            },
-            required: ['term', 'meaning'],
-          },
-        },
         keyPoints: { type: Type.ARRAY, items: { type: Type.STRING } },
       },
-      required: ['title', 'overview', 'vocabulary', 'keyPoints'],
+      required: ['title', 'overview', 'keyPoints'],
     },
   };
   const raw = await geminiGenerate({ model, contents: prompt, config });

@@ -97,38 +97,6 @@ export default function LiveNotesPanel({ notes, loading, uiLang }: Props) {
                 </section>
               )}
 
-              {/* Vocabulary table — mobile-friendly: wrap on narrow screens */}
-              {notes.vocabulary && notes.vocabulary.length > 0 && (
-                <section>
-                  <h4 className="text-[10px] font-black tracking-[0.2em] text-indigo-500 uppercase mb-2">
-                    {zh ? '词汇预习' : 'Vocabulary'}
-                  </h4>
-                  <div className="rounded-xl border border-indigo-200/60 overflow-hidden bg-white/50">
-                    {notes.vocabulary.map((v, i) => (
-                      <div
-                        key={i}
-                        className={
-                          'flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-3 px-3 py-2 text-sm ' +
-                          (i > 0 ? 'border-t border-indigo-100' : '')
-                        }
-                      >
-                        <div className="sm:w-32 shrink-0 font-bold text-indigo-700 font-mono text-[13px]">
-                          {v.term}
-                        </div>
-                        <div className="flex-1">
-                          <div className="text-gray-800">{v.meaning}</div>
-                          {v.note && (
-                            <div className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
-                              {v.note}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-
               {/* Key points */}
               {notes.keyPoints && notes.keyPoints.length > 0 && (
                 <section>
