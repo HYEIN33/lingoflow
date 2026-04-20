@@ -320,12 +320,15 @@ export async function startLiveSession(
   //        1-3s; topic-switch pauses are ≥ 4s, so this threshold
   //        cleanly separates "same topic, breathing" from "new topic".
   //     4. MAX_WAIT safety net for monologues with no long gaps.
-  const PARAGRAPH_FLOOR_SENTENCES = 2; // don't flush on gap until 2 sentences in
-  const PARAGRAPH_FLOOR_CHARS = 80;    // or 80 chars, whichever first
-  const PARAGRAPH_CEILING_SENTENCES = 5; // flush once we hit 5 sentences no matter what
-  const PARAGRAPH_CEILING_CHARS = 260; // or 260 chars
-  const PARAGRAPH_TOPIC_GAP_MS = 4000; // 4s silence after floor = topic boundary
-  const PARAGRAPH_MAX_WAIT_MS = 17000; // absolute ceiling for non-stop speech
+  // Tuned 2026-04-20 after user feedback "一次翻译最长等 20 秒太久".
+  // Typical end-to-end latency now: accumulate 3-6s + Gemini streaming
+  // first-token 1-2s = Chinese starts appearing 4-8s after the English.
+  const PARAGRAPH_FLOOR_SENTENCES = 1; // 1 sentence is enough to flush on gap
+  const PARAGRAPH_FLOOR_CHARS = 50;    // or 50 chars
+  const PARAGRAPH_CEILING_SENTENCES = 3; // flush at 3 sentences no matter what
+  const PARAGRAPH_CEILING_CHARS = 160; // or 160 chars
+  const PARAGRAPH_TOPIC_GAP_MS = 2500; // 2.5s pause = good-enough boundary
+  const PARAGRAPH_MAX_WAIT_MS = 10000; // hard ceiling 10s for non-stop speech
   const BATCH_SENTINEL = '|||';       // legacy, unused in new path but
                                       // referenced elsewhere — keep defined.
   let pendingBatch: string[] = [];

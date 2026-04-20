@@ -27,6 +27,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.2.4',
+    date: '2026-04-20',
+    title: '课堂同传：翻译更快了',
+    changes: [
+      '整段翻译触发阈值大幅下调：从 5 句 / 260 字砍到 3 句 / 160 字，停顿门槛 4 秒 → 2.5 秒，独白兜底 17 秒 → 10 秒',
+      '端到端延迟从 9-20 秒降到 4-8 秒',
+    ],
+    isMajor: false,
+  },
+  {
     version: '0.2.3',
     date: '2026-04-20',
     title: '课堂同传：两种翻译模式 + 翻译中提示',
