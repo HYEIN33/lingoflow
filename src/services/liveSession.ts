@@ -288,9 +288,23 @@ export async function startLiveSession(
   // Timing tuned to beat EasyNoteAI on latency. Their cadence appears to
   // be ~30-60s accumulation before a translate call; we aim for 6-15s
   // typical. The user still reads coherent paragraphs, just sooner.
-  const PARAGRAPH_MIN_CHARS = 140;     // ~2 spoken sentences of English
-  const PARAGRAPH_PAUSE_MS = 1800;     // 1.8s of silence = paragraph break
-  const PARAGRAPH_MAX_WAIT_MS = 15000; // hard cap for non-stop speech
+  // Paragraph triggers (tuned 2026-04-20 after users reported per-sentence
+  // output on video-lecture audio):
+  //   - MIN_CHARS: flush once paragraph is "long enough", ~3-4 sentences.
+  //   - PAUSE_MS: how long a silence has to last before we treat it as
+  //     a paragraph break. Video lectures often have 2-3s pauses between
+  //     sentences that are still within the same paragraph, so this MUST
+  //     be generous or we end up translating every sentence individually.
+  //   - HARD_MIN_CHARS: even if the pause timer fires, never flush a
+  //     stubbornly short batch (<60 chars = ~1 short sentence). Force
+  //     the user to either (a) hit 60 chars, (b) hit MAX_WAIT, or
+  //     (c) stop speaking long enough for PAUSE_MS. This is the fix
+  //     that actually eliminates the "1-sentence-at-a-time" feeling.
+  //   - MAX_WAIT_MS: absolute ceiling for continuous speech.
+  const PARAGRAPH_MIN_CHARS = 180;     // ~3-4 spoken sentences of English
+  const PARAGRAPH_HARD_MIN_CHARS = 60; // never flush less than this on pause
+  const PARAGRAPH_PAUSE_MS = 4500;     // 4.5s silence = real paragraph break
+  const PARAGRAPH_MAX_WAIT_MS = 18000; // hard cap for non-stop speech
   const BATCH_SENTINEL = '|||';       // legacy, unused in new path but
                                       // referenced elsewhere — keep defined.
   let pendingBatch: string[] = [];
@@ -423,11 +437,18 @@ ${englishParagraph}`;
           void flushBatch();
         } else {
           // Pause timer: resets on each new is_final. If the speaker
-          // pauses for PARAGRAPH_PAUSE_MS, flush whatever's in the batch.
+          // pauses for PARAGRAPH_PAUSE_MS, AND we have at least
+          // HARD_MIN_CHARS accumulated, flush. If we're still under the
+          // hard min, keep waiting — a single short sentence followed
+          // by a long pause should NOT be flushed alone. The MAX_WAIT
+          // timer guarantees we eventually flush no matter what.
           if (batchTimer) clearTimeout(batchTimer);
           batchTimer = setTimeout(() => {
             batchTimer = null;
-            if (pendingBatch.length > 0) void flushBatch();
+            const chars = pendingBatch.reduce((n, s) => n + s.length, 0);
+            if (pendingBatch.length > 0 && chars >= PARAGRAPH_HARD_MIN_CHARS) {
+              void flushBatch();
+            }
           }, PARAGRAPH_PAUSE_MS);
           // Max-wait timer: set once per paragraph, never reset. Prevents
           // a non-stop speaker from starving the user of any translation.
