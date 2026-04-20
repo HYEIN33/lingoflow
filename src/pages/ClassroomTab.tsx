@@ -218,10 +218,8 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
   const [question, setQuestion] = useState('');
   const [isAsking, setIsAsking] = useState(false);
 
-  // Translation mode: paragraph (smooth, slight delay) vs realtime (per
-  // sentence, low latency but jumpier). Persisted so users don't have to
-  // re-pick every session. Default is paragraph because video-lecture
-  // content reads much better in chunks.
+  // Translation mode — paragraph (smooth, slight delay) vs realtime
+  // (per-sentence, low latency but jumpier). Persisted in localStorage.
   const TRANSLATION_MODE_KEY = 'memeflow_classroom_translation_mode';
   const [translationMode, setTranslationMode] = useState<'paragraph' | 'realtime'>(() => {
     try {
@@ -322,8 +320,8 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
     setStream((prev) => {
       let next = [...prev];
       for (const pair of pairs) {
-        // Realtime mode: session emits one pair per sentence with en
-        // exactly matching the single finalized line. 1:1 match, no merge.
+        // Realtime mode: session emits one pair per finalized sentence.
+        // pair.en matches exactly one line; 1:1 match, no merge.
         if (translationMode === 'realtime') {
           let matched = false;
           for (let i = next.length - 1; i >= 0; i--) {
@@ -349,11 +347,8 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           }
           if (!matched) {
             next.push({
-              kind: 'line',
-              id: itemCounter.current++,
-              translation: pair.zh,
-              transcription: pair.en,
-              finalized: true,
+              kind: 'line', id: itemCounter.current++,
+              translation: pair.zh, transcription: pair.en, finalized: true,
             });
           }
           continue;
