@@ -22,7 +22,6 @@ import {
   Search,
   Plus,
   BookOpen,
-  LogOut,
   LogIn,
   Loader2,
   Volume2,
@@ -31,7 +30,6 @@ import {
   ChevronUp,
   Languages,
   History,
-  Globe,
   PenTool,
   Mic,
   MicOff,
@@ -57,6 +55,7 @@ import { cn } from './lib/utils';
 import { Language, translations } from './i18n';
 import { APP_VERSION, APP_ENV, IS_STAGING } from './version';
 import ChangelogBell from './components/ChangelogBell';
+import SettingsModal from './components/SettingsModal';
 import ChangelogToast from './components/ChangelogToast';
 import { useAuth } from './hooks/useAuth';
 import { useAudio } from './hooks/useAudio';
@@ -198,11 +197,20 @@ interface SortableTabProps {
 function SortableTab({ tab, isActive, onSelect }: SortableTabProps) {
   const sortable = useSortable({ id: tab.id });
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = sortable;
-  // dnd-kit tracks the raw pointer offset in `transform.{x,y,scaleX,scaleY}`.
-  // For a horizontal-only tab row the Y axis is pure visual distraction —
-  // users who nudge up/down mid-drag saw the tab float off the bar.
-  // Lock Y to 0 and let the horizontal sorting strategy handle everything
-  // else. Scale is untouched so dnd-kit's optional scale animation still works.
+  // Drag handle is attached ONLY to the currently-active tab. Motivation:
+  //   - On mobile the tab strip scrolls horizontally to reach tabs that
+  //     overflow the viewport. If every tab listens for pointer events,
+  //     dnd-kit's 250 ms long-press timer competes with the swipe-to-scroll
+  //     gesture — users trying to scroll accidentally grabbed a tab.
+  //   - Hooking listeners only on the active tab means a quick swipe on any
+  //     inactive tab falls through to the container's native
+  //     `overflow-x-auto`, and only a deliberate long-press on the tab the
+  //     user is already on enters reorder mode. That matches every native
+  //     mobile OS pattern: "you can rearrange the thing you're holding".
+  const dragListeners = isActive ? listeners : undefined;
+  const dragAttributes = isActive ? attributes : undefined;
+  // dnd-kit tracks the raw pointer offset in transform.{x,y,scaleX,scaleY}.
+  // Lock Y to 0 so a diagonal drag doesn't lift the tab off the strip.
   const style: React.CSSProperties = {
     transform: transform
       ? CSS.Transform.toString({ ...transform, y: 0 })
@@ -210,15 +218,17 @@ function SortableTab({ tab, isActive, onSelect }: SortableTabProps) {
     transition,
     opacity: isDragging ? 0.65 : 1,
     zIndex: isDragging ? 20 : 1,
-    touchAction: 'none',
+    // touchAction: 'none' suppresses native scroll — only apply on the
+    // active tab so swipes on inactive tabs still scroll the strip.
+    touchAction: isActive ? 'none' : 'auto',
   };
   return (
     <div
       ref={setNodeRef}
       style={style}
       className="flex-1 min-w-[80px]"
-      {...attributes}
-      {...listeners}
+      {...dragAttributes}
+      {...dragListeners}
     >
       <button
         onClick={onSelect}
@@ -551,7 +561,9 @@ export default function App() {
   const [showPayment, setShowPayment] = useState(false);
   const [paymentTrigger, setPaymentTrigger] = useState('default');
 
-  const [showQrCode, setShowQrCode] = useState(false);
+  // (Retired 2026-04-20: mobile QR code entry. Users were clicking it and
+  // landing on someone else's cloud-run URL — moved nothing of value there.
+  // Replaced by the Settings gear which houses language + feedback + logout.)
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [grammarInput, setGrammarInput] = useState('');
   const [isCheckingGrammar, setIsCheckingGrammar] = useState(false);
@@ -748,8 +760,13 @@ export default function App() {
   // TouchSensor on mobile uses a 250 ms long-press so taps still switch
   // tabs normally but a held finger + drag reorders. tolerance: 5 means
   // a 5 px wiggle doesn't cancel the long-press.
+  // Both sensors use a 250 ms long-press before dragging "kicks in". That
+  // frees up short horizontal swipes to be consumed by the tab strip's
+  // native `overflow-x-auto` scrolling — critical on mobile where the
+  // strip extends past the viewport. Previously the PointerSensor fired
+  // on 8px movement, which stole every scroll attempt and reordered tabs.
   const tabSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(PointerSensor, { activationConstraint: { delay: 250, tolerance: 8 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } }),
   );
 
@@ -874,30 +891,15 @@ export default function App() {
             >
               <UserCircle className="w-4 h-4 sm:w-5 sm:h-5" />
             </button>
-            <button 
-              onClick={() => setUiLang(uiLang === 'en' ? 'zh' : 'en')}
-              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 hover:bg-gray-50 rounded-lg transition-colors text-gray-500 text-xs sm:text-sm font-medium"
-            >
-              <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden xs:inline">{uiLang === 'en' ? '中文' : 'English'}</span>
-              <span className="xs:hidden">{uiLang === 'en' ? 'ZH' : 'EN'}</span>
-            </button>
-            <button 
-              onClick={() => setShowQrCode(true)}
-              className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 hover:bg-gray-50 rounded-lg transition-colors text-blue-500 text-xs sm:text-sm font-medium"
-              title={uiLang === 'zh' ? '在手机上使用' : 'Use on Mobile'}
-            >
-              <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden xs:inline">{uiLang === 'zh' ? '手机端' : 'Mobile'}</span>
-            </button>
-            <button
-              onClick={confirmLogout}
-              aria-label={t.signOut}
-              className="p-1.5 sm:p-2 hover:bg-gray-50 rounded-full transition-colors text-gray-400 hover:text-red-500"
-              title={t.signOut}
-            >
-              <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
+            <SettingsModal
+              uiLang={uiLang}
+              setUiLang={setUiLang}
+              currentVersion={APP_VERSION}
+              onLogout={confirmLogout}
+              onClearSearchHistory={clearHistory}
+              feedbackEmail="caizewei11@gmail.com"
+              wechatQrSrc="/wechat-qr.png"
+            />
           </div>
         </div>
       </header>
@@ -913,15 +915,26 @@ export default function App() {
             items={tabs.map((t) => t.id)}
             strategy={horizontalListSortingStrategy}
           >
-            <div className="flex bg-white/30 backdrop-blur-sm border border-white/50 p-1 rounded-2xl mb-6 sm:mb-8 overflow-x-auto no-scrollbar shadow-inner">
-              {tabs.map((tab) => (
-                <SortableTab
-                  key={tab.id}
-                  tab={tab}
-                  isActive={activeTab === tab.id}
-                  onSelect={() => setActiveTab(tab.id as any)}
-                />
-              ))}
+            {/* `relative` so the gradient-fade indicator can absolute-position
+                inside. The fade is a visual hint that the tab strip scrolls
+                horizontally — without it users don't realise there are
+                tabs further right on narrow screens. pointer-events-none so
+                it never eats taps meant for the tabs underneath. */}
+            <div className="relative mb-6 sm:mb-8">
+              <div className="flex bg-white/30 backdrop-blur-sm border border-white/50 p-1 rounded-2xl overflow-x-auto no-scrollbar shadow-inner scroll-smooth">
+                {tabs.map((tab) => (
+                  <SortableTab
+                    key={tab.id}
+                    tab={tab}
+                    isActive={activeTab === tab.id}
+                    onSelect={() => setActiveTab(tab.id as any)}
+                  />
+                ))}
+              </div>
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute top-0 right-0 h-full w-8 rounded-r-2xl bg-gradient-to-l from-white/70 to-transparent"
+              />
             </div>
           </SortableContext>
         </DndContext>
@@ -1116,48 +1129,6 @@ export default function App() {
                 window.location.reload();
               }}
             />
-          )}
-        </AnimatePresence>
-
-        {/* QR Code Modal */}
-        <AnimatePresence>
-          {showQrCode && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-              <motion.div 
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setShowQrCode(false)}
-                className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-              />
-              <motion.div 
-                initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                className="relative bg-white rounded-3xl p-8 shadow-2xl max-w-sm w-full text-center"
-              >
-                <h3 className="text-xl font-bold text-gray-900 mb-2">
-                  {uiLang === 'zh' ? '在手机上继续' : 'Continue on Mobile'}
-                </h3>
-                <p className="text-gray-500 text-sm mb-6">
-                  {uiLang === 'zh' ? '扫描二维码，随时随地练习口译' : 'Scan to practice interpretation anywhere'}
-                </p>
-                <div className="bg-gray-50 p-4 rounded-2xl inline-block mb-6 border border-gray-100">
-                  <img 
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent('https://ais-pre-hn2czyzfyzap4frb73keh6-648001708369.asia-southeast1.run.app')}`}
-                    alt="QR Code"
-                    className="w-48 h-48"
-                    referrerPolicy="no-referrer"
-                  />
-                </div>
-                <button 
-                  onClick={() => setShowQrCode(false)}
-                  className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold rounded-xl transition-colors"
-                >
-                  {uiLang === 'zh' ? '关闭' : 'Close'}
-                </button>
-              </motion.div>
-            </div>
           )}
         </AnimatePresence>
 

@@ -265,7 +265,22 @@ service cloud.firestore {
                     request.resource.data.uid == request.auth.uid &&
                     request.resource.data.mode in ['tutorial', 'lecture'] &&
                     request.resource.data.audioSource in ['tab', 'mic'] &&
-                    (request.resource.data.startedAt is timestamp || request.resource.data.startedAt == request.time);
+                    request.resource.data.startedAt is timestamp;
+      allow update: if isAuthenticated() && resource.data.uid == request.auth.uid;
+    }
+
+    // Classroom note folders — users can bucket their saved sessions by
+    // course / semester. Same ownership model as classSessions.
+    //   - uid: string (owner)
+    //   - name: string
+    //   - createdAt: timestamp
+    match /classFolders/{folderId} {
+      allow read, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow create: if isAuthenticated() &&
+                    request.resource.data.uid == request.auth.uid &&
+                    request.resource.data.name is string &&
+                    request.resource.data.name.size() > 0 &&
+                    request.resource.data.name.size() < 100;
       allow update: if isAuthenticated() && resource.data.uid == request.auth.uid;
     }
 

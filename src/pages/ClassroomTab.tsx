@@ -34,6 +34,7 @@ import {
   Mic,
   Monitor,
   Play,
+  Pause,
   Square,
   Loader2,
   AlertTriangle,
@@ -45,9 +46,36 @@ import {
 import { addDoc, collection, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { startLiveSession, LiveSessionHandle } from '../services/liveSession';
+import ClassNotesModal from '../components/ClassNotesModal';
+import LiveNotesPanel from '../components/LiveNotesPanel';
+import { generateLiveNotes, type LiveNotes } from '../services/ai';
 import { aiChat } from '../services/ai';
 
 const COMPLIANCE_ACK_KEY = 'memeflow_classroom_compliance_ack';
+
+// Keyterm presets — one-tap subject packs that prefill the keyterms box
+// with vocabulary Deepgram Nova-3 often misrecognises for that subject.
+// Users can mix-and-match (tap Finance + CS) or ignore and type their own.
+// The terms themselves are English — Deepgram is an English ASR, so
+// boosting "CAPM" as a literal keyterm works whether the UI is zh or en.
+// Course presets — one-tap subject packs. Each course surfaces BOTH:
+//   (a) a keyterm list for Deepgram to boost recognition, and
+//   (b) the course name itself so Gemini translates with the right
+//       domain register. The user just picks a subject; both layers
+//       benefit automatically.
+const COURSE_PRESETS: Array<{ zh: string; en: string; terms: string[] }> = [
+  { zh: '经济学', en: 'Economics', terms: ['GDP', 'inflation', 'deflation', 'oligopoly', 'monopoly', 'elasticity', 'equilibrium', 'Keynesian', 'marginal', 'externality'] },
+  { zh: '金融', en: 'Finance', terms: ['CAPM', 'WACC', 'beta', 'Sharpe ratio', 'arbitrage', 'derivative', 'Black-Scholes', 'portfolio', 'covariance', 'volatility'] },
+  { zh: '会计', en: 'Accounting', terms: ['accrual', 'depreciation', 'amortization', 'EBITDA', 'goodwill', 'liability', 'equity', 'GAAP', 'IFRS', 'ledger'] },
+  { zh: '计算机', en: 'CS', terms: ['recursion', 'heuristic', 'polymorphism', 'asynchronous', 'concurrency', 'Big-O', 'hashtable', 'compiler', 'runtime', 'semaphore'] },
+  { zh: '数据科学', en: 'Data Science', terms: ['Bayesian', 'regression', 'overfitting', 'gradient descent', 'neural network', 'hyperparameter', 'tensor', 'correlation', 'clustering', 'variance'] },
+  { zh: '工程', en: 'Engineering', terms: ['tolerance', 'Young modulus', 'shear stress', 'thermodynamics', 'viscosity', 'Reynolds number', 'hydraulic', 'kinematics', 'torque', 'fatigue'] },
+  { zh: '法律', en: 'Law', terms: ['plaintiff', 'defendant', 'tort', 'liability', 'statute', 'jurisprudence', 'precedent', 'injunction', 'mens rea', 'actus reus'] },
+  { zh: '医学', en: 'Medicine', terms: ['pathology', 'etiology', 'prognosis', 'hypertension', 'diabetes', 'oncology', 'cardiovascular', 'immunology', 'biopsy', 'clinical trial'] },
+  { zh: '心理学', en: 'Psychology', terms: ['cognition', 'attachment', 'Freud', 'Piaget', 'neurosis', 'schema', 'reinforcement', 'phenomenology', 'behaviorism', 'dissonance'] },
+  { zh: '传媒', en: 'Media Studies', terms: ['narrative', 'semiotics', 'hegemony', 'discourse', 'framing', 'propaganda', 'audience', 'postmodern', 'intertextuality', 'mediation'] },
+  { zh: '哲学', en: 'Philosophy', terms: ['epistemology', 'ontology', 'metaphysics', 'phenomenology', 'existentialism', 'dialectic', 'a priori', 'empiricism', 'utilitarianism', 'Nietzsche'] },
+];
 
 type Status =
   | 'idle'
@@ -154,6 +182,38 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
   const [mode] = useState<'tutorial' | 'lecture'>('tutorial'); // tutorial only in Spike
   const [status, setStatus] = useState<Status>('idle');
   const [statusDetail, setStatusDetail] = useState<string>('');
+  // paused mirrors the live session's pause state so the button label
+  // updates synchronously. Always reset in handleStart and handleStop.
+  const [paused, setPaused] = useState(false);
+  // Course selection — user picks a subject (e.g. "金融" / "计算机") and
+  // we use that to (a) feed matching keyterms to Deepgram and (b) tell
+  // Gemini the class context for better translation register. We keep
+  // the custom-course text input for subjects not in our preset list
+  // (e.g. "营销", "海洋生物学" etc.) — the custom string is passed to
+  // Gemini as the subject; no preset keyterms in that case.
+  const COURSE_KEY = 'memeflow_classroom_course';
+  const COURSE_CUSTOM_KEY = 'memeflow_classroom_course_custom';
+  const [selectedCourse, setSelectedCourse] = useState<string | null>(() => {
+    try { return localStorage.getItem(COURSE_KEY); } catch { return null; }
+  });
+  const [customCourse, setCustomCourse] = useState<string>(() => {
+    try { return localStorage.getItem(COURSE_CUSTOM_KEY) || ''; } catch { return ''; }
+  });
+  const [courseExpanded, setCourseExpanded] = useState(false);
+
+  // Live Notes — structured study notes refreshed during the session.
+  // Regenerated at most every LIVE_NOTES_MIN_INTERVAL_MS and only when
+  // enough new transcript has accumulated, so we don't hammer gemini-
+  // 3-pro on a quiet room. The refs track "last run wall clock" and
+  // "last transcript length" to make that decision cheap.
+  const LIVE_NOTES_MIN_INTERVAL_MS = 45000;
+  const LIVE_NOTES_MIN_NEW_CHARS = 200;
+  const [liveNotes, setLiveNotes] = useState<LiveNotes | null>(null);
+  const [liveNotesLoading, setLiveNotesLoading] = useState(false);
+  const liveNotesLastRunRef = useRef<number>(0);
+  const liveNotesLastLenRef = useRef<number>(0);
+  const liveNotesInFlightRef = useRef<boolean>(false);
+
   const [stream, setStream] = useState<StreamItem[]>([]);
   const [question, setQuestion] = useState('');
   const [isAsking, setIsAsking] = useState(false);
@@ -177,44 +237,111 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
   const streamRef = useRef<StreamItem[]>([]);
   useEffect(() => { streamRef.current = stream; }, [stream]);
 
-  // Find the newest 'line' item that hasn't finalized yet and append to it;
-  // otherwise append a fresh one. We search from the tail because AI QA
-  // exchanges can sit between subtitle lines.
-  const appendTranslationDelta = (delta: string) => {
+  // Deepgram+Gemini flow: transcription arrives first (interim → final),
+  // then translation fires once the segment finalizes and Gemini returns.
+  //
+  // appendTranscriptionDelta REPLACES the transcription on the current
+  // live line (interim guesses supersede each other; final supersedes the
+  // last interim). When isFinal=true we also lock the English text and
+  // spawn a fresh line for the next utterance — Deepgram's next Results
+  // batch could overlap with this one in flight, so the UI must be ready
+  // to host it while translation for the just-finalized line is pending.
+  //
+  // appendTranslationDelta fills in the Chinese translation for the most
+  // recent line that has a transcription but no translation yet. If it
+  // can't find such a line (translation came back faster than the next
+  // transcription), it appends a fresh line.
+  // Simpler + more robust version. Previously we searched back for an
+  // unfinalized 'line' and gave up if we hit a finalized one first — that
+  // broke when AI QA bubbles sat between segments, because the loop would
+  // hit the QA item and never find or create a line. Now we walk the
+  // whole array, flip unfinalized lines to the new text, and if we never
+  // found one, append a fresh line. Simpler, no early break. When isFinal,
+  // we mark that specific line as finalized so the next interim starts a
+  // new bubble — which is the correct behaviour the user actually wants.
+  const upsertLiveLine = (text: string, isFinal: boolean) => {
     setStream((prev) => {
       const next = [...prev];
+      let target = -1;
       for (let i = next.length - 1; i >= 0; i--) {
-        const item = next[i];
-        if (item.kind === 'line' && !item.finalized) {
-          next[i] = { ...item, translation: item.translation + delta };
-          return next;
+        if (next[i].kind === 'line' && !(next[i] as any).finalized) {
+          target = i;
+          break;
         }
-        if (item.kind === 'line' && item.finalized) break; // reached last finalized — start a new line
       }
-      next.push({
-        kind: 'line',
-        id: itemCounter.current++,
-        translation: delta,
-        transcription: '',
-        finalized: false,
-      });
+      if (target === -1) {
+        next.push({
+          kind: 'line',
+          id: itemCounter.current++,
+          translation: '',
+          transcription: text,
+          finalized: isFinal,
+        });
+      } else {
+        const existing = next[target] as { kind: 'line'; id: number; translation: string; transcription: string; finalized: boolean };
+        next[target] = { ...existing, transcription: text, finalized: isFinal };
+      }
       return next;
     });
   };
 
-  const appendTranscriptionDelta = (delta: string) => {
+  // Paragraph-mode translation handler. liveSession ships ONE pair per
+  // flush where `en` is the whole paragraph (N finalized sentences joined
+  // by ' '), and `zh` is a single coherent Chinese paragraph. We must
+  // collapse the flurry of per-sentence English bubbles into ONE bubble
+  // that shows the full English paragraph with its Chinese translation
+  // underneath — otherwise the UI renders 1 English line + 1 Chinese
+  // line alternating, which is the exact bug the paragraph refactor
+  // aimed to eliminate.
+  //
+  // Strategy: find the contiguous tail of `line` items that are (a)
+  // finalized and (b) still lack a translation. Merge them into the
+  // first one (its transcription becomes the joined paragraph, its
+  // translation becomes `zh`), drop the rest.
+  const applyTranslationBatch = (pairs: Array<{ en: string; zh: string }>) => {
     setStream((prev) => {
-      const next = [...prev];
-      for (let i = next.length - 1; i >= 0; i--) {
-        const item = next[i];
-        if (item.kind === 'line' && !item.finalized) {
-          next[i] = { ...item, transcription: item.transcription + delta };
-          return next;
+      let next = [...prev];
+      for (const pair of pairs) {
+        // Collect indices of un-translated finalized lines in order.
+        const indices: number[] = [];
+        for (let i = 0; i < next.length; i++) {
+          const item = next[i];
+          if (item.kind === 'line' && item.finalized && !item.translation) {
+            indices.push(i);
+          }
         }
-        if (item.kind === 'line' && item.finalized) break;
+        if (indices.length === 0) {
+          // Nothing to merge into — append a fresh paragraph bubble.
+          next.push({
+            kind: 'line',
+            id: itemCounter.current++,
+            translation: pair.zh,
+            transcription: pair.en,
+            finalized: true,
+          });
+          continue;
+        }
+        // Merge: first un-translated line carries the full paragraph.
+        const firstIdx = indices[0];
+        const first = next[firstIdx] as {
+          kind: 'line'; id: number; translation: string; transcription: string; finalized: boolean;
+        };
+        // Prefer the server-side joined paragraph for transcription so
+        // it matches the zh exactly. Falls back to the line's own text
+        // if the server somehow sent an empty en.
+        const mergedTranscription = pair.en || indices.map((i) => (next[i] as any).transcription).join(' ');
+        next[firstIdx] = { ...first, transcription: mergedTranscription, translation: pair.zh };
+        // Drop the rest (in reverse so indices stay valid).
+        for (let k = indices.length - 1; k >= 1; k--) {
+          next.splice(indices[k], 1);
+        }
       }
-      return prev; // no live line yet — ignore (shouldn't happen in practice)
+      return next;
     });
+  };
+
+  const appendTranscriptionDelta = (delta: string, isFinal: boolean) => {
+    upsertLiveLine(delta, isFinal);
   };
 
   const finalizeCurrentLine = () => {
@@ -237,6 +364,58 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
     scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
   }, [stream]);
 
+  // Live Notes refresh trigger. Runs on every stream change, guarded by
+  // min-interval and min-new-chars. The async work happens in the
+  // background; liveNotesInFlightRef prevents overlapping refreshes
+  // (pro can take 20-40s on a big transcript).
+  useEffect(() => {
+    if (status !== 'live') return;
+    if (liveNotesInFlightRef.current) return;
+
+    // Concatenate all finalized English segments from the stream — this
+    // is what the teacher has actually said so far. We deliberately
+    // skip interim text so mid-word guesses don't poison the notes.
+    const englishSoFar = stream
+      .filter((item) => item.kind === 'line' && item.finalized && item.transcription)
+      .map((item) => (item as any).transcription as string)
+      .join(' ');
+
+    const now = Date.now();
+    const sinceLast = now - liveNotesLastRunRef.current;
+    const newChars = englishSoFar.length - liveNotesLastLenRef.current;
+
+    if (englishSoFar.length < LIVE_NOTES_MIN_NEW_CHARS) return; // not enough yet
+    if (sinceLast < LIVE_NOTES_MIN_INTERVAL_MS) return;
+    if (newChars < LIVE_NOTES_MIN_NEW_CHARS) return;
+
+    liveNotesInFlightRef.current = true;
+    liveNotesLastRunRef.current = now;
+    liveNotesLastLenRef.current = englishSoFar.length;
+    setLiveNotesLoading(true);
+
+    const courseName =
+      selectedCourse === '__custom__'
+        ? customCourse.trim() || undefined
+        : selectedCourse
+          ? (COURSE_PRESETS.find((p) => p.zh === selectedCourse || p.en === selectedCourse)
+              ? (uiLang === 'zh'
+                  ? COURSE_PRESETS.find((p) => p.zh === selectedCourse || p.en === selectedCourse)!.zh
+                  : COURSE_PRESETS.find((p) => p.zh === selectedCourse || p.en === selectedCourse)!.en)
+              : selectedCourse)
+          : undefined;
+
+    generateLiveNotes(englishSoFar, { course: courseName })
+      .then((notes) => setLiveNotes(notes))
+      .catch((err) => {
+        console.warn('[classroom] live notes generation failed:', err);
+        Sentry.captureException(err, { tags: { component: 'ClassroomTab', op: 'generateLiveNotes' } });
+      })
+      .finally(() => {
+        liveNotesInFlightRef.current = false;
+        setLiveNotesLoading(false);
+      });
+  }, [stream, status, selectedCourse, customCourse, uiLang]);
+
   const acknowledgeCompliance = () => {
     if (!agreed) return;
     try { localStorage.setItem(COMPLIANCE_ACK_KEY, new Date().toISOString()); } catch { /* quota */ }
@@ -246,17 +425,58 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
   const handleStart = async () => {
     if (status === 'connecting' || status === 'live' || status === 'requesting-token') return;
     setStream([]);
+    setPaused(false);
+    // Reset Live Notes between sessions so the panel doesn't show last
+    // class's summary while the new class is warming up.
+    setLiveNotes(null);
+    setLiveNotesLoading(false);
+    liveNotesLastRunRef.current = 0;
+    liveNotesLastLenRef.current = 0;
+    liveNotesInFlightRef.current = false;
     try {
+      // Resolve the course → (display name, keyterm list) pair.
+      //   - If user picked a preset ("金融"), use its zh name + preset terms.
+      //   - If user is on the "其他" path with a custom subject ("海洋生物"),
+      //     pass the custom string as course (for Gemini context) but no
+      //     keyterms (we don't have a vocab list for it).
+      //   - If nothing selected, pass neither.
+      let course: string | undefined;
+      let keyterms: string[] = [];
+      if (selectedCourse === '__custom__') {
+        const t = customCourse.trim();
+        if (t) course = t;
+      } else if (selectedCourse) {
+        const preset = COURSE_PRESETS.find((p) => p.zh === selectedCourse || p.en === selectedCourse);
+        if (preset) {
+          course = uiLang === 'zh' ? preset.zh : preset.en;
+          keyterms = preset.terms;
+        }
+      }
+      try {
+        if (selectedCourse) localStorage.setItem(COURSE_KEY, selectedCourse);
+        else localStorage.removeItem(COURSE_KEY);
+        localStorage.setItem(COURSE_CUSTOM_KEY, customCourse);
+      } catch { /* quota */ }
       const handle = await startLiveSession(
-        { audioSource, mode, targetLang: 'zh-CN' },
+        { audioSource, mode, targetLang: 'zh-CN', course, keyterms },
         {
           onStatusChange: (s, detail) => {
             setStatus(s);
             setStatusDetail(detail || '');
+            // If Deepgram drops the socket mid-session (network blip,
+            // firewall, token expiry on long class), let the user know
+            // they need to hit Start again rather than silently freezing.
+            if (s === 'error' && detail) {
+              toast.error(
+                uiLang === 'zh'
+                  ? `连接中断：${detail}。点「开始」重连。`
+                  : `Connection dropped: ${detail}. Hit Start to reconnect.`
+              );
+              sessionRef.current = null;
+            }
           },
-          onTranslationDelta: appendTranslationDelta,
+          onTranslationBatch: applyTranslationBatch,
           onTranscriptionDelta: appendTranscriptionDelta,
-          onTurnComplete: finalizeCurrentLine,
         }
       );
       sessionRef.current = handle;
@@ -273,6 +493,18 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
     }
   };
 
+  const togglePause = () => {
+    const handle = sessionRef.current;
+    if (!handle) return;
+    if (handle.isPaused()) {
+      handle.resume();
+      setPaused(false);
+    } else {
+      handle.pause();
+      setPaused(true);
+    }
+  };
+
   const handleStop = async () => {
     if (!sessionRef.current) return;
     const handle = sessionRef.current;
@@ -281,6 +513,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
       await handle.stop();
     } finally {
       sessionRef.current = null;
+      setPaused(false);
     }
     // Persist the session so the user can find their notes later.
     // Best-effort; a save failure doesn't punish the UX — they still have
@@ -374,6 +607,31 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
   const isLive = status === 'live';
   const isBusy = status === 'connecting' || status === 'requesting-token';
 
+  // Safety cap: auto-stop after 60 minutes of uninterrupted live time.
+  // Background: Deepgram bills by the minute, and a user who forgets to
+  // hit Stop (left the tab open overnight) could silently burn hours of
+  // transcription credit. One hour matches a typical lecture and is far
+  // above any realistic legitimate session. Cap is enforced purely on
+  // the client — not a security boundary, but a sharp edge for the
+  // 99%-case "laptop left open" footgun.
+  const MAX_SESSION_MINUTES = 60;
+  useEffect(() => {
+    if (status !== 'live') return;
+    const t = setTimeout(() => {
+      if (sessionRef.current) {
+        toast.warning(
+          uiLang === 'zh'
+            ? `已自动结束：单次课堂同传最长 ${MAX_SESSION_MINUTES} 分钟，防止忘记关。`
+            : `Auto-stopped: classroom sessions cap at ${MAX_SESSION_MINUTES} minutes to avoid runaway usage.`,
+          { duration: 10000 }
+        );
+        void handleStop();
+      }
+    }, MAX_SESSION_MINUTES * 60 * 1000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
   return (
     <div className="space-y-6">
       {/* Compliance gate — force-read + consent before any audio capture. */}
@@ -458,9 +716,14 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
               实时把英文课堂翻译成中文 · 内测功能
             </p>
           </div>
-          <span className="text-[10px] font-black uppercase tracking-widest bg-amber-100 text-amber-700 px-2 py-1 rounded-md">
-            Beta
-          </span>
+          <div className="flex items-center gap-1">
+            {auth.currentUser && (
+              <ClassNotesModal uiLang={uiLang} userId={auth.currentUser.uid} />
+            )}
+            <span className="text-[10px] font-black uppercase tracking-widest bg-amber-100 text-amber-700 px-2 py-1 rounded-md">
+              Beta
+            </span>
+          </div>
         </div>
 
         {/* Audio source toggle */}
@@ -489,6 +752,91 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
             <Mic className="w-4 h-4" />
             {uiLang === 'zh' ? '线下课' : 'In-person class'}
           </button>
+        </div>
+
+        {/* Course picker: tap a subject and AI focuses on that domain.
+            Collapsible so the header stays uncluttered for returning
+            users who've already got their course pinned. */}
+        <div className="rounded-xl border border-gray-200 bg-white/60">
+          <button
+            type="button"
+            onClick={() => setCourseExpanded((v) => !v)}
+            disabled={isLive || isBusy}
+            className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 rounded-xl transition-colors disabled:opacity-50"
+          >
+            <span className="flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+              {uiLang === 'zh' ? '这节课是什么课？（可选，让翻译更准）' : 'What class is this? (optional, better translation)'}
+            </span>
+            <span className="text-blue-600 font-bold">
+              {(() => {
+                if (!selectedCourse) return uiLang === 'zh' ? '未选' : 'none';
+                if (selectedCourse === '__custom__') {
+                  const t = customCourse.trim();
+                  if (t) return t;
+                  return uiLang === 'zh' ? '其他（未填写）' : 'Other (empty)';
+                }
+                const preset = COURSE_PRESETS.find((p) => p.zh === selectedCourse || p.en === selectedCourse);
+                if (preset) return uiLang === 'zh' ? preset.zh : preset.en;
+                return selectedCourse;
+              })()}
+            </span>
+          </button>
+          {courseExpanded && (
+            <div className="px-3 pb-3">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {COURSE_PRESETS.map((p) => {
+                  const active = selectedCourse === p.zh || selectedCourse === p.en;
+                  return (
+                    <button
+                      key={p.en}
+                      type="button"
+                      disabled={isLive || isBusy}
+                      onClick={() => setSelectedCourse(active ? null : p.zh)}
+                      className={
+                        'text-xs px-2.5 py-1 rounded-full border transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed ' +
+                        (active
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-600 border-gray-200 hover:bg-blue-50 hover:border-blue-200')
+                      }
+                    >
+                      {uiLang === 'zh' ? p.zh : p.en}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  disabled={isLive || isBusy}
+                  onClick={() => setSelectedCourse(selectedCourse === '__custom__' ? null : '__custom__')}
+                  className={
+                    'text-xs px-2.5 py-1 rounded-full border transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed ' +
+                    (selectedCourse === '__custom__'
+                      ? 'bg-blue-600 text-white border-blue-600'
+                      : 'bg-white text-gray-600 border-gray-200 hover:bg-blue-50 hover:border-blue-200')
+                  }
+                >
+                  {uiLang === 'zh' ? '其他…' : 'Other…'}
+                </button>
+              </div>
+
+              {selectedCourse === '__custom__' && (
+                <input
+                  type="text"
+                  value={customCourse}
+                  onChange={(e) => setCustomCourse(e.target.value)}
+                  disabled={isLive || isBusy}
+                  placeholder={uiLang === 'zh' ? '比如：营销学、海洋生物、古典音乐史' : 'e.g. Marketing, Marine Biology'}
+                  className="mt-2 w-full text-xs bg-white border border-gray-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                />
+              )}
+
+              <p className="text-[10px] text-gray-400 mt-2 leading-relaxed">
+                {uiLang === 'zh'
+                  ? 'AI 会按这门课的场景翻译专业术语。会记住你上次选的。'
+                  : 'AI translates with that subject\'s register. Your last pick is remembered.'}
+              </p>
+            </div>
+          )}
         </div>
 
         {audioSource === 'tab' && !isLive && (
@@ -526,13 +874,28 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
                 : (uiLang === 'zh' ? '开始' : 'Start')}
             </button>
           ) : (
-            <button
-              onClick={handleStop}
-              className="flex-1 flex items-center justify-center gap-2 bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-gray-800 transition-colors"
-            >
-              <Square className="w-5 h-5" />
-              {uiLang === 'zh' ? '结束并保存笔记' : 'Stop & save notes'}
-            </button>
+            <>
+              {/* Pause keeps the Deepgram connection warm (keepAlive still
+                  fires) so resume is instant. When paused, no audio is
+                  sent — useful for stepping away or between lectures. */}
+              <button
+                onClick={togglePause}
+                className="flex items-center justify-center gap-2 bg-white text-gray-800 border border-gray-200 px-4 py-3 rounded-xl font-bold hover:bg-gray-50 transition-colors"
+                title={paused ? (uiLang === 'zh' ? '继续' : 'Resume') : (uiLang === 'zh' ? '暂停' : 'Pause')}
+              >
+                {paused ? <Play className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
+                <span className="hidden sm:inline">
+                  {paused ? (uiLang === 'zh' ? '继续' : 'Resume') : (uiLang === 'zh' ? '暂停' : 'Pause')}
+                </span>
+              </button>
+              <button
+                onClick={handleStop}
+                className="flex-1 flex items-center justify-center gap-2 bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-gray-800 transition-colors"
+              >
+                <Square className="w-5 h-5" />
+                {uiLang === 'zh' ? '结束并保存笔记' : 'Stop & save notes'}
+              </button>
+            </>
           )}
         </div>
 
@@ -654,6 +1017,11 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           );
         })}
       </div>
+
+      {/* Live structured notes — refreshes in the background every 45s
+          when new material has accumulated. Collapsible; only renders
+          once there's something to show. */}
+      <LiveNotesPanel notes={liveNotes} loading={liveNotesLoading} uiLang={uiLang} />
 
       {/* Ask-AI chat bar — always visible, works before/during/after
           live session. Uses aiChat() with the current transcript as

@@ -89,7 +89,7 @@ export function useTranslation({
     // then translateText in parallel for the full structured result. Whichever
     // finishes first shows; the full result replaces the preview when ready.
     // If translateText finishes first (rare), the preview is simply ignored.
-    const fullPromise = translateText(textToTranslate, userProfile?.isPro ? formalityLevel : undefined);
+    const fullPromise = translateText(textToTranslate, userProfile?.isPro ? formalityLevel : undefined, uiLang === 'zh' ? 'zh' : 'en');
     let fullDone = false;
     fullPromise.finally(() => { fullDone = true; });
 

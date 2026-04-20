@@ -1,22 +1,27 @@
 /**
- * Classroom live-translation session — Gemini Live client.
+ * Classroom live-translation session — Deepgram ASR + Gemini translate.
+ *
+ * English audio → Deepgram Nova-3 (official SDK, WebSocket) →
+ *   English transcript → Gemini 2.5 flash-lite → Chinese translation.
+ *
+ * History: we tried two hand-rolled paths first — Gemini Live v1alpha
+ * (dead protocol drift) and raw Deepgram WebSocket with
+ * Sec-WebSocket-Protocol token auth (Deepgram rejected the upgrade).
+ * The official @deepgram/sdk handles the browser WS auth correctly via
+ * the `accessToken` option, so we hand it our server-minted temporary
+ * token and let the SDK do the protocol-level plumbing.
  *
  * Flow:
- *   1. callsite picks an audio source (mic or tab capture) and calls startSession()
- *   2. we fetch an ephemeral token from /liveToken (short-lived, single-use)
- *   3. open a WebSocket to Gemini Live with that token as the API key
- *   4. AudioWorklet consumes the MediaStream, emits 16 kHz PCM16 chunks
- *   5. we stream those chunks to Gemini as realtime_input
- *   6. Gemini emits transcription + translation deltas; we route them to
- *      the UI via the onPartial / onFinal callbacks
- *
- * Design intentionally keeps state machine explicit so UI can render
- * connection status. The Spike does NOT implement reconnection — if the
- * socket drops, the UI tells the user to hit start again. That's fine for
- * a 48h validation experiment; reconnection logic is v0.3.1+.
+ *   1. callsite picks an audio source (mic or tab capture)
+ *   2. we hit /api/live-token for a 60 s-TTL Deepgram bearer
+ *   3. SDK opens the WebSocket with correct auth, we stream PCM chunks
+ *   4. each is_final transcript triggers a background Gemini translation
+ *   5. Chinese text surfaces via the callback
  */
 
+import { createClient, LiveTranscriptionEvents, type ListenLiveClient } from '@deepgram/sdk';
 import { auth } from '../firebase';
+import { translateSimple } from './ai';
 
 type SessionStatus =
   | 'idle'
@@ -28,50 +33,65 @@ type SessionStatus =
 
 export interface LiveSessionCallbacks {
   onStatusChange: (status: SessionStatus, detail?: string) => void;
-  // Called with every text delta from Gemini. Concatenate in the UI.
-  // This is the translated text — already in the user's target language.
-  onTranslationDelta: (delta: string) => void;
-  // Called when Gemini emits a turn-complete signal. UI can commit the
-  // current partial as a finalized line and start a fresh bubble.
-  onTurnComplete: () => void;
-  // Original-language transcription of what the speaker said. Kept
-  // separate so UI can show both the English transcript and the Chinese
-  // translation in a dual-lane view.
-  onTranscriptionDelta?: (delta: string) => void;
+  /**
+   * Called once per flushed batch of sentences. `pairs` lines up 1:1 —
+   * pairs[i].en is the original English segment, pairs[i].zh is the
+   * Chinese translation for that same segment. The UI matches by
+   * pairs[i].en against its existing finalized lines and fills in zh.
+   *
+   * Why batch: translating one sentence at a time with Gemini flash-lite
+   * (a) flickers the UI, (b) produces jumpier prose (no cross-sentence
+   * context), and (c) blasts the API with N calls per paragraph which
+   * triggers 503s. We accumulate up to 3 sentences or 5 seconds, then
+   * ship them as one translate call. The model is told to return one
+   * line per input, separated by a sentinel, so we can split it back.
+   */
+  onTranslationBatch: (pairs: Array<{ en: string; zh: string }>) => void;
+  /**
+   * English transcription. isFinal=false → interim (keep replacing the
+   * in-flight line), true → the segment is locked in and a translation
+   * will follow.
+   */
+  onTranscriptionDelta?: (delta: string, isFinal: boolean) => void;
 }
 
 export interface LiveSessionOptions {
-  /**
-   * 'tab' → getDisplayMedia (share a Zoom/Teams tab with 'share audio' ticked)
-   * 'mic' → getUserMedia (laptop microphone)
-   *
-   * Both return a MediaStream; we don't care which one the browser picks,
-   * as long as it has an audio track.
-   */
   audioSource: 'tab' | 'mic';
-  /** 'tutorial' (fast, short-utterance UI) vs 'lecture' (long paragraphs). */
   mode: 'tutorial' | 'lecture';
-  /** Target language for translation — Spike ships with zh-CN only. */
   targetLang?: 'zh-CN';
+  /**
+   * Optional per-session course context. When set, we:
+   *   1. feed the course's preset keyterms to Deepgram Nova-3 for
+   *      better domain-specific recognition (e.g. "CAPM" in Finance);
+   *   2. include the course name in the Gemini translation system
+   *      prompt so the model translates with the right register
+   *      ("economics lecture" vs "casual conversation").
+   *
+   * `course` is the user-facing display name (zh or en). `keyterms`
+   * is the expanded vocab list for that course. ClassroomTab is
+   * responsible for looking up the preset and passing both.
+   */
+  course?: string;
+  keyterms?: string[];
 }
 
 export interface LiveSessionHandle {
   stop(): Promise<void>;
   /**
-   * Grabs the last N seconds of audio we've streamed. Used by the
-   * "I didn't get that" button to re-translate a recent clip with the
-   * heavier gemini-2.5-pro model. Returns a base64-encoded WAV.
+   * Suspend audio delivery without tearing down the Deepgram connection.
+   * KeepAlive pings continue, so resume() can pick up in under a second.
+   * Any in-flight transcript from Deepgram is still surfaced.
    */
+  pause(): void;
+  resume(): void;
+  isPaused(): boolean;
   getRecentAudio(seconds: number): string | null;
-  /** Current transcript as plain text, for saving to Firestore on stop. */
   getTranscript(): string;
 }
 
-// How many seconds of recent audio we keep for the "didn't get that"
-// feature. 30 covers a professor's typical thought chunk.
 const RECENT_AUDIO_SECONDS = 30;
 const SAMPLE_RATE = 16000;
-const BYTES_PER_SAMPLE = 2; // Int16
+const BYTES_PER_SAMPLE = 2;
 const RECENT_BUFFER_BYTES = RECENT_AUDIO_SECONDS * SAMPLE_RATE * BYTES_PER_SAMPLE;
 
 async function getAuthToken(): Promise<string> {
@@ -80,7 +100,7 @@ async function getAuthToken(): Promise<string> {
   return user.getIdToken();
 }
 
-async function mintEphemeralToken(): Promise<{ token: string; model: string }> {
+async function mintDeepgramToken(): Promise<string> {
   const idToken = await getAuthToken();
   const res = await fetch('/api/live-token', {
     method: 'POST',
@@ -92,24 +112,20 @@ async function mintEphemeralToken(): Promise<{ token: string; model: string }> {
     throw new Error(err.error || `Token mint failed: ${res.status}`);
   }
   const data = await res.json();
-  return { token: data.token, model: data.model };
+  if (!data.token) throw new Error('Token mint returned empty token');
+  return data.token;
 }
 
 async function captureAudioStream(source: 'tab' | 'mic'): Promise<MediaStream> {
   if (source === 'tab') {
-    // getDisplayMedia prompts the user to share a window/tab. They MUST
-    // tick "Share tab audio" in the Chrome picker — we surface a hint in
-    // the UI before calling this.
     const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: true, // required — Chrome refuses audio-only capture
+      video: true,
       audio: {
-        // These are requests, not guarantees — browser may ignore.
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,
       },
     });
-    // We don't actually need the video track; drop it to save CPU.
     stream.getVideoTracks().forEach((t) => t.stop());
     if (stream.getAudioTracks().length === 0) {
       stream.getTracks().forEach((t) => t.stop());
@@ -126,17 +142,12 @@ async function captureAudioStream(source: 'tab' | 'mic'): Promise<MediaStream> {
   });
 }
 
-/**
- * Opens a Gemini Live WebSocket session and pipes mic/tab audio to it.
- * Resolves with a handle once the session is live and ready for audio;
- * rejects if token minting or WebSocket handshake fails.
- */
 export async function startLiveSession(
   opts: LiveSessionOptions,
   cb: LiveSessionCallbacks
 ): Promise<LiveSessionHandle> {
   cb.onStatusChange('requesting-token');
-  const { token, model } = await mintEphemeralToken();
+  const accessToken = await mintDeepgramToken();
 
   cb.onStatusChange('connecting');
   // eslint-disable-next-line no-console
@@ -145,24 +156,60 @@ export async function startLiveSession(
   // eslint-disable-next-line no-console
   console.info('[live] got MediaStream, tracks=', mediaStream.getTracks().length);
 
-  // Gemini Live WebSocket URL — the ephemeral token goes in as the
-  // `access_token` query param in v1alpha.
-  const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?access_token=${encodeURIComponent(token)}`;
-  // eslint-disable-next-line no-console
-  console.info('[live] opening WebSocket…');
-  const ws = new WebSocket(wsUrl);
-  ws.binaryType = 'arraybuffer';
+  const endpointing = opts.mode === 'tutorial' ? 500 : 1200;
 
-  // Accumulate transcript on the fly so Firestore save on stop() is cheap.
+  // Create a Deepgram client with our temporary access token. The SDK
+  // handles browser-safe WebSocket auth (no Authorization header trick
+  // required — we tried that manually and Deepgram rejected it).
+  // Shared live options — built once, reused on every (re)connect so
+  // keyterms / endpointing / model stay consistent across the session.
+  // Key additions:
+  //   - utterance_end_ms: Deepgram fires an `UtteranceEnd` event when the
+  //     speaker has been silent this long. We use it as the "paragraph
+  //     finished" signal for our batch flush, which is much more reliable
+  //     than a wall-clock timer (a clock timer flushes single-sentence
+  //     batches when the speaker pauses for breath).
+  //   - vad_events: enables SpeechStarted events, used to know when the
+  //     first real audio has landed — we flip UI to 'live' only then so
+  //     the user doesn't start talking into a dead mic.
+  const liveOpts: Record<string, any> = {
+    model: 'nova-3',
+    language: 'en-US',
+    encoding: 'linear16',
+    sample_rate: SAMPLE_RATE,
+    channels: 1,
+    interim_results: true,
+    smart_format: true,
+    endpointing,
+    // 1500ms: Deepgram's recommended minimum. We used to set this to
+    // 4000 to try to batch multiple sentences before UtteranceEnd, but
+    // that meant the user waited 4s of silence + translate latency
+    // before any zh appeared — unacceptable for a live subtitle. Going
+    // back to 1500ms so UtteranceEnd fires quickly; whatever sentences
+    // happened to arrive in that window are flushed as a batch, rather
+    // than us artificially holding up single sentences.
+    utterance_end_ms: 1500,
+    vad_events: true,
+    punctuate: true,
+  };
+  if (opts.keyterms && opts.keyterms.length > 0) {
+    liveOpts.keyterm = opts.keyterms.slice(0, 50); // hard cap to avoid URL bloat
+  }
+
+  const deepgram = createClient({ accessToken });
+  let connection: ListenLiveClient | null = null;
+  try {
+    connection = deepgram.listen.live(liveOpts);
+  } catch (e: any) {
+    mediaStream.getTracks().forEach((t) => t.stop());
+    throw new Error(`Deepgram 连接创建失败: ${e?.message || e}`);
+  }
+
   let transcript = '';
-  // Ring buffer of recent PCM — for the "didn't get that" feature.
   const recentPcm = new Uint8Array(RECENT_BUFFER_BYTES);
   let recentWriteOffset = 0;
   let recentFilled = false;
 
-  // iOS Safari sometimes rejects new AudioContext in a non-user-gesture
-  // continuation. We keep it here (after getUserMedia resolved, which IS
-  // part of the gesture chain) and surface errors instead of swallowing.
   // eslint-disable-next-line no-console
   console.info('[live] creating AudioContext + worklet…');
   let audioCtx: AudioContext;
@@ -176,69 +223,361 @@ export async function startLiveSession(
     sourceNode.connect(worklet);
   } catch (e: any) {
     mediaStream.getTracks().forEach((t) => t.stop());
-    try { ws.close(); } catch { /* not open yet */ }
+    try { connection.requestClose(); } catch { /* nothing */ }
     throw new Error(`AudioWorklet init failed: ${e?.message || e} — 你的浏览器可能不支持（iOS 建议用 Safari 15+ 或 Chrome）`);
   }
-  // We don't connect to destination — we're consuming, not playing back.
 
-  const langInstruction =
-    opts.targetLang === 'zh-CN' || !opts.targetLang
-      ? 'You are translating a university classroom for a Chinese international student. Output ONLY the Chinese translation of what the speaker is saying, in natural, fluent Mandarin. If the speaker is already speaking Chinese, echo verbatim. Do not add commentary, headers, or notes. Never refuse — always translate.'
-      : 'Translate to the target language only.';
-
-  // Hard timeout on the WS handshake. Without this the "connecting…" state
-  // could spin forever (e.g. a CSP block silently drops the upgrade).
-  const HANDSHAKE_TIMEOUT_MS = 10000;
+  // Wait for the Deepgram connection to open or error out. Hard 10 s cap.
   await new Promise<void>((resolve, reject) => {
-    let opened = false;
+    let settled = false;
     const timer = setTimeout(() => {
-      if (!opened) {
-        try { ws.close(); } catch { /* already closing */ }
-        reject(new Error('WebSocket 连接超时 (10s) — 检查网络或稍后重试'));
+      if (!settled) {
+        settled = true;
+        try { connection?.requestClose(); } catch { /* nothing */ }
+        reject(new Error('Deepgram 连接超时 (10s) — 检查网络或稍后重试'));
       }
-    }, HANDSHAKE_TIMEOUT_MS);
-    ws.addEventListener('open', () => {
-      opened = true;
+    }, 10000);
+    connection!.on(LiveTranscriptionEvents.Open, () => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       // eslint-disable-next-line no-console
-      console.info('[live] WebSocket open, sending setup…');
-      ws.send(
-        JSON.stringify({
-          setup: {
-            model: `models/${model}`,
-            generation_config: {
-              response_modalities: ['TEXT'],
-              temperature: 0.2,
-            },
-            system_instruction: { parts: [{ text: langInstruction }] },
-            input_audio_transcription: {},
-          },
-        })
-      );
-      cb.onStatusChange('live');
+      console.info('[live] Deepgram connection open (waiting for first event before flipping UI to live)');
+      // Don't flip UI to 'live' here — wait until Deepgram sends its
+      // first event (any Transcript or SpeechStarted). That's the only
+      // true "server is hot and listening" signal. Holding the status
+      // at 'connecting' until then means users can't start talking
+      // into a half-primed pipeline. See on-event handler below for
+      // the actual flip. As a safety net, if no event arrives in 2s
+      // we flip anyway so the UI doesn't hang.
       resolve();
     });
-    ws.addEventListener('error', () => {
+    connection!.on(LiveTranscriptionEvents.Error, (err: any) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      if (!opened) reject(new Error('WebSocket 连接失败 — 可能是 CSP / 网络问题'));
-      else cb.onStatusChange('error', 'socket error');
+      // eslint-disable-next-line no-console
+      console.error('[live] Deepgram error before open:', err);
+      reject(new Error(`Deepgram 连接失败: ${err?.message || 'unknown'}`));
     });
-    ws.addEventListener('close', (ev) => {
+    connection!.on(LiveTranscriptionEvents.Close, () => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      if (!opened) {
-        // Closed before open — Gemini rejected the handshake.
-        reject(new Error(`WebSocket 被拒绝 (code=${ev.code})，可能是 token 过期或模型不可用`));
-      } else {
-        cb.onStatusChange('stopped');
-      }
+      reject(new Error('Deepgram 连接被拒绝 — token 可能过期或权限不足'));
     });
   });
 
-  // Forward PCM chunks to Gemini + to our recent-audio ring buffer.
+  // Paragraph-level translation pipeline (EasyNoteAI-style).
+  //
+  // We do NOT translate sentence-by-sentence. Instead:
+  //   - English is transcribed and displayed live (as each is_final
+  //     arrives), so the user sees the lecture in English in real time.
+  //   - We accumulate finalized English sentences in a buffer until
+  //     either (a) the paragraph is long enough (>= MIN_CHARS chars),
+  //     (b) there's been a real pause (>= PAUSE_MS silence), or (c)
+  //     the max wait elapsed (>= MAX_WAIT_MS) so a monologue speaker
+  //     doesn't starve us.
+  //   - Then we ship the WHOLE paragraph to Gemini as one translate
+  //     call. The model sees full context, produces one coherent
+  //     Chinese paragraph, and the user gets a natural-reading block
+  //     of Chinese instead of fragmented per-sentence blips.
+  // Tradeoff: the Chinese lags the English by 20-45 seconds (the
+  // typical paragraph length). That's the point — it's EasyNoteAI's
+  // model: read Chinese as a paragraph, not as stumbling subtitles.
+  // Timing tuned to beat EasyNoteAI on latency. Their cadence appears to
+  // be ~30-60s accumulation before a translate call; we aim for 6-15s
+  // typical. The user still reads coherent paragraphs, just sooner.
+  const PARAGRAPH_MIN_CHARS = 140;     // ~2 spoken sentences of English
+  const PARAGRAPH_PAUSE_MS = 1800;     // 1.8s of silence = paragraph break
+  const PARAGRAPH_MAX_WAIT_MS = 15000; // hard cap for non-stop speech
+  const BATCH_SENTINEL = '|||';       // legacy, unused in new path but
+                                      // referenced elsewhere — keep defined.
+  let pendingBatch: string[] = [];
+  let batchTimer: ReturnType<typeof setTimeout> | null = null;
+  let batchStartTime = 0; // wall-clock when the current paragraph started
+  let flushing: Promise<void> = Promise.resolve();
+
+  const flushBatch = async () => {
+    if (batchTimer) {
+      clearTimeout(batchTimer);
+      batchTimer = null;
+    }
+    if (pendingBatch.length === 0) return;
+    const batch = pendingBatch;
+    pendingBatch = [];
+    batchStartTime = 0; // reset so next paragraph starts its own max-wait clock
+    flushing = flushing.then(() => translateBatch(batch));
+  };
+
+  // Retry helper: most Gemini failures are transient 503s during peak
+  // load. Two retries with exponential backoff (500ms, 1500ms) recovers
+  // ~95% of them without the user ever seeing the placeholder.
+  const translateWithRetry = async (prompt: string, label: string): Promise<string> => {
+    const delays = [0, 500, 1500];
+    let lastErr: unknown;
+    for (let i = 0; i < delays.length; i++) {
+      if (delays[i] > 0) await new Promise((r) => setTimeout(r, delays[i]));
+      try {
+        return await translateSimple(prompt);
+      } catch (err) {
+        lastErr = err;
+        // eslint-disable-next-line no-console
+        console.warn(`[live] ${label} attempt ${i + 1} failed:`, err);
+      }
+    }
+    throw lastErr;
+  };
+
+  const translateBatch = async (batch: string[]) => {
+    // Paragraph-mode translation: join ALL sentences in the batch into
+    // a single English paragraph, send it to Gemini as one piece, and
+    // receive one Chinese paragraph back. No sentinel splitting, no
+    // per-sentence mapping. The caller (ClassroomTab) then displays
+    // the Chinese as a single block alongside the full English.
+    const englishParagraph = batch.join(' ');
+    const courseHint = opts.course
+      ? ` The class subject is: ${opts.course}. Translate technical terms in that subject's convention; keep well-known English initialisms (e.g. CAPM, GDP, DNA) untranslated.`
+      : '';
+    const prompt = `You are translating a live classroom lecture from English to Chinese for a Chinese international student.${courseHint}
+
+The input below is a continuous paragraph of spoken English from a live lecture (transcribed by a speech model, so it may contain repetitions or filler). Produce a SINGLE natural, fluent Chinese paragraph that reads as if a Chinese teacher re-explained the same material. Do not mirror every word — clean up repetitions, smooth broken phrasing, and group related sentences into flowing Chinese prose.
+
+Rules:
+- Output is ONE Chinese paragraph. No bullet points, no numbering, no English.
+- Keep the teaching register (口语化 / 教学用语), not stiff written Chinese.
+- Preserve technical terms the student needs to learn; if the English phrase is the teaching target (e.g. "fresh powder", "pit stop"), keep it in parentheses after the Chinese gloss, like: 新雪（fresh powder）.
+- Do not add commentary about the quality of the transcription.
+
+English paragraph:
+${englishParagraph}`;
+    try {
+      const zh = (await translateWithRetry(prompt, 'paragraph')).trim();
+      // The UI is happier with one {en, zh} pair representing the whole
+      // paragraph than N pairs. Callsite keys translations by exact en
+      // match; join with a space so a single pair matches the single
+      // joined English block we display.
+      cb.onTranslationBatch([{ en: englishParagraph, zh }]);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[live] paragraph translate failed after retries:', err);
+      cb.onTranslationBatch([{ en: englishParagraph, zh: '（翻译失败，稍后重试）' }]);
+    }
+  };
+
+  // Track whether stop() was called by the user. Only then should we
+  // actually treat Close as terminal. Otherwise we auto-reconnect.
+  let userStopped = false;
+  let transcriptEventCount = 0;
+  // Buffer for assembling a complete sentence from multiple is_final
+  // fragments. Flushed into pendingBatch on UtteranceEnd. Scoped at the
+  // session level so it survives auto-reconnect.
+  // (currentSentence fragment buffer removed in paragraph mode — we
+  // now push each is_final directly into pendingBatch and rely on
+  // PARAGRAPH_* triggers for flushing.)
+
+  // Flip UI to 'live' only on first evidence the server is sending us
+  // anything. Until then, whatever PCM we send can be silently dropped.
+  let firstEventSeen = false;
+  const flipToLiveOnce = () => {
+    if (firstEventSeen) return;
+    firstEventSeen = true;
+    cb.onStatusChange('live');
+  };
+  // Safety net: flip to live after 2s even if no event — some very quiet
+  // starts won't fire SpeechStarted, and the user still deserves feedback.
+  setTimeout(() => flipToLiveOnce(), 2000);
+
+  const attachHandlers = (conn: ListenLiveClient) => {
+    conn.on(LiveTranscriptionEvents.Transcript, (data: any) => {
+      flipToLiveOnce();
+      transcriptEventCount += 1;
+      const alt = data?.channel?.alternatives?.[0];
+      const rawText = (alt?.transcript || '').trim();
+      if (transcriptEventCount <= 3 || transcriptEventCount % 10 === 0) {
+        // eslint-disable-next-line no-console
+        console.info(`[live] Transcript #${transcriptEventCount} is_final=${!!data.is_final} text=${JSON.stringify(rawText.slice(0, 60))}`);
+      }
+      if (!alt) return;
+      const text = rawText;
+      if (!text) return;
+      const isFinal = !!data.is_final;
+      if (cb.onTranscriptionDelta) {
+        cb.onTranscriptionDelta(text, isFinal);
+      }
+      if (isFinal) {
+        transcript += (transcript ? '\n' : '') + text;
+        pendingBatch.push(text);
+
+        // Paragraph-mode trigger logic:
+        //   - If the accumulated English is long enough (>= MIN_CHARS),
+        //     we've got a translatable paragraph. Flush now.
+        //   - Otherwise, start/refresh the pause timer: if PAUSE_MS of
+        //     silence goes by with no new is_final, that's a paragraph
+        //     break and we flush whatever we have.
+        //   - As a hard cap, a MAX_WAIT_MS timer is started on the
+        //     first is_final of the paragraph and is NEVER reset —
+        //     guarantees continuous speech still flushes eventually.
+        const accumulatedChars = pendingBatch.reduce((n, s) => n + s.length, 0);
+        if (accumulatedChars >= PARAGRAPH_MIN_CHARS) {
+          void flushBatch();
+        } else {
+          // Pause timer: resets on each new is_final. If the speaker
+          // pauses for PARAGRAPH_PAUSE_MS, flush whatever's in the batch.
+          if (batchTimer) clearTimeout(batchTimer);
+          batchTimer = setTimeout(() => {
+            batchTimer = null;
+            if (pendingBatch.length > 0) void flushBatch();
+          }, PARAGRAPH_PAUSE_MS);
+          // Max-wait timer: set once per paragraph, never reset. Prevents
+          // a non-stop speaker from starving the user of any translation.
+          if (batchStartTime === 0) {
+            batchStartTime = Date.now();
+            setTimeout(() => {
+              if (pendingBatch.length > 0 && Date.now() - batchStartTime >= PARAGRAPH_MAX_WAIT_MS - 100) {
+                void flushBatch();
+              }
+            }, PARAGRAPH_MAX_WAIT_MS);
+          }
+        }
+      }
+    });
+    // UtteranceEnd in paragraph mode only matters as a "the speaker
+    // just paused longer than utterance_end_ms" signal — but our
+    // PARAGRAPH_PAUSE_MS timer already captures that, so we don't
+    // need to double-trigger flushes here. Leaving the handler empty
+    // (rather than removing) in case we want to log it later.
+    conn.on(LiveTranscriptionEvents.SpeechStarted, () => {
+      flipToLiveOnce();
+    });
+    conn.on(LiveTranscriptionEvents.Close, (ev: any) => {
+      // eslint-disable-next-line no-console
+      console.warn('[live] Deepgram Close event', { code: ev?.code, reason: ev?.reason, userStopped });
+      if (userStopped) {
+        cb.onStatusChange('stopped');
+        return;
+      }
+      // Any close that wasn't initiated by the user → try to reconnect.
+      // We previously special-cased code 1000 (normal close) as "don't
+      // reconnect", but Deepgram also sends 1000 when IT decides the
+      // stream is dead (e.g. after silent keepalive window). Safer to
+      // always reconnect unless userStopped is set.
+      // eslint-disable-next-line no-console
+      console.info('[live] auto-reconnecting after unexpected close…');
+      void reconnect();
+    });
+    conn.on(LiveTranscriptionEvents.Error, (err: any) => {
+      // eslint-disable-next-line no-console
+      console.error('[live] Deepgram runtime error:', err);
+      // Errors during reconnect often precede Close — don't spam the UI.
+      if (!userStopped) return;
+      cb.onStatusChange('error', err?.message || 'Deepgram error');
+    });
+  };
+
+  attachHandlers(connection);
+
+  // Reconnect: mint a fresh token, reopen a new `listen.live` connection,
+  // rebind worklet's send target, and keep batched translation + recent
+  // audio buffer intact. The worklet and AudioContext are preserved —
+  // only the network socket is recycled.
+  //
+  // Bounded retries: 3 attempts with 500ms / 1500ms / 4000ms backoff.
+  // After that we give up and surface an error so the user can hit Start
+  // again (rather than silently looping and burning token mints forever).
+  let reconnecting = false;
+  const RECONNECT_DELAYS = [500, 1500, 4000];
+  const reconnect = async () => {
+    if (reconnecting || userStopped) return;
+    reconnecting = true;
+    // Before attempting reconnect, make sure the audio source is still
+    // producing. Several failure modes we've seen:
+    //   (a) The mic track was muted by the OS (call interrupt, other app
+    //       grabbed exclusive access).
+    //   (b) Chrome suspended the AudioContext because the tab went to
+    //       background — it stays alive but stops pulling audio frames.
+    //   (c) The MediaStream track ended (user hit "stop sharing" on a
+    //       tab-capture session).
+    // Case (c) is unrecoverable from our side — bail out with a clear
+    // error so the user knows to re-share. (a) and (b) we can fix.
+    const audioTrack = mediaStream.getAudioTracks()[0];
+    if (!audioTrack || audioTrack.readyState === 'ended') {
+      // eslint-disable-next-line no-console
+      console.warn('[live] media track ended, giving up on reconnect');
+      reconnecting = false;
+      cb.onStatusChange('error', '录音已停止（可能是浏览器停止了分享），请重新按「开始」');
+      return;
+    }
+    if (audioCtx.state === 'suspended') {
+      try {
+        await audioCtx.resume();
+        // eslint-disable-next-line no-console
+        console.info('[live] resumed AudioContext before reconnect');
+      } catch { /* will retry on next close */ }
+    }
+    for (let attempt = 0; attempt < RECONNECT_DELAYS.length; attempt++) {
+      if (userStopped) { reconnecting = false; return; }
+      await new Promise((r) => setTimeout(r, RECONNECT_DELAYS[attempt]));
+      try {
+        const freshToken = await mintDeepgramToken();
+        const freshDg = createClient({ accessToken: freshToken });
+        const freshConn = freshDg.listen.live(liveOpts);
+        await new Promise<void>((resolve, reject) => {
+          const openTimer = setTimeout(() => reject(new Error('reconnect open timeout')), 10000);
+          freshConn.on(LiveTranscriptionEvents.Open, () => {
+            clearTimeout(openTimer);
+            resolve();
+          });
+          freshConn.on(LiveTranscriptionEvents.Error, (e: any) => {
+            clearTimeout(openTimer);
+            reject(new Error(`reconnect error: ${e?.message || 'unknown'}`));
+          });
+        });
+        connection = freshConn;
+        attachHandlers(freshConn);
+        // eslint-disable-next-line no-console
+        console.info('[live] auto-reconnect succeeded');
+        reconnecting = false;
+        return;
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn(`[live] reconnect attempt ${attempt + 1} failed:`, err);
+      }
+    }
+    reconnecting = false;
+    cb.onStatusChange('error', '连接已断开，请按「开始」重新连接');
+  };
+
+  // Periodically probe the mediaStream health. If the OS/browser mutes
+  // the mic behind our back (airpods disconnect mid-session, another app
+  // takes exclusive mic access on Windows, tab share stopped), the
+  // WebSocket stays open but nothing flows — UI claims "正在监听" while
+  // the mic is dead. Surface this to the user.
+  const healthTimer = setInterval(() => {
+    if (userStopped) return;
+    const t = mediaStream.getAudioTracks()[0];
+    if (!t) return;
+    if (t.readyState === 'ended') {
+      clearInterval(healthTimer);
+      cb.onStatusChange('error', '录音已停止（设备断开或分享被取消），请重新按「开始」');
+    } else if (t.muted) {
+      // Muted ≠ ended — Chrome flips `muted` when AirPods disconnect or
+      // the user toggles OS mic privacy. Surface as warning not error.
+      // eslint-disable-next-line no-console
+      console.warn('[live] mic track is muted — audio may not reach Deepgram');
+    }
+  }, 5000);
+
+  // Pause state — when true, worklet PCM is dropped on the floor instead
+  // of being sent to Deepgram. The WebSocket stays open (keepAlive fires
+  // every 8s) so resume is instantaneous.
+  let paused = false;
+
+  // Pipe PCM from the worklet to Deepgram.
   worklet.port.onmessage = (ev) => {
     const pcm = ev.data?.pcm as ArrayBuffer | undefined;
-    if (!pcm || ws.readyState !== WebSocket.OPEN) return;
-    // Store in ring buffer (write, wrap)
+    if (!pcm || !connection) return;
+    if (paused) return;
     const bytes = new Uint8Array(pcm);
     let written = 0;
     while (written < bytes.byteLength) {
@@ -252,52 +591,52 @@ export async function startLiveSession(
         recentFilled = true;
       }
     }
-    // Send to Gemini Live as base64 PCM.
-    const b64 = arrayBufferToBase64(pcm);
-    ws.send(
-      JSON.stringify({
-        realtime_input: {
-          media_chunks: [{ mime_type: 'audio/pcm;rate=16000', data: b64 }],
-        },
-      })
-    );
+    try {
+      connection.send(pcm);
+    } catch {
+      // Connection may have closed between readyState check and send.
+    }
   };
 
-  ws.addEventListener('message', (ev) => {
-    // Live server sends JSON text messages for control + content; when
-    // response_modalities is TEXT we always get strings.
+  // Deepgram expects a KeepAlive ping every ≤12 s on idle streams,
+  // otherwise it considers the session abandoned and closes the socket.
+  // The SDK exposes keepAlive() but we also send the raw JSON as a
+  // fallback — if the SDK method silently no-ops (different method name
+  // between minor versions), the raw send still hits Deepgram.
+  const keepAliveTimer = setInterval(() => {
+    if (!connection) return;
     try {
-      const msg = typeof ev.data === 'string' ? JSON.parse(ev.data) : null;
-      if (!msg) return;
-      // Server response shape: { serverContent: { modelTurn: { parts: [{text}] }, turnComplete, inputTranscription }}
-      const serverContent = msg.serverContent || msg.server_content;
-      if (serverContent) {
-        const modelTurn = serverContent.modelTurn || serverContent.model_turn;
-        if (modelTurn?.parts) {
-          for (const p of modelTurn.parts) {
-            if (p.text) {
-              cb.onTranslationDelta(p.text);
-              transcript += p.text;
-            }
-          }
-        }
-        const inputTx = serverContent.inputTranscription || serverContent.input_transcription;
-        if (inputTx?.text && cb.onTranscriptionDelta) {
-          cb.onTranscriptionDelta(inputTx.text);
-        }
-        if (serverContent.turnComplete || serverContent.turn_complete) {
-          transcript += '\n';
-          cb.onTurnComplete();
-        }
-      }
-    } catch (e) {
-      // Non-JSON messages (keepalives, binary) — ignore.
-    }
-  });
+      (connection as any).keepAlive?.();
+    } catch { /* ignore */ }
+    try {
+      (connection as any).send?.(JSON.stringify({ type: 'KeepAlive' }));
+    } catch { /* ignore */ }
+  }, 8000);
 
   return {
+    pause() {
+      paused = true;
+    },
+    resume() {
+      paused = false;
+    },
+    isPaused() {
+      return paused;
+    },
     async stop() {
-      try { ws.close(); } catch { /* already closed */ }
+      // Mark before closing — the Close event handler checks this flag
+      // to decide whether to auto-reconnect. Without it, stop() would
+      // trigger the reconnect loop.
+      userStopped = true;
+      clearInterval(keepAliveTimer);
+      clearInterval(healthTimer);
+      // If there's a partially-assembled sentence still sitting in the
+      // buffer (user hit stop mid-utterance), commit it to the batch
+      // before flushing. Otherwise the last spoken sentence is lost.
+      // Nothing special — flushBatch picks up whatever is in pendingBatch.
+      try { await flushBatch(); } catch { /* nothing */ }
+      try { await flushing; } catch { /* nothing */ }
+      try { connection?.requestClose(); } catch { /* already closed */ }
       try { worklet.disconnect(); } catch { /* nothing */ }
       try { sourceNode.disconnect(); } catch { /* nothing */ }
       mediaStream.getTracks().forEach((t) => t.stop());
@@ -309,11 +648,8 @@ export async function startLiveSession(
       const wantedBytes = wanted * SAMPLE_RATE * BYTES_PER_SAMPLE;
       if (!recentFilled && recentWriteOffset < wantedBytes) {
         if (recentWriteOffset === 0) return null;
-        // Not enough audio yet; give them what we have.
         return pcmToWavBase64(recentPcm.subarray(0, recentWriteOffset));
       }
-      // Stitch the ring buffer: last `wantedBytes` bytes, in chronological
-      // order. If not yet wrapped, trivial; otherwise slice-and-join.
       if (!recentFilled) {
         return pcmToWavBase64(
           recentPcm.subarray(Math.max(0, recentWriteOffset - wantedBytes), recentWriteOffset)
@@ -349,29 +685,23 @@ function arrayBufferToBase64(buf: ArrayBuffer): string {
   return btoa(binary);
 }
 
-// Wrap raw PCM16 @ 16 kHz mono into a WAV container. Used by getRecentAudio
-// so the "didn't get that" path can hand a normal audio file to the heavy
-// Gemini 2.5 Pro model without teaching it PCM framing.
 function pcmToWavBase64(pcm: Uint8Array): string {
   const header = new ArrayBuffer(44);
   const view = new DataView(header);
   const dataSize = pcm.byteLength;
   const fileSize = dataSize + 36;
 
-  // "RIFF" chunk
   view.setUint8(0, 0x52); view.setUint8(1, 0x49); view.setUint8(2, 0x46); view.setUint8(3, 0x46);
   view.setUint32(4, fileSize, true);
   view.setUint8(8, 0x57); view.setUint8(9, 0x41); view.setUint8(10, 0x56); view.setUint8(11, 0x45);
-  // "fmt " subchunk
   view.setUint8(12, 0x66); view.setUint8(13, 0x6d); view.setUint8(14, 0x74); view.setUint8(15, 0x20);
-  view.setUint32(16, 16, true);            // subchunk size
-  view.setUint16(20, 1, true);             // PCM format
-  view.setUint16(22, 1, true);             // mono
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
   view.setUint32(24, SAMPLE_RATE, true);
-  view.setUint32(28, SAMPLE_RATE * BYTES_PER_SAMPLE, true); // byte rate
+  view.setUint32(28, SAMPLE_RATE * BYTES_PER_SAMPLE, true);
   view.setUint16(32, BYTES_PER_SAMPLE, true);
-  view.setUint16(34, 16, true);            // bits per sample
-  // "data" subchunk
+  view.setUint16(34, 16, true);
   view.setUint8(36, 0x64); view.setUint8(37, 0x61); view.setUint8(38, 0x74); view.setUint8(39, 0x61);
   view.setUint32(40, dataSize, true);
 

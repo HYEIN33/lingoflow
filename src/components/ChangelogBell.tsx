@@ -21,7 +21,15 @@ export const LAST_SEEN_VERSION_KEY = 'memeflow_last_seen_version';
 
 function readLastSeen(): string | null {
   try {
-    return localStorage.getItem(LAST_SEEN_VERSION_KEY);
+    const raw = localStorage.getItem(LAST_SEEN_VERSION_KEY);
+    if (!raw) return null;
+    // Defensive: if we've ever rolled the version number BACKWARD (happened
+    // when we consolidated 0.3.x into a big 0.2.0 release), a returning
+    // user's lastSeen could be higher than anything in CHANGELOG. Treat
+    // that as "never seen" so the bell still lights up on the new headline.
+    const newest = CHANGELOG[0]?.version;
+    if (newest && compareVersions(raw, newest) > 0) return null;
+    return raw;
   } catch {
     return null;
   }
@@ -50,20 +58,21 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
   const unseen = entriesNewerThan(lastSeen);
   const hasUnseen = unseen.length > 0;
 
+  // Track "what lastSeen was when the user clicked the bell" separately
+  // from the live lastSeen — the modal uses this snapshot to decide which
+  // entries deserve a NEW pill. That way clicking the bell can update
+  // React state (so the red dot disappears immediately) without also
+  // hiding the NEW pills in the modal that just opened.
+  const [snapshotAtOpen, setSnapshotAtOpen] = useState<string | null>(null);
+
   const handleOpen = () => {
+    // Snapshot BEFORE we mutate lastSeen so the modal still knows which
+    // entries were new from the user's POV.
+    setSnapshotAtOpen(lastSeen);
     setIsOpen(true);
-    // Write lastSeen to localStorage immediately so the red dot disappears
-    // on the bell right away and doesn't come back after reload. But we
-    // deliberately do NOT setLastSeen(currentVersion) here — keeping the
-    // React state at its old value for this session means the entries
-    // still render their "New" pills. That's the whole point of the modal:
-    // the user needs to SEE which entries are new. Previously setState
-    // fired on click and the pills disappeared on the very next render —
-    // the user opened the modal and saw a flat history with nothing
-    // highlighted. On reload, lastSeen is fresh from localStorage, so the
-    // pills are gone as intended.
     if (hasUnseen) {
       writeLastSeen(currentVersion);
+      setLastSeen(currentVersion); // kill the red dot right away
     }
   };
 
@@ -125,7 +134,7 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
               {/* Entries */}
               <div className="overflow-y-auto px-6 py-5 space-y-6">
                 {CHANGELOG.map((entry) => {
-                  const isUnseen = !lastSeen || compareVersions(entry.version, lastSeen) > 0;
+                  const isUnseen = !snapshotAtOpen || compareVersions(entry.version, snapshotAtOpen) > 0;
                   // After clicking Open we already wrote lastSeen, so isUnseen
                   // will be false here on subsequent opens. That's intentional —
                   // the "new" ribbon only shows the FIRST time they open after

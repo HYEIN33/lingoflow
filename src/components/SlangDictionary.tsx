@@ -4,7 +4,8 @@ import { toast } from 'sonner';
 import { collection, query, where, getDocs, addDoc, updateDoc, doc, orderBy, limit, serverTimestamp, onSnapshot, getDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { Search, Plus, ThumbsUp, AlertCircle, Loader2, MessageSquare, Volume2, Image as ImageIcon, Video, Film, X, Mic, Wand2, Flag, Share2, Send, ChevronDown, ChevronUp } from 'lucide-react';
-import { validateSlangMeaning, generateSpeech, generateSlangExample, suggestSlangMeaning } from '../services/ai';
+import { validateSlangMeaning, generateSlangExample, suggestSlangMeaning } from '../services/ai';
+import { useAudio } from '../hooks/useAudio';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { SlangGuidelinesPanel } from './SlangGuidelines';
@@ -416,6 +417,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
   const [isGeneratingExample, setIsGeneratingExample] = useState(false);
   const [upvotedMeanings, setUpvotedMeanings] = useState<Set<string>>(new Set());
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const { speak } = useAudio();
   const [aiSuggestion, setAiSuggestion] = useState('');
   const [isLoadingSuggestion, setIsLoadingSuggestion] = useState(false);
   const [reportingMeaningId, setReportingMeaningId] = useState<string | null>(null);
@@ -424,8 +426,13 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const fetchSuggestion = useCallback(async (term: string, input: string) => {
-    if (input.length < 3) {
+  // allowDraft=true lets the caller explicitly request a full template
+  // draft even when input is empty. The auto-debounce path (from typing)
+  // still uses allowDraft=false so we don't spam the API with drafts on
+  // every keystroke toward a 3-char threshold.
+  const fetchSuggestion = useCallback(async (term: string, input: string, allowDraft = false) => {
+    if (!term) return;
+    if (input.length < 3 && !allowDraft) {
       setAiSuggestion('');
       return;
     }
@@ -508,21 +515,26 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
   const handlePlayAudio = async (meaning: SlangMeaning) => {
     if (playingAudioId) return;
     setPlayingAudioId(meaning.id);
-    
+
+    // Two-tier audio playback:
+    //   1. If the submitter uploaded their own voice clip → play it directly.
+    //   2. Otherwise, delegate to useAudio's speak(), which calls the
+    //      Gemini TTS proxy and falls back to the browser's SpeechSynthesis
+    //      on failure. Previously this component called generateSpeech()
+    //      directly, which throws under USE_PROXY=true (prod). That meant
+    //      the speaker icon in 梗百科 did absolutely nothing in prod —
+    //      reported 2026-04-20. Switching to speak() matches what
+    //      TranslateTab / WordbookPage / ReviewPage already do.
     try {
       if (meaning.userAudioUrl) {
         const audio = new Audio(meaning.userAudioUrl);
         audio.onended = () => setPlayingAudioId(null);
         await audio.play();
       } else {
-        const audioData = await generateSpeech(meaning.meaning, meaning.voiceName || 'Kore');
-        if (audioData) {
-          const audio = new Audio(`data:audio/mp3;base64,${audioData}`);
-          audio.onended = () => setPlayingAudioId(null);
-          await audio.play();
-        } else {
-          setPlayingAudioId(null);
-        }
+        await speak(meaning.meaning);
+        // speak() manages its own playback lifecycle; clear the UI lock
+        // here since we don't get an 'ended' callback surfaced.
+        setPlayingAudioId(null);
       }
     } catch (error) {
       console.error("Error playing audio:", error);
@@ -866,8 +878,12 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
         authorTitle = userData.titleLevel3 || userData.titleLevel2 || userData.titleLevel1 || '';
       }
 
-      // Add meaning
-      await addDoc(collection(db, 'slang_meanings'), {
+      // Add meaning. IMPORTANT: firestore.rules uses `'field' in data`
+      // to whitelist optional fields — writing `null` for unused slots
+      // makes `in data` true but `is string` false, so the rule rejects
+      // the doc with "Missing or insufficient permissions". Construct
+      // the payload dynamically so absent fields are truly absent.
+      const meaningDoc: Record<string, any> = {
         slangId,
         meaning: newMeaning.trim(),
         example: newExample.trim(),
@@ -878,11 +894,12 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
         upvotes: 0,
         status: 'approved',
         voiceName: newVoiceName,
-        mediaUrl: mediaInfo?.url || null,
-        mediaType: mediaInfo?.type || null,
-        userAudioUrl: userAudioUrl || null,
-        createdAt: serverTimestamp()
-      });
+        createdAt: serverTimestamp(),
+      };
+      if (mediaInfo?.url) meaningDoc.mediaUrl = mediaInfo.url;
+      if (mediaInfo?.type) meaningDoc.mediaType = mediaInfo.type;
+      if (userAudioUrl) meaningDoc.userAudioUrl = userAudioUrl;
+      await addDoc(collection(db, 'slang_meanings'), meaningDoc);
 
       // Update User Profile Stats & Titles
       const statsUserRef = doc(db, 'users', auth.currentUser.uid);
@@ -1447,9 +1464,28 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {uiLang === 'zh' ? '含义' : 'Meaning'}
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-sm font-medium text-gray-700">
+                    {uiLang === 'zh' ? '含义' : 'Meaning'}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const term = currentSlang ? currentSlang.term : searchTerm.trim().toLowerCase();
+                      if (term) fetchSuggestion(term, newMeaning, true);
+                    }}
+                    disabled={isLoadingSuggestion}
+                    className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    title={uiLang === 'zh' ? '让 AI 帮你起个草稿' : 'Let AI draft it for you'}
+                  >
+                    <Wand2 className="w-3.5 h-3.5" />
+                    {isLoadingSuggestion
+                      ? (uiLang === 'zh' ? '生成中…' : 'Drafting…')
+                      : (newMeaning.trim()
+                          ? (uiLang === 'zh' ? '扩写' : 'Expand')
+                          : (uiLang === 'zh' ? '帮我写一条' : 'Draft for me'))}
+                  </button>
+                </div>
                 <textarea
                   value={newMeaning}
                   onChange={(e) => handleMeaningChange(e.target.value)}

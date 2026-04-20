@@ -108,6 +108,24 @@ interface TranslateTabProps {
   onViewSlangEntry: (term: string) => void;
 }
 
+// IPA pronunciation only makes sense for a single lookup word. Hide it when:
+//   - the original is a multi-word phrase or full sentence (no speaker
+//     expects IPA for "we promise you will understand everything"), OR
+//   - it's a short all-caps acronym like WSG / CAPM, where IPA reads
+//     the letters one-by-one ("double-you es gee") which is useless noise.
+function shouldHidePronunciation(text: string | undefined): boolean {
+  if (!text) return true;
+  const t = text.trim();
+  if (!t) return true;
+  // Multi-word → hide (phrases and sentences don't want IPA).
+  if (/\s/.test(t)) return true;
+  // Punctuation-heavy → probably a sentence fragment, hide.
+  if (/[.!?;:]/.test(t)) return true;
+  // Short all-caps/digit cluster → acronym, hide.
+  if (t.length >= 2 && t.length <= 6 && /^[A-Z0-9]+$/.test(t)) return true;
+  return false;
+}
+
 export default function TranslateTab({
   inputText,
   setInputText,
@@ -405,7 +423,7 @@ export default function TranslateTab({
                   <div className="flex items-center justify-between mb-4 gap-3">
                     <div className="flex items-center gap-3 min-w-0 flex-1">
                       <h2 className="text-xl sm:text-2xl font-black text-gray-900 break-words">{translationResult.original}</h2>
-                      {translationResult.pronunciation && (
+                      {translationResult.pronunciation && !shouldHidePronunciation(translationResult.original) && (
                         <span className="text-blue-600 font-mono bg-blue-50 px-2 py-0.5 rounded-lg text-xs">{translationResult.pronunciation}</span>
                       )}
                     </div>
@@ -456,12 +474,17 @@ export default function TranslateTab({
                         <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
                           {uiLang === 'zh' ? '释义' : 'Meaning'}
                         </h3>
-                        <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 space-y-3 overflow-hidden">
+                        <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 overflow-hidden">
+                          {/* Single definition, following UI language.
+                              Previously rendered English + Chinese stacked;
+                              0.2.1 schema change produces only one language,
+                              so rendering both would duplicate the same line. */}
                           <p className="text-gray-800 text-lg font-bold leading-relaxed break-words">
-                            {translationResult.usages?.[selectedUsageIndex]?.meaning}
-                          </p>
-                          <p className="text-blue-600 text-lg font-medium leading-relaxed border-t border-gray-100 pt-3 break-words">
-                            {translationResult.usages?.[selectedUsageIndex]?.meaningZh}
+                            {uiLang === 'zh'
+                              ? (translationResult.usages?.[selectedUsageIndex]?.meaningZh
+                                  || translationResult.usages?.[selectedUsageIndex]?.meaning)
+                              : (translationResult.usages?.[selectedUsageIndex]?.meaning
+                                  || translationResult.usages?.[selectedUsageIndex]?.meaningZh)}
                           </p>
                         </div>
                       </div>

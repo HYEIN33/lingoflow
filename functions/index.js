@@ -185,6 +185,17 @@ exports.apiGenerate = onRequest(
       'gemini-2.5-flash',
       'gemini-2.5-flash-lite',
       'gemini-2.0-flash-lite',
+      // Gemini 3 flash preview — used by the classroom live-translation
+      // path for higher quality on spoken English + classroom register.
+      // See 2026-04-20 benchmark in src/services/ai.ts translateSimple.
+      'gemini-3-flash-preview',
+      // Gemini 3 pro preview — used by the Live Notes feature to
+      // produce structured study notes (summary + glossary + key
+      // points). Notes refresh every ~60s, so pro's 10-40s latency
+      // is acceptable in exchange for its much stronger reasoning
+      // and structured-output adherence.
+      'gemini-3-pro-preview',
+      'gemini-2.5-pro',
     ]);
     if (!ALLOWED_MODELS.has(model)) {
       res.status(400).json({ error: 'Model not allowed' });
@@ -265,18 +276,27 @@ exports.apiGenerate = onRequest(
 );
 
 // ─────────────────────────────────────────────────────────────────────────
-// Classroom live translation — ephemeral token minting for Gemini Live.
-// Called by the ClassroomTab before opening the WebSocket. We hold the
-// real Gemini API key on the server and hand the client a short-lived
-// token scoped to one Live session. The client connects directly to
-// Gemini — audio never traverses this Function, so cost scales with user
-// minutes not our bandwidth.
+// Classroom live translation — short-lived Deepgram token for the browser.
 //
-// Google Cloud quota limits sit on the API key side (see Console →
-// APIs & Services → Gemini API → Quotas) — we rely on those to cap
-// spend. This Function only authenticates the user and mints the token.
+// Why Deepgram (not Gemini Live): we tried Gemini Live v1alpha first and
+// got stuck on silent server-side disconnects (the protocol is in flux —
+// camelCase vs snake_case, v1alpha vs v1beta, model names drift). Deepgram
+// Nova-3 is a mature, well-documented real-time ASR with ~6-8% WER on
+// academic/lecture audio. We transcribe here, then send finalized English
+// sentences through our existing Gemini flash-lite translation pipeline.
+//
+// Token flow:
+//   1. Client POSTs here with a Firebase auth Bearer token.
+//   2. We authenticate + rate-limit the user the same way apiGenerate does.
+//   3. We call Deepgram's /v1/auth/grant with our master key to mint a
+//      30-second-TTL Bearer token (Deepgram "Temporary Token" API).
+//   4. We return that token to the client; it opens a WebSocket directly
+//      to api.deepgram.com with `Authorization: Token <tempKey>`.
+//
+// Audio never traverses this Function — it goes browser → Deepgram. That
+// keeps Functions cost flat regardless of user minutes.
 exports.liveToken = onRequest(
-  { secrets: ['GEMINI_API_KEY'], cors: false, timeoutSeconds: 30 },
+  { secrets: ['DEEPGRAM_API_KEY'], cors: false, timeoutSeconds: 30 },
   async (req, res) => {
     const corsOk = applyCors(req, res);
     if (req.method === 'OPTIONS') {
@@ -321,44 +341,40 @@ exports.liveToken = onRequest(
       return;
     }
 
-    // Mint a v1alpha ephemeral auth token. Single use, expires in 10 min.
-    // (User must start the Live session within this window; once the
-    // WebSocket is open the session is independent of the token.)
-    //
-    // Endpoint: POST /v1alpha/auth_tokens?key=<API_KEY>
-    //
-    // Accepted fields are `uses` and `expire_time` ONLY — the REST schema
-    // does NOT accept the `live_connect_constraints` field that appears in
-    // the JS SDK's LiveEphemeralParameters type. Sending that field returns
-    // HTTP 400 "Unknown name live_connect_constraints" (verified 2026-04-20).
-    // Max expiry is 20h per Google's policy; we use 10 min. The tradeoff
-    // of an unconstrained token is that a stolen token could open any Live
-    // model, but the 10-min single-use window makes that window tiny.
-    const expireTime = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+    const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
+    if (!DEEPGRAM_API_KEY) {
+      res.status(500).json({ error: 'Server missing DEEPGRAM_API_KEY' });
+      return;
+    }
     try {
+      // Deepgram's Temporary Token endpoint. ttl_seconds defaults to 30;
+      // we ask for 60s so a slow user (e.g. picking a tab to share) has
+      // enough time between clicking Start and the WS handshake. The
+      // returned `access_token` is a short-lived Bearer — the client uses
+      // it as `Authorization: Token <access_token>` on the WebSocket.
       const r = await fetch(
-        `https://generativelanguage.googleapis.com/v1alpha/auth_tokens?key=${GEMINI_API_KEY}`,
+        'https://api.deepgram.com/v1/auth/grant',
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            uses: 1,
-            expire_time: expireTime,
-          }),
+          headers: {
+            Authorization: `Token ${DEEPGRAM_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ ttl_seconds: 60 }),
         }
       );
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        console.error('liveToken mint failed:', err);
-        res.status(r.status).json({ error: err.error?.message || 'Token mint failed' });
+        const err = await r.text().catch(() => '');
+        console.error('liveToken Deepgram grant failed:', r.status, err);
+        res.status(r.status).json({ error: `Deepgram grant failed: ${r.status}` });
         return;
       }
       const payload = await r.json();
-      // `name` is the token string the client uses as its API key for Live.
+      // Deepgram returns { access_token, expires_in } — pass through.
       res.json({
-        token: payload.name,
-        expireTime,
-        model: 'gemini-2.0-flash-live-001',
+        token: payload.access_token,
+        expiresIn: payload.expires_in,
+        provider: 'deepgram',
       });
     } catch (e) {
       console.error('liveToken error:', e);

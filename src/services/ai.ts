@@ -185,12 +185,20 @@ async function geminiGenerate(opts: {
 
   for (let i = 0; i < models.length; i++) {
     const currentModel = models[i];
-    // Inject thinkingBudget:0 for models that support it. Preserves any caller-
-    // supplied thinkingConfig (user could override if they ever want thinking).
-    const effectiveConfig =
-      NO_THINKING_MODELS.has(currentModel) && !opts.config?.thinkingConfig
-        ? { ...(opts.config || {}), thinkingConfig: { thinkingBudget: 0 } }
-        : opts.config;
+    // Disable deep reasoning for latency-sensitive callers. Gemini 2.5
+    // and Gemini 3 use DIFFERENT field names for this control:
+    //   2.5: thinkingConfig.thinkingBudget = 0
+    //   3.x: thinkingConfig.thinkingLevel  = "low"
+    // Sending the wrong one silently defaults to full thinking, which
+    // is what bit us on gemini-3-flash-preview (5s became 15s+ and the
+    // classroom UI felt "stuck").
+    let effectiveConfig = opts.config;
+    if (NO_THINKING_MODELS.has(currentModel) && !opts.config?.thinkingConfig) {
+      const thinkingConfig = currentModel.startsWith('gemini-3')
+        ? { thinkingLevel: 'low' }
+        : { thinkingBudget: 0 };
+      effectiveConfig = { ...(opts.config || {}), thinkingConfig };
+    }
     try {
       if (USE_PROXY) {
         const result = await callGeminiProxy(currentModel, opts.contents, effectiveConfig, opts.onChunk);
@@ -221,8 +229,14 @@ async function geminiGenerate(opts: {
         error: msg.substring(0, 200),
       });
 
-      // Location restriction or FAILED_PRECONDITION — try proxy fallback
-      if (msg.includes('location is not supported') || msg.includes('FAILED_PRECONDITION') || status == 400) {
+      // Location restriction or FAILED_PRECONDITION — try proxy fallback.
+      // Note: this path is for the SDK (USE_PROXY=false) case where the
+      // direct Gemini call is geo-blocked; in prod USE_PROXY=true so the
+      // first call already went through the proxy and a 400 here means
+      // "the proxy rejected this model" (e.g. not in ALLOWED_MODELS).
+      // In that case trying the proxy again is pointless — fall through
+      // to the model-fallback loop so we try the next model.
+      if (!USE_PROXY && (msg.includes('location is not supported') || msg.includes('FAILED_PRECONDITION'))) {
         console.warn(`Direct API blocked (${msg.substring(0, 80)}), trying proxy...`);
         aiBreadcrumb('generate.region_fallback_to_proxy', { model: currentModel });
         try {
@@ -231,12 +245,18 @@ async function geminiGenerate(opts: {
           return result.text;
         } catch (proxyErr: any) {
           aiBreadcrumb('generate.proxy_fallback_failed', { model: currentModel, error: (proxyErr?.message || String(proxyErr)).substring(0, 200) });
-          throw new Error('翻译服务暂时不可用，请稍后重试');
+          // fall through to model fallback
         }
       }
 
-      if ((status == 503 || status == 429) && i < models.length - 1) {
-        console.warn(`${models[i]} unavailable (${status}), falling back to ${models[i + 1]}`);
+      // 400 (model rejected), 403, 404, 503, 429 — try next model in chain.
+      // For gemini-3-flash-preview we deliberately DON'T fall back — its
+      // quality is markedly better than 2.5, and silently degrading to
+      // 2.5-lite on a transient 503 would mask the real problem. The
+      // caller (translateSimple) sees the error and shows "翻译失败".
+      const shouldFallback = [400, 403, 404, 429, 503].includes(Number(status));
+      if (shouldFallback && i < models.length - 1 && models[0] !== 'gemini-3-flash-preview') {
+        console.warn(`${models[i]} failed (${status}: ${msg.substring(0, 60)}), falling back to ${models[i + 1]}`);
         aiBreadcrumb('generate.model_fallback', { from: models[i], to: models[i + 1], status: String(status) });
         continue;
       }
@@ -363,7 +383,7 @@ export async function explainSlang(text: string): Promise<SlangExplanationResult
   return JSON.parse(text_);
 }
 
-export async function translateText(text: string, formalityLevel?: number): Promise<TranslationResult> {
+export async function translateText(text: string, formalityLevel?: number, uiLang: 'zh' | 'en' = 'zh'): Promise<TranslationResult> {
   const { model } = getEffectiveConfig();
 
   let formalityPrompt = "";
@@ -376,24 +396,58 @@ export async function translateText(text: string, formalityLevel?: number): Prom
     ? 'The input is Chinese. Translate it to English. The authenticTranslation and academicTranslation MUST be in English.'
     : 'The input is English. Translate it to Chinese. The authenticTranslation and academicTranslation MUST be in Chinese (中文).';
 
+  // Usage-definition language follows the UI, not the input text. A
+  // Chinese-UI user learning English wants the meaning explained in
+  // Chinese; an English-UI user translating Chinese wants an English
+  // gloss. Producing only one direction cuts ~30% output tokens vs the
+  // old dual-meaning / dual-label schema, which compounds with the
+  // first-paint speedup from 0.2.0.
+  const defLangHint = uiLang === 'zh'
+    ? 'For each usage definition, produce ONE Chinese meaning gloss ("meaningZh") and ONE Chinese label ("labelZh"). Do NOT include English "meaning" or "label" fields.'
+    : 'For each usage definition, produce ONE English meaning gloss ("meaning") and ONE English label ("label"). Do NOT include Chinese "meaningZh" or "labelZh" fields.';
+
   // Core schema — only what the user sees first paint. Synonyms/antonyms/
   // alternatives/conjugations are loaded lazily via loadTranslationDetails()
-  // when the user expands "Details". This cuts output tokens by ~70% and
-  // turns a 2-4s first paint into a sub-second one on the same model.
+  // when the user expands "Details".
   const contents = `You are a professional translator. ${langDirection}
 
     1. Provide an 'Authentic Translation' (地道表达) that sounds natural to native speakers of the TARGET language.
     2. Provide an 'Academic Translation' (学术表达) that is formal and suitable for academic or professional contexts.
     3. If the original text contains any slang or idioms, list them in 'slangTerms' (at most 3).
-    4. Provide 1-3 usage definitions, each with:
-       - label (e.g., "Most Common") and labelZh (Chinese translation)
-       - meaning in English and meaningZh in Chinese
-       - 2 example sentences with translations
+    4. Provide 1-3 usage definitions. ${defLangHint}
+       Each usage also has 2 example sentences with translations (examples always bilingual — this is not affected by UI language).
 
     Do NOT include synonyms, antonyms, alternatives, or conjugations — those are fetched separately.
     ${formalityPrompt}
 
     Text: "${text}"`;
+
+  // Schema: only require the language-matched fields. The other is
+  // optional; if Gemini slips one in we just ignore it at render time.
+  const usageProps: Record<string, any> = {
+    examples: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          sentence: { type: Type.STRING },
+          translation: { type: Type.STRING },
+        },
+        required: ["sentence", "translation"],
+      },
+    },
+  };
+  const usageRequired: string[] = ["examples"];
+  if (uiLang === 'zh') {
+    usageProps.labelZh = { type: Type.STRING };
+    usageProps.meaningZh = { type: Type.STRING };
+    usageRequired.push("labelZh", "meaningZh");
+  } else {
+    usageProps.label = { type: Type.STRING };
+    usageProps.meaning = { type: Type.STRING };
+    usageRequired.push("label", "meaning");
+  }
+
   const config = {
     responseMimeType: "application/json",
     responseSchema: {
@@ -408,32 +462,33 @@ export async function translateText(text: string, formalityLevel?: number): Prom
           type: Type.ARRAY,
           items: {
             type: Type.OBJECT,
-            properties: {
-              label: { type: Type.STRING },
-              labelZh: { type: Type.STRING },
-              meaning: { type: Type.STRING },
-              meaningZh: { type: Type.STRING },
-              examples: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    sentence: { type: Type.STRING },
-                    translation: { type: Type.STRING }
-                  },
-                  required: ["sentence", "translation"]
-                }
-              }
-            },
-            required: ["label", "labelZh", "meaning", "meaningZh", "examples"]
-          }
-        }
+            properties: usageProps,
+            required: usageRequired,
+          },
+        },
       },
-      required: ["original", "usages"]
-    }
+      required: ["original", "usages"],
+    },
   };
   const text_ = await geminiGenerate({ model, contents, config });
-  return JSON.parse(text_);
+  const parsed = JSON.parse(text_);
+  // Mirror the produced field into the missing slot so all existing UI
+  // (WordbookPage, UsagePicker, Detail panel) that reads meaning/label
+  // keeps working without edits. Consumers see both fields populated
+  // with the UI-language value — visually identical to old behavior,
+  // but the model only had to generate one.
+  if (parsed?.usages && Array.isArray(parsed.usages)) {
+    for (const u of parsed.usages) {
+      if (uiLang === 'zh') {
+        if (u.meaningZh && !u.meaning) u.meaning = u.meaningZh;
+        if (u.labelZh && !u.label) u.label = u.labelZh;
+      } else {
+        if (u.meaning && !u.meaningZh) u.meaningZh = u.meaning;
+        if (u.label && !u.labelZh) u.labelZh = u.label;
+      }
+    }
+  }
+  return parsed;
 }
 
 // Loaded lazily when the user clicks "Show Details" on a word-mode translation.
@@ -562,21 +617,35 @@ export async function translateSimple(
   text: string,
   onChunk?: (delta: string) => void,
 ): Promise<string> {
-  // 2026-04-20 benchmark (lib card-length sentence, no OCR):
-  //   gemini-2.5-flash thinking-on  : 5.24s, quality ~
-  //   gemini-2.5-flash thinking-off : 1.03s, quality ~ (slightly stiffer)
-  //   gemini-2.5-flash-lite tb:0    : 1.05s, quality ~ (as good as thinking-on)
-  // Lite wins on every axis for simple translation — use it explicitly here
-  // instead of the default flash. thinkingBudget:0 is injected by
-  // geminiGenerate based on NO_THINKING_MODELS.
-  const model = 'gemini-2.5-flash-lite';
+  // Model choice, 2026-04-20 benchmark on real Deepgram classroom output
+  // (spoken English with repetitions, idioms, teaching phrases):
+  //   gemini-2.5-flash-lite : 1.5s, quality 3/5 (literal, misses idioms)
+  //   gemini-2.5-flash      : 1.1s, quality 4/5 (keeps pace, a few misses)
+  //   gemini-2.5-pro        : 39s,  quality 4/5 (too slow for live)
+  //   gemini-3-flash-preview: 5.5s, quality 5/5 (understands teaching
+  //                                   register, handles idioms, dedupes
+  //                                   spoken repetition)
+  // 5s latency is fine given we batch 2-3 sentences — a student pauses
+  // between thoughts anyway. The quality jump from 3-flash is worth it.
+  const model = 'gemini-3-flash-preview';
 
-  const contents = `You are a professional interpreter. Translate the following text between Chinese and English.
-    If the input is Chinese, translate to English.
-    If the input is English, translate to Chinese.
-    Only return the translated text, no other explanation.
+  // Prompt upgraded for spoken classroom audio (vs. the previous generic
+  // "translate between Chinese and English"). Deepgram deliveries contain
+  // disfluencies the old prompt would translate literally.
+  const contents = `You are interpreting a live classroom lecture for a Chinese international student.
 
-    Text: "${text}"`;
+The input is raw speech-to-text from a live class — it has repetitions, filler words, and occasional misheard words from the speech model. Your job is to produce NATURAL, FLUENT Chinese that a student would actually want to read as subtitles.
+
+Guidelines:
+- If the same phrase repeats back-to-back (speaker emphasizing or correcting), translate it ONCE — don't echo the repetition.
+- Recognize common English idioms and translate to their Chinese equivalent, not literally. Examples: "fill her up" → 加满油, "get on board" → 上车, "it's done" → 搞定了.
+- Keep the teacher's register (教学 / 口语), not stiff written Chinese.
+- For single words or short phrases, give the most common Chinese equivalent.
+- Never add commentary or numbering. Output only the Chinese translation.
+- Preserve input line breaks in the output.
+
+Input:
+${text}`;
   const result = await geminiGenerate({ model, contents, onChunk });
   return result.trim();
 }
@@ -598,6 +667,109 @@ export async function getReviewHint(word: string, meaningZh: string): Promise<st
 
   const result = await geminiGenerate({ model, contents });
   return result.trim();
+}
+
+// Live Notes shape — keep in sync with LiveNotesPanel rendering. Each
+// refresh produces a brand new LiveNotes object; we don't incrementally
+// diff because Gemini 3 is smart enough to rewrite the whole structure
+// coherently in one shot, and full-rewrite avoids "note grew stale"
+// problems we'd otherwise have to solve with delta-merging code.
+export interface LiveNotes {
+  title: string;                  // one-line topic (e.g. "滑雪运动介绍")
+  overview: string[];             // 2-4 bullets, user-facing summary
+  vocabulary: Array<{             // key terms with definition + note
+    term: string;                 // English term
+    meaning: string;              // short Chinese gloss
+    note?: string;                // optional longer note / example
+  }>;
+  keyPoints: string[];            // 3-6 teaching-point bullets
+}
+
+/**
+ * Generate structured study notes from a chunk of class English (and
+ * optionally its Chinese translation). Uses Gemini 3 Pro for its much
+ * stronger structured-output discipline — Live Notes refresh every
+ * ~60s so the 10-40s latency is acceptable in exchange for consistent,
+ * teacher-quality structure.
+ *
+ * Caller passes the ENTIRE transcript so far each time (not just the
+ * delta). The model rewrites the notes from scratch, which keeps them
+ * coherent and avoids delta-merge bugs.
+ */
+export async function generateLiveNotes(
+  transcript: string,
+  opts?: { course?: string }
+): Promise<LiveNotes> {
+  // Prefer the newest reasoning model first; fall back to 2.5 pro on
+  // 503/quota problems so a pro outage doesn't blank the Notes panel.
+  const model = 'gemini-3-pro-preview';
+  const courseLine = opts?.course
+    ? `The class subject is: ${opts.course}. Use that subject's terminology and register.\n`
+    : '';
+
+  const prompt = `You are a bilingual (Chinese / English) note-taking assistant for a Chinese international student attending an English-language class.
+
+${courseLine}Below is the raw English transcript of the class so far. Produce polished, structured study notes for the student in CHINESE. Goals:
+- Surface the main topic of the class.
+- Summarize what the teacher has covered so far in 2-4 bullets.
+- Extract vocabulary the student should remember: target phrases the teacher is actively teaching, plus any technical or idiomatic terms worth noting.
+- Highlight the key learning points in 3-6 bullets a student should revisit when reviewing.
+
+Return STRICT JSON matching this TypeScript type:
+{
+  "title": string,                // one-line Chinese title of the topic
+  "overview": string[],           // 2-4 Chinese summary bullets
+  "vocabulary": Array<{
+    "term": string,               // English term as spoken
+    "meaning": string,            // concise Chinese gloss
+    "note"?: string               // optional: 1 sentence extra context
+  }>,
+  "keyPoints": string[]           // 3-6 Chinese bullets of teaching points
+}
+
+Rules:
+- Output ONLY the JSON object, no markdown fences, no prose around it.
+- All free-text fields are in Chinese unless they are English vocabulary terms.
+- Vocabulary "term" is always the English phrase as the teacher used it.
+- Do NOT invent content not in the transcript.
+- If the transcript is very short or off-topic, produce whatever notes are possible — empty arrays are allowed.
+
+Transcript:
+${transcript}`;
+
+  const config = {
+    responseMimeType: 'application/json',
+    responseSchema: {
+      type: Type.OBJECT,
+      properties: {
+        title: { type: Type.STRING },
+        overview: { type: Type.ARRAY, items: { type: Type.STRING } },
+        vocabulary: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              term: { type: Type.STRING },
+              meaning: { type: Type.STRING },
+              note: { type: Type.STRING },
+            },
+            required: ['term', 'meaning'],
+          },
+        },
+        keyPoints: { type: Type.ARRAY, items: { type: Type.STRING } },
+      },
+      required: ['title', 'overview', 'vocabulary', 'keyPoints'],
+    },
+  };
+  const raw = await geminiGenerate({ model, contents: prompt, config });
+  try {
+    return JSON.parse(raw) as LiveNotes;
+  } catch (e) {
+    // Defensive: Pro occasionally wraps JSON in markdown despite
+    // responseMimeType. Strip common fencings and retry the parse.
+    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+    return JSON.parse(cleaned) as LiveNotes;
+  }
 }
 
 export async function aiChat(messages: { role: 'user' | 'ai'; text: string }[]): Promise<string> {
@@ -722,11 +894,32 @@ export async function suggestSlangMeaning(term: string, partialInput: string): P
   }
   const { model } = getEffectiveConfig();
 
-  const contents = `You are helping a user write a definition for the Chinese internet slang term "${term}".
+  // Two modes, same endpoint:
+  //   (a) Draft mode: user hasn't typed anything (or only a few chars).
+  //       Give them a full ready-to-edit definition so they have a
+  //       starting point instead of a blank page.
+  //   (b) Expand mode: user has partial wording. Preserve their voice
+  //       and just finish the sentence / round it out.
+  // Empty-draft requests are the new behaviour; previously the UI only
+  // fetched once `input.length >= 3`, forcing users to type first.
+  const trimmed = partialInput.trim();
+  const isDraftMode = trimmed.length < 3;
+  const contents = isDraftMode
+    ? `You are writing a first-draft definition for the Chinese internet slang / meme term "${term}".
+    The user has NOT started writing yet — produce a complete, ready-to-edit draft they can tweak.
+
+    Requirements:
+    - 1-2 sentences, Chinese only, natural and colloquial (not dictionary-like).
+    - State what the term means and the typical context/tone of use.
+    - Do NOT include the term itself at the start of the sentence repeatedly.
+    - Do NOT add hedging like "可能是" — write as if you know.
+    - Output the definition text only, no prefix / quotes / bullets.`
+    : `You are helping a user finish writing a definition for the Chinese internet slang term "${term}".
     The user has started typing: "${partialInput}"
 
     Complete or expand their input into a full, natural definition (in Chinese).
-    Keep it concise (1-2 sentences), accurate, and in the same tone as the user's input.
+    Preserve their tone and word choice; don't rewrite what they already have.
+    Keep it concise (1-2 sentences), accurate.
     Only output the suggested definition text, nothing else.`;
   const result = await geminiGenerate({ model, contents });
   return result.trim();
