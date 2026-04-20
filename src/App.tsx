@@ -699,6 +699,19 @@ export default function App() {
     }
   }, [activeTab, userProfile]);
 
+  // searchQuery is shared between the wordbook search input and the slang
+  // dictionary's initialSearchTerm. When the user jumps from the translate
+  // result's "查看百科详情" button we setSearchQuery(term) so the slang tab
+  // opens on that entry — but the same value then bleeds into the wordbook
+  // search on next tab switch, silently filtering out every saved word.
+  // Clearing it on entry to the wordbook tab is the least-invasive fix.
+  useEffect(() => {
+    if (activeTab === 'history' && searchQuery) {
+      setSearchQuery('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
   const handleUpgrade = () => {
     setPaymentTrigger('default');
     setShowPayment(true);
