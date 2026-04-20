@@ -27,6 +27,15 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.2.13',
+    date: '2026-04-20',
+    title: '课堂同传：往上翻历史不再被新字幕拽回底部',
+    changes: [
+      '在底部时新字幕出来会照常自动滚；往上滑查看前面讲过的内容时，新字幕会加到下面但你的视图不动',
+    ],
+    isMajor: false,
+  },
+  {
     version: '0.2.12',
     date: '2026-04-20',
     title: '课堂同传：两种翻译模式各自用最合适的触发',

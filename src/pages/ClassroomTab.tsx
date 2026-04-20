@@ -405,10 +405,17 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
     });
   };
 
-  // Auto-scroll to latest content as the stream grows.
+  // Auto-scroll to latest content — but ONLY if the user is already
+  // at (or near) the bottom. If they've scrolled up to read earlier
+  // material, respect that and don't yank them back down on every new
+  // subtitle. "Near bottom" tolerance = 80px to absorb line-height jitter.
   useEffect(() => {
-    if (!scrollerRef.current) return;
-    scrollerRef.current.scrollTop = scrollerRef.current.scrollHeight;
+    const el = scrollerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
+    if (distanceFromBottom <= 80) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [stream]);
 
   // Live Notes refresh trigger. Runs on every stream change, guarded by
