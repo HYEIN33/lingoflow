@@ -27,6 +27,17 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.2.7',
+    date: '2026-04-20',
+    title: '课堂同传：触发逻辑回退到原方案',
+    changes: [
+      '整段翻译的触发改回"话题边界"判断：2-5 句攒够 / 80-260 字 / 4 秒话题停顿 / 17 秒兜底',
+      '保留流式翻译：中文还是边生成边打字',
+      '保留模式切换和翻译中提示',
+    ],
+    isMajor: false,
+  },
+  {
     version: '0.2.6',
     date: '2026-04-20',
     title: '课堂同传：触发逻辑精简成"字数+停顿"双条件',
