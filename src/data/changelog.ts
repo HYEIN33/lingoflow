@@ -27,6 +27,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.2.10',
+    date: '2026-04-20',
+    title: '课堂同传：字幕排版 EasyNoteAI 化',
+    changes: [
+      '英文像一整段文章连续显示，中文紧跟在下面作为对应译文段，两段之间留出清晰空白',
+      '字号放大、行距加宽，不再「一句一行」碎片化',
+    ],
+    isMajor: false,
+  },
+  {
     version: '0.2.9',
     date: '2026-04-20',
     title: '课堂同传：解决卡住、翻译慢、吞英文、滚动打扰',

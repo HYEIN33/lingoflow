@@ -394,8 +394,8 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
         const first = next[firstIdx] as {
           kind: 'line'; id: number; translation: string; transcription: string; finalized: boolean;
         };
-        // Newline-joined so every original sentence stays visually distinct.
-        const mergedTranscription = indices.map((i) => (next[i] as any).transcription).join('\n');
+        // EasyNoteAI-style: paragraph-joined prose (spaces, not newlines).
+        const mergedTranscription = indices.map((i) => (next[i] as any).transcription).join(' ');
         next[firstIdx] = { ...first, transcription: mergedTranscription, translation: pair.zh };
         for (let k = indices.length - 1; k >= 1; k--) {
           next.splice(indices[k], 1);
@@ -471,7 +471,11 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
       // 秒没了" when we collapsed to a single prose line — they couldn't
       // tell their earlier English was still there, just merged. Keeping
       // newlines preserves the 1-line-per-utterance layout users expect.
-      const merged = indices.map((i) => (next[i] as any).transcription).join('\n');
+      // EasyNoteAI-style: English is ONE continuous paragraph (no per-
+      // sentence line breaks). Users read it as prose above the Chinese
+      // paragraph. Visual distinctness between paragraphs comes from
+      // spacing between bubbles, not from within.
+      const merged = indices.map((i) => (next[i] as any).transcription).join(' ');
       next[firstIdx] = { ...first, transcription: merged, translation: deltaZh, streamKey: key };
       for (let k = indices.length - 1; k >= 1; k--) next.splice(indices[k], 1);
       return next;
@@ -1152,7 +1156,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           the bit of class that triggered them. */}
       <div
         ref={scrollerRef}
-        className="bg-white/60 backdrop-blur-md border border-white/60 rounded-3xl p-5 min-h-[320px] max-h-[50vh] overflow-y-auto space-y-3 shadow-sm"
+        className="bg-white/60 backdrop-blur-md border border-white/60 rounded-3xl p-5 min-h-[320px] max-h-[50vh] overflow-y-auto space-y-6 shadow-sm"
       >
         {stream.length === 0 && status !== 'live' && (
           <div className="text-center text-gray-400 py-16 text-sm">
@@ -1164,9 +1168,9 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
         {stream.map((item) => {
           if (item.kind === 'line') {
             return (
-              <div key={`l-${item.id}`} className={`space-y-1 ${item.finalized ? 'opacity-80' : ''}`}>
+              <div key={`l-${item.id}`} className={`space-y-2 ${item.finalized ? 'opacity-80' : ''}`}>
                 {item.transcription && (
-                  <p className="text-xs text-gray-400 leading-relaxed whitespace-pre-wrap">{item.transcription}</p>
+                  <p className="text-sm text-gray-400 leading-relaxed">{item.transcription}</p>
                 )}
                 <p className={`leading-relaxed ${
                   item.finalized
