@@ -398,18 +398,18 @@ Rules:
 English paragraph:
 ${englishParagraph}`;
     try {
-      // Stream deltas to the UI as Gemini generates the Chinese, so the
-      // user sees translation start within ~1s of the English flushing
-      // — not after waiting for the full paragraph to be generated.
-      const onChunk = streamKey
-        ? (delta: string) => {
-            cb.onTranslationStreamDelta?.(streamKey, englishParagraph, delta);
-          }
-        : undefined;
-      const zh = (await translateWithRetry(prompt, 'paragraph', onChunk)).trim();
-      // Final batch event for callers that don't handle streaming deltas
-      // (and to reconcile any trailing whitespace trim).
+      // Non-streaming path: Gemini 3 flash-preview with thinkingLevel:'low'
+      // is faster end-to-end than streaming w/o thinking control. Streaming
+      // helped perceived latency but regressed total time (streaming
+      // upstream currently forbids thinkingConfig — see functions/index.js
+      // streamSafeConfig hack — so it runs with default thinking which is
+      // slower). Until Gemini fixes the streaming thinkingConfig contract,
+      // the simpler non-stream path wins on actual latency.
+      const zh = (await translateWithRetry(prompt, 'paragraph')).trim();
       cb.onTranslationBatch([{ en: englishParagraph, zh }]);
+      // Fire a single stream-delta so the UI's streaming-bubble path still
+      // creates a paragraph bubble (keeps the streamKey-based merge working).
+      if (streamKey) cb.onTranslationStreamDelta?.(streamKey, englishParagraph, zh);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('[live] paragraph translate failed after retries:', err);
@@ -615,30 +615,76 @@ ${englishParagraph}`;
     cb.onStatusChange('error', '连接已断开，请按「开始」重新连接');
   };
 
-  // Periodically probe the mediaStream health. If the OS/browser mutes
-  // the mic behind our back (airpods disconnect mid-session, another app
-  // takes exclusive mic access on Windows, tab share stopped), the
-  // WebSocket stays open but nothing flows — UI claims "正在监听" while
-  // the mic is dead. Surface this to the user.
-  const healthTimer = setInterval(() => {
-    if (userStopped) return;
+  // Health monitor with auto-recovery. The previous version only
+  // surfaced errors; users reported "卡住没音频输入，按暂停再继续才好"
+  // which means the WS stayed open but PCM stopped flowing. Root
+  // causes we now self-heal from:
+  //   (a) AudioContext suspended (tab backgrounded, OS sleep) → resume()
+  //   (b) track.muted (airpods glitch, other app stole mic) → force reconnect
+  //       after a grace period so transient mutes don't spam reconnects
+  //   (c) no PCM sent in N seconds despite not paused → force reconnect
+  //       (catches the "worklet silently stopped" case)
+  // Pause state declared early so healthTimer can reference it.
+  let paused = false;
+  let lastPcmSentAt = Date.now();
+  worklet.port.addEventListener('message', () => { lastPcmSentAt = Date.now(); });
+  let mutedSince = 0;
+  const healthTimer = setInterval(async () => {
+    if (userStopped || paused) return;
     const t = mediaStream.getAudioTracks()[0];
     if (!t) return;
+
+    // (a) AudioContext suspended. Just resume it.
+    if (audioCtx.state === 'suspended') {
+      try {
+        await audioCtx.resume();
+        // eslint-disable-next-line no-console
+        console.info('[live] health: resumed suspended AudioContext');
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[live] health: AudioContext resume failed:', e);
+      }
+    }
+
+    // (d) Track ended — device physically gone. Can't recover.
     if (t.readyState === 'ended') {
       clearInterval(healthTimer);
       cb.onStatusChange('error', '录音已停止（设备断开或分享被取消），请重新按「开始」');
-    } else if (t.muted) {
-      // Muted ≠ ended — Chrome flips `muted` when AirPods disconnect or
-      // the user toggles OS mic privacy. Surface as warning not error.
-      // eslint-disable-next-line no-console
-      console.warn('[live] mic track is muted — audio may not reach Deepgram');
+      return;
     }
-  }, 5000);
 
-  // Pause state — when true, worklet PCM is dropped on the floor instead
+    // (b) Track muted — tolerate for 6s, then force a full reconnect.
+    if (t.muted) {
+      if (mutedSince === 0) mutedSince = Date.now();
+      const mutedFor = Date.now() - mutedSince;
+      if (mutedFor > 6000) {
+        // eslint-disable-next-line no-console
+        console.warn('[live] health: track muted > 6s, forcing reconnect');
+        mutedSince = 0;
+        lastPcmSentAt = Date.now(); // reset so (c) doesn't also fire
+        void reconnect();
+        return;
+      }
+    } else {
+      mutedSince = 0;
+    }
+
+    // (c) No PCM delivered for 8s despite active + unmuted track. Means
+    // the worklet silently stopped or the mediaStream pipeline broke
+    // without signaling. Force a reconnect.
+    const silentFor = Date.now() - lastPcmSentAt;
+    if (silentFor > 8000) {
+      // eslint-disable-next-line no-console
+      console.warn('[live] health: no PCM for 8s, forcing reconnect');
+      lastPcmSentAt = Date.now();
+      void reconnect();
+    }
+  }, 2000);
+
+  // (paused is declared earlier above for healthTimer visibility.)
+  // When paused === true, worklet PCM is dropped on the floor instead
   // of being sent to Deepgram. The WebSocket stays open (keepAlive fires
   // every 8s) so resume is instantaneous.
-  let paused = false;
 
   // Pipe PCM from the worklet to Deepgram.
   worklet.port.onmessage = (ev) => {

@@ -27,6 +27,18 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.2.9',
+    date: '2026-04-20',
+    title: '课堂同传：解决卡住、翻译慢、吞英文、滚动打扰',
+    changes: [
+      '修复麦克风突然不识别的问题：现在会自动重连，不用手动按暂停再继续',
+      '翻译加速：去掉拖后腿的流式路径，整体更快',
+      '修复「上一秒英文还在、下一秒就没了」：合并后的英文换行保留每句原文',
+      '往上滑查看历史时不会再被新字幕强制拉回底部；在底部时才会自动滚动',
+    ],
+    isMajor: false,
+  },
+  {
     version: '0.2.8',
     date: '2026-04-20',
     title: '修课堂翻译失败的 bug',
