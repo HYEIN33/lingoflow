@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import * as Sentry from '@sentry/react';
 import { toast } from 'sonner';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, orderBy, limit, serverTimestamp, onSnapshot, getDoc, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, setDoc, writeBatch, orderBy, limit, serverTimestamp, onSnapshot, getDoc, Timestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { Search, Plus, ThumbsUp, AlertCircle, Loader2, MessageSquare, Volume2, Image as ImageIcon, Video, Film, X, Mic, Wand2, Flag, Share2, Send, ChevronDown, ChevronUp } from 'lucide-react';
 import { validateSlangMeaning, generateSlangExample, suggestSlangMeaning } from '../services/ai';
@@ -982,19 +982,23 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
 
     try {
       const upvoteId = `${auth.currentUser.uid}_${meaningId}`;
-      
-      // Add upvote record
-      await addDoc(collection(db, 'slang_upvotes'), {
+
+      // Must be atomic: firestore.rules isValidCounterUpdate uses
+      // `!exists(upvote) && getAfter(upvote) != null`, which only holds
+      // when both writes land in the same batch. Two serial writes fail
+      // the second check because the upvote already exists by the time
+      // updateDoc runs. Also: upvoteId must equal `uid + '_' + meaningId`
+      // (rule line 201), so addDoc's random id could never pass anyway.
+      const batch = writeBatch(db);
+      batch.set(doc(db, 'slang_upvotes', upvoteId), {
         userId: auth.currentUser.uid,
         meaningId: meaningId,
         createdAt: serverTimestamp()
       });
-
-      // Update meaning upvotes
-      const meaningRef = doc(db, 'slang_meanings', meaningId);
-      await updateDoc(meaningRef, {
+      batch.update(doc(db, 'slang_meanings', meaningId), {
         upvotes: currentUpvotes + 1
       });
+      await batch.commit();
 
       setUpvotedMeanings(prev => new Set(prev).add(meaningId));
     } catch (error) {
