@@ -430,20 +430,64 @@ ${englishParagraph}`;
   // starts won't fire SpeechStarted, and the user still deserves feedback.
   setTimeout(() => flipToLiveOnce(), 2000);
 
+  // Interim rescue buffer. Deepgram Nova-3 occasionally delivers empty
+  // is_final=true frames while the interim stream (is_final=false) had
+  // actual text. Observed pattern in production logs:
+  //    #30 is_final=false text="The positiveness of that emerge"
+  //    #40 is_final=true  text=""        ← same utterance's final, empty
+  //
+  // Without rescue, that whole sentence never makes it into pendingBatch
+  // (the if(!text) return guard drops the empty final), so the user sees
+  // the English flash on screen as an interim then vanish, and there's
+  // no Chinese translation because paragraph mode only feeds on finals.
+  //
+  // Rescue strategy: keep the last non-empty interim text. When a final
+  // arrives empty, promote that buffered interim to the final. Reset on
+  // every real (non-empty) final so buffers from one utterance don't
+  // leak into the next.
+  let lastInterimText = '';
+  let interimEmptyFinalRescueCount = 0;
+
   const attachHandlers = (conn: ListenLiveClient) => {
     conn.on(LiveTranscriptionEvents.Transcript, (data: any) => {
       flipToLiveOnce();
       transcriptEventCount += 1;
       const alt = data?.channel?.alternatives?.[0];
       const rawText = (alt?.transcript || '').trim();
+      const isFinalRaw = !!data.is_final;
       if (transcriptEventCount <= 3 || transcriptEventCount % 10 === 0) {
         // eslint-disable-next-line no-console
-        console.info(`[live] Transcript #${transcriptEventCount} is_final=${!!data.is_final} text=${JSON.stringify(rawText.slice(0, 60))}`);
+        console.info(`[live] Transcript #${transcriptEventCount} is_final=${isFinalRaw} text=${JSON.stringify(rawText.slice(0, 60))}`);
       }
       if (!alt) return;
-      const text = rawText;
+
+      // Non-final events with text: stash as interim buffer and flow on.
+      if (!isFinalRaw && rawText) {
+        lastInterimText = rawText;
+        if (cb.onTranscriptionDelta) cb.onTranscriptionDelta(rawText, false);
+        return;
+      }
+      // Non-final empty: ignore (Deepgram heartbeat/warmup frames).
+      if (!isFinalRaw && !rawText) return;
+
+      // From here on: isFinalRaw === true
+      // Decide the effective text. Prefer Deepgram's final. If empty,
+      // rescue from the last non-empty interim we saw for this utterance.
+      let text = rawText;
+      if (!text && lastInterimText) {
+        text = lastInterimText;
+        interimEmptyFinalRescueCount += 1;
+        if (interimEmptyFinalRescueCount <= 3 || interimEmptyFinalRescueCount % 10 === 0) {
+          // eslint-disable-next-line no-console
+          console.info(`[live] rescued empty-final from interim (#${interimEmptyFinalRescueCount}): ${JSON.stringify(text.slice(0, 60))}`);
+        }
+      }
+      // Reset buffer once we've either consumed a real final or promoted
+      // the interim — next utterance starts fresh.
+      lastInterimText = '';
+
       if (!text) return;
-      const isFinal = !!data.is_final;
+      const isFinal = true;
       if (cb.onTranscriptionDelta) {
         cb.onTranscriptionDelta(text, isFinal);
       }
