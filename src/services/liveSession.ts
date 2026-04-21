@@ -46,7 +46,14 @@ export interface LiveSessionCallbacks {
    * ship them as one translate call. The model is told to return one
    * line per input, separated by a sentinel, so we can split it back.
    */
-  onTranslationBatch: (pairs: Array<{ en: string; zh: string }>) => void;
+  // `sentences` is the exact list of finalized-English lines that this
+  // translation pair covers. The UI uses its length to merge ONLY that
+  // many un-translated lines, instead of greedily swallowing every
+  // un-translated line in the stream (which lets sentences that arrived
+  // AFTER flushBatch but BEFORE Gemini returned get silently deleted —
+  // the "吞英文" bug). `en` is the joined paragraph actually sent to
+  // Gemini; `zh` is the Chinese paragraph returned.
+  onTranslationBatch: (pairs: Array<{ en: string; zh: string; sentences: string[] }>) => void;
   /**
    * English transcription. isFinal=false → interim (keep replacing the
    * in-flight line), true → the segment is locked in and a translation
@@ -392,11 +399,11 @@ ${englishParagraph}`;
       // paragraph than N pairs. Callsite keys translations by exact en
       // match; join with a space so a single pair matches the single
       // joined English block we display.
-      cb.onTranslationBatch([{ en: englishParagraph, zh }]);
+      cb.onTranslationBatch([{ en: englishParagraph, zh, sentences: batch }]);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('[live] paragraph translate failed after retries:', err);
-      cb.onTranslationBatch([{ en: englishParagraph, zh: '（翻译失败，稍后重试）' }]);
+      cb.onTranslationBatch([{ en: englishParagraph, zh: '（翻译失败，稍后重试）', sentences: batch }]);
     }
   };
 
@@ -629,12 +636,45 @@ ${englishParagraph}`;
   // every 8s) so resume is instantaneous.
   let paused = false;
 
+  // Volume diagnostics: samples the RMS level of the PCM stream every 3s
+  // and logs it. Lets us tell apart "mic is silent" (RMS ≈ 0) from "mic
+  // works but Deepgram isn't recognizing" (RMS > ~500 but text empty).
+  // The user-reported "吞英文" bug showed `text=""` for 200+ transcript
+  // events in a row — without this log we can't tell if audio even left
+  // the worklet.
+  let volLogLastMs = 0;
+  let volLogPeakAbs = 0;
+  let volLogSampleCount = 0;
+  let volLogSumSquares = 0;
+
   // Pipe PCM from the worklet to Deepgram.
   worklet.port.onmessage = (ev) => {
     const pcm = ev.data?.pcm as ArrayBuffer | undefined;
     if (!pcm || !connection) return;
     if (paused) return;
     const bytes = new Uint8Array(pcm);
+
+    // Volume probe: scan as Int16 (linear16 encoding). Track peak abs
+    // and sum of squares across the 3s window; log once per window.
+    const i16 = new Int16Array(pcm);
+    for (let i = 0; i < i16.length; i++) {
+      const v = i16[i];
+      const absV = v < 0 ? -v : v;
+      if (absV > volLogPeakAbs) volLogPeakAbs = absV;
+      volLogSumSquares += v * v;
+    }
+    volLogSampleCount += i16.length;
+    const now = Date.now();
+    if (now - volLogLastMs >= 3000 && volLogSampleCount > 0) {
+      const rms = Math.sqrt(volLogSumSquares / volLogSampleCount);
+      // eslint-disable-next-line no-console
+      console.info(`[live] mic RMS=${rms.toFixed(0)} peak=${volLogPeakAbs} (3s window, ${volLogSampleCount} samples) — RMS<100 ≈ silence; RMS>500 = real speech`);
+      volLogLastMs = now;
+      volLogPeakAbs = 0;
+      volLogSampleCount = 0;
+      volLogSumSquares = 0;
+    }
+
     let written = 0;
     while (written < bytes.byteLength) {
       const space = recentPcm.byteLength - recentWriteOffset;
