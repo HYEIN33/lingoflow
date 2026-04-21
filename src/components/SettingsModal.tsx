@@ -93,7 +93,7 @@ export default function SettingsModal({
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className="p-1.5 sm:p-2 hover:bg-gray-50 rounded-full transition-colors text-gray-400 hover:text-blue-500"
+        className="p-1.5 sm:p-2 hover:bg-gray-50 rounded-full transition-colors text-gray-400 hover:text-[#5B7FE8]"
         title={zh ? '设置' : 'Settings'}
         aria-label={zh ? '设置' : 'Settings'}
       >
@@ -120,7 +120,7 @@ export default function SettingsModal({
               >
                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                   <div className="flex items-center gap-2">
-                    <SettingsIcon className="w-5 h-5 text-blue-600" />
+                    <SettingsIcon className="w-5 h-5 text-[#5B7FE8]" />
                     <h2 className="font-black text-lg text-gray-900">{zh ? '设置' : 'Settings'}</h2>
                   </div>
                   <button
@@ -143,7 +143,7 @@ export default function SettingsModal({
                           onClick={() => setUiLang('zh')}
                           className={
                             'px-3 py-1 text-xs font-bold rounded-md transition-colors ' +
-                            (uiLang === 'zh' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500')
+                            (uiLang === 'zh' ? 'bg-white text-[#5B7FE8] shadow-sm' : 'text-gray-500')
                           }
                         >
                           中文
@@ -152,7 +152,7 @@ export default function SettingsModal({
                           onClick={() => setUiLang('en')}
                           className={
                             'px-3 py-1 text-xs font-bold rounded-md transition-colors ' +
-                            (uiLang === 'en' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500')
+                            (uiLang === 'en' ? 'bg-white text-[#5B7FE8] shadow-sm' : 'text-gray-500')
                           }
                         >
                           EN
@@ -314,7 +314,7 @@ function SettingButton({
         'w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors ' +
         (danger
           ? 'hover:bg-red-50 text-red-600'
-          : 'hover:bg-blue-50 text-gray-700')
+          : 'hover:bg-[rgba(91,127,232,0.08)] text-gray-700')
       }
     >
       <span className={danger ? 'text-red-400' : 'text-gray-400'}>{icon}</span>

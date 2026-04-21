@@ -1108,10 +1108,10 @@ export default function App() {
                     </div>
                     <div className="text-left">
                       <div className="font-bold text-sm">{uiLang === 'zh' ? '升级 Pro' : 'Upgrade to Pro'}</div>
-                      <div className="text-xs text-blue-100">{uiLang === 'zh' ? '解锁无限翻译、复习系统、语气调节' : 'Unlimited translations, review & more'}</div>
+                      <div className="text-xs text-[rgba(91,127,232,0.2)]">{uiLang === 'zh' ? '解锁无限翻译、复习系统、语气调节' : 'Unlimited translations, review & more'}</div>
                     </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-blue-200" />
+                  <ChevronRight className="w-5 h-5 text-[rgba(91,127,232,0.3)]" />
                 </button>
               )}
               <UserProfileComponent

@@ -195,8 +195,8 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
             exit={{ opacity: 0, y: -20 }}
             className="text-center space-y-6"
           >
-            <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Sparkles className="w-10 h-10 text-blue-600" />
+            <div className="w-20 h-20 bg-[rgba(91,127,232,0.1)] rounded-full flex items-center justify-center mx-auto mb-6">
+              <Sparkles className="w-10 h-10 text-[#5B7FE8]" />
             </div>
             <h2 className="text-3xl font-black text-gray-900">
               {uiLang === 'zh' ? '欢迎来到梗百科' : 'Welcome to Slang Dictionary'}
@@ -204,23 +204,23 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
             <p className="text-gray-500 text-lg">
               {uiLang === 'zh' ? '只需 3 分钟，完成你的首次文化贡献' : 'Complete your first cultural contribution in just 3 minutes'}
             </p>
-            <div className="bg-blue-50 p-6 rounded-2xl text-left space-y-4">
+            <div className="bg-[rgba(91,127,232,0.08)] p-6 rounded-2xl text-left space-y-4">
               <div className="flex items-center gap-3 text-gray-700">
-                <div className="w-6 h-6 rounded-full bg-blue-200 flex items-center justify-center text-sm font-bold text-blue-700">1</div>
+                <div className="w-6 h-6 rounded-full bg-[rgba(91,127,232,0.2)] flex items-center justify-center text-sm font-bold text-[#5B7FE8]">1</div>
                 <span>{uiLang === 'zh' ? '选择一个待完善的词条' : 'Select a term to define'}</span>
               </div>
               <div className="flex items-center gap-3 text-gray-700">
-                <div className="w-6 h-6 rounded-full bg-blue-200 flex items-center justify-center text-sm font-bold text-blue-700">2</div>
+                <div className="w-6 h-6 rounded-full bg-[rgba(91,127,232,0.2)] flex items-center justify-center text-sm font-bold text-[#5B7FE8]">2</div>
                 <span>{uiLang === 'zh' ? '填写定义与例句' : 'Provide meaning and example'}</span>
               </div>
               <div className="flex items-center gap-3 text-gray-700">
-                <div className="w-6 h-6 rounded-full bg-blue-200 flex items-center justify-center text-sm font-bold text-blue-700">3</div>
+                <div className="w-6 h-6 rounded-full bg-[rgba(91,127,232,0.2)] flex items-center justify-center text-sm font-bold text-[#5B7FE8]">3</div>
                 <span>{uiLang === 'zh' ? '获得「梗学徒」专属徽章' : 'Earn your "Slang Apprentice" badge'}</span>
               </div>
             </div>
             <button
               onClick={handleNext}
-              className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200"
+              className="w-full bg-[#0A0E1A] text-white py-4 rounded-xl font-bold text-lg hover:bg-[#1a2440] transition-colors shadow-lg shadow-[rgba(91,127,232,0.2)]"
             >
               {uiLang === 'zh' ? '开始贡献' : 'Start Contributing'}
             </button>
@@ -245,11 +245,11 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
                     setSelectedTerm(slang.term);
                     handleNext();
                   }}
-                  className="bg-white hover:bg-blue-50 border border-gray-200 hover:border-blue-300 p-4 rounded-2xl text-left transition-all group"
+                  className="bg-white hover:bg-[rgba(91,127,232,0.08)] border border-gray-200 hover:border-[rgba(91,127,232,0.4)] p-4 rounded-2xl text-left transition-all group"
                 >
                   <div className="flex justify-between items-center">
                     <h3 className="text-xl font-bold text-gray-900">{slang.term}</h3>
-                    <ChevronRight className="w-5 h-5 text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <ChevronRight className="w-5 h-5 text-[#5B7FE8] opacity-0 group-hover:opacity-100 transition-opacity" />
                   </div>
                 </button>
               ))}
@@ -275,13 +275,13 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
                 <textarea
                   value={meaning}
                   onChange={(e) => handleMeaningChange(e.target.value)}
-                  className="w-full bg-white border border-gray-200 rounded-xl p-4 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none min-h-[100px]"
+                  className="w-full bg-white border border-gray-200 rounded-xl p-4 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-[#5B7FE8] focus:border-transparent outline-none min-h-[100px]"
                   placeholder={uiLang === 'zh' ? '用通俗易懂的语言解释...' : 'Explain in simple terms...'}
                 />
                 <div className="flex items-center justify-between mt-1">
                   <div className="flex items-center gap-1">
                     {isLoadingSuggestion && (
-                      <span className="flex items-center gap-1 text-xs text-blue-500">
+                      <span className="flex items-center gap-1 text-xs text-[#5B7FE8]">
                         <Loader2 className="w-3 h-3 animate-spin" />
                         AI 思考中...
                       </span>
@@ -299,18 +299,18 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -4 }}
-                      className="mt-2 bg-blue-50 border border-blue-200 rounded-xl p-3 cursor-pointer hover:bg-blue-100 transition-colors group"
+                      className="mt-2 bg-[rgba(91,127,232,0.08)] border border-[rgba(91,127,232,0.3)] rounded-xl p-3 cursor-pointer hover:bg-[rgba(91,127,232,0.15)] transition-colors group"
                       onClick={applySuggestion}
                     >
                       <div className="flex items-start gap-2">
-                        <Wand2 className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                        <Wand2 className="w-4 h-4 text-[#5B7FE8] mt-0.5 shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-blue-600 mb-1">
+                          <p className="text-xs font-medium text-[#5B7FE8] mb-1">
                             {uiLang === 'zh' ? 'AI 建议' : 'AI Suggestion'}
                           </p>
                           <p className="text-sm text-gray-700 leading-relaxed">{aiSuggestion}</p>
                         </div>
-                        <span className="text-[10px] text-blue-400 group-hover:text-blue-600 shrink-0 mt-0.5">
+                        <span className="text-[10px] text-[rgba(91,127,232,0.6)] group-hover:text-[#5B7FE8] shrink-0 mt-0.5">
                           {uiLang === 'zh' ? '点击采纳' : 'Click to apply'}
                         </span>
                       </div>
@@ -325,7 +325,7 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
                 <textarea
                   value={example}
                   onChange={(e) => setExample(e.target.value)}
-                  className="w-full bg-white border border-gray-200 rounded-xl p-4 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none min-h-[80px]"
+                  className="w-full bg-white border border-gray-200 rounded-xl p-4 text-gray-900 placeholder:text-gray-400 focus:ring-2 focus:ring-[#5B7FE8] focus:border-transparent outline-none min-h-[80px]"
                   placeholder={uiLang === 'zh' ? '给出一个使用的例子...' : 'Provide an example usage...'}
                 />
                 <div className="text-right text-xs mt-1">
@@ -342,7 +342,7 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
             <button
               onClick={handleNext}
               disabled={!isMeaningValid}
-              className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 transition-colors shadow-lg shadow-blue-200"
+              className="w-full bg-[#0A0E1A] text-white py-4 rounded-xl font-bold text-lg hover:bg-[#1a2440] disabled:opacity-50 disabled:hover:bg-[#1a2440] transition-colors shadow-lg shadow-[rgba(91,127,232,0.2)]"
             >
               {uiLang === 'zh' ? '继续' : 'Continue'}
             </button>
@@ -364,17 +364,17 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
             </p>
 
             <div className="grid grid-cols-2 gap-4">
-              <label className="bg-white hover:bg-blue-50 border border-dashed border-gray-300 hover:border-blue-400 rounded-2xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all">
+              <label className="bg-white hover:bg-[rgba(91,127,232,0.08)] border border-dashed border-gray-300 hover:border-[#5B7FE8] rounded-2xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all">
                 <input type="file" accept="image/*,video/*,.gif" onChange={(e) => setMediaFile(e.target.files?.[0] || null)} className="hidden" />
-                <ImageIcon className={cn("w-8 h-8", mediaFile ? "text-blue-600" : "text-gray-400")} />
+                <ImageIcon className={cn("w-8 h-8", mediaFile ? "text-[#5B7FE8]" : "text-gray-400")} />
                 <span className="text-sm font-medium text-gray-600 text-center">
                   {mediaFile ? mediaFile.name : (uiLang === 'zh' ? '图片/视频/GIF\n(+5 积分)' : 'Image/Video/GIF\n(+5 pts)')}
                 </span>
               </label>
 
-              <label className="bg-white hover:bg-blue-50 border border-dashed border-gray-300 hover:border-blue-400 rounded-2xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all">
+              <label className="bg-white hover:bg-[rgba(91,127,232,0.08)] border border-dashed border-gray-300 hover:border-[#5B7FE8] rounded-2xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all">
                 <input type="file" accept="audio/*" onChange={(e) => setAudioFile(e.target.files?.[0] || null)} className="hidden" />
-                <Mic className={cn("w-8 h-8", audioFile ? "text-blue-600" : "text-gray-400")} />
+                <Mic className={cn("w-8 h-8", audioFile ? "text-[#5B7FE8]" : "text-gray-400")} />
                 <span className="text-sm font-medium text-gray-600 text-center">
                   {audioFile ? audioFile.name : (uiLang === 'zh' ? '原声录音\n(+10 积分)' : 'Voice Audio\n(+10 pts)')}
                 </span>
@@ -387,7 +387,7 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
 
             <button
               onClick={handleReview}
-              className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200"
+              className="w-full bg-[#0A0E1A] text-white py-4 rounded-xl font-bold text-lg hover:bg-[#1a2440] transition-colors shadow-lg shadow-[rgba(91,127,232,0.2)]"
             >
               {uiLang === 'zh' ? '提交审核' : 'Submit for Review'}
             </button>
@@ -401,7 +401,7 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
             className="space-y-8 py-8"
           >
             <div className="text-center">
-              <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
+              <Loader2 className="w-12 h-12 text-[#5B7FE8] animate-spin mx-auto mb-4" />
               <h2 className="text-2xl font-bold text-gray-900 mb-2">
                 {uiLang === 'zh' ? 'AI 智能审核中' : 'AI Review in Progress'}
               </h2>
@@ -411,7 +411,7 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
               <motion.div
                 animate={{ top: ['0%', '100%', '0%'] }}
                 transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                className="absolute left-0 right-0 h-0.5 bg-blue-400/50 shadow-[0_0_10px_rgba(59,130,246,0.5)] z-10"
+                className="absolute left-0 right-0 h-0.5 bg-[rgba(91,127,232,0.6)]/50 shadow-[0_0_10px_rgba(59,130,246,0.5)] z-10"
               />
 
               {[
@@ -422,7 +422,7 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
               ].map((text, idx) => (
                 <div key={idx} className="flex items-center gap-4 bg-gray-50 border border-gray-100 p-4 rounded-xl">
                   {reviewChecks[idx] ? (
-                    <CheckCircle2 className="w-6 h-6 text-blue-600" />
+                    <CheckCircle2 className="w-6 h-6 text-[#5B7FE8]" />
                   ) : (
                     <div className="w-6 h-6 rounded-full border-2 border-gray-300" />
                   )}
@@ -452,7 +452,7 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
             className="text-center space-y-8 py-8 relative"
           >
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div className="w-64 h-64 bg-blue-200/30 rounded-full blur-3xl animate-pulse" />
+              <div className="w-64 h-64 bg-[rgba(91,127,232,0.2)]/30 rounded-full blur-3xl animate-pulse" />
             </div>
 
             <div className="relative z-10">
@@ -469,7 +469,7 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
                 {uiLang === 'zh' ? '「梗学徒」' : 'Slang Apprentice'}
               </p>
 
-              <div className="bg-blue-50 border border-blue-100 rounded-2xl p-6 mb-8">
+              <div className="bg-[rgba(91,127,232,0.08)] border border-[rgba(91,127,232,0.2)] rounded-2xl p-6 mb-8">
                 <p className="text-gray-500 text-sm mb-3">
                   {uiLang === 'zh' ? '下一目标进度：' : 'Next Goal Progress:'}
                 </p>
@@ -477,8 +477,8 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
                   <span>{uiLang === 'zh' ? '文化观察员' : 'Culture Observer'}</span>
                   <span>1/5</span>
                 </div>
-                <div className="h-2 bg-blue-200 rounded-full overflow-hidden">
-                  <div className="h-full bg-blue-600 w-1/5 rounded-full" />
+                <div className="h-2 bg-[rgba(91,127,232,0.2)] rounded-full overflow-hidden">
+                  <div className="h-full bg-[#0A0E1A] w-1/5 rounded-full" />
                 </div>
               </div>
 
@@ -487,7 +487,7 @@ export function SlangOnboarding({ uiLang, onComplete, onClose }: SlangOnboarding
                   onComplete();
                   onClose();
                 }}
-                className="w-full bg-blue-600 text-white py-4 rounded-xl font-black text-lg hover:bg-blue-700 transition-colors shadow-lg shadow-blue-200"
+                className="w-full bg-[#0A0E1A] text-white py-4 rounded-xl font-black text-lg hover:bg-[#1a2440] transition-colors shadow-lg shadow-[rgba(91,127,232,0.2)]"
               >
                 {uiLang === 'zh' ? '进入梗百科' : 'Enter Slang Dictionary'}
               </button>

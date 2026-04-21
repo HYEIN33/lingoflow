@@ -57,7 +57,7 @@ export default function ChangelogToast({ currentVersion }: ChangelogToastProps) 
     // Case 4: major update since last visit → pop toast.
     const toastId = toast.custom(
       (t) => (
-        <div className="bg-gradient-to-br from-blue-600 to-indigo-700 text-white rounded-2xl shadow-2xl px-5 py-4 max-w-sm flex items-start gap-3">
+        <div className="bg-gradient-to-br from-[#5B7FE8] to-[#0A0E1A] text-white rounded-2xl shadow-2xl px-5 py-4 max-w-sm flex items-start gap-3">
           <div className="bg-white/20 p-2 rounded-xl backdrop-blur-md shrink-0">
             <Sparkles className="w-5 h-5" />
           </div>
@@ -70,8 +70,8 @@ export default function ChangelogToast({ currentVersion }: ChangelogToastProps) 
             <h3 className="font-bold text-base mb-2 leading-tight">{latest.title}</h3>
             <ul className="space-y-1 mb-3">
               {latest.changes.slice(0, 3).map((c, i) => (
-                <li key={i} className="text-xs text-blue-100 leading-relaxed flex gap-1.5">
-                  <span className="text-blue-300 shrink-0">·</span>
+                <li key={i} className="text-xs text-[rgba(91,127,232,0.2)] leading-relaxed flex gap-1.5">
+                  <span className="text-[rgba(91,127,232,0.45)] shrink-0">·</span>
                   <span>{c}</span>
                 </li>
               ))}
@@ -81,7 +81,7 @@ export default function ChangelogToast({ currentVersion }: ChangelogToastProps) 
                 writeLastSeen(currentVersion);
                 toast.dismiss(t);
               }}
-              className="text-xs font-bold bg-white text-blue-700 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+              className="text-xs font-bold bg-white text-[#5B7FE8] px-3 py-1.5 rounded-lg hover:bg-[rgba(91,127,232,0.08)] transition-colors"
             >
               知道了
             </button>

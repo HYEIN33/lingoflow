@@ -33,7 +33,7 @@ export default function GrammarPage(props: GrammarPageProps) {
           onChange={(e) => setGrammarInput(e.target.value)}
           placeholder={t.grammarPlaceholder}
           rows={4}
-          className="w-full bg-white border-2 border-transparent focus:border-blue-500 rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-28 sm:pr-32 text-lg shadow-xl shadow-gray-200/50 outline-none transition-all placeholder:text-gray-300 resize-none"
+          className="w-full bg-white border-2 border-transparent focus:border-[#5B7FE8] rounded-3xl py-4 sm:py-6 pl-6 sm:pl-8 pr-28 sm:pr-32 text-lg shadow-xl shadow-gray-200/50 outline-none transition-all placeholder:text-gray-300 resize-none"
         />
         <div className="absolute right-2 sm:right-4 bottom-4 flex items-center gap-1 sm:gap-2 z-20">
           <button
@@ -49,7 +49,7 @@ export default function GrammarPage(props: GrammarPageProps) {
           <button
             type="submit"
             disabled={isCheckingGrammar || !grammarInput.trim()}
-            className="bg-blue-600 text-white p-3 sm:p-4 rounded-2xl disabled:opacity-50 transition-all hover:scale-105 active:scale-95 shadow-lg shadow-blue-200"
+            className="bg-[#0A0E1A] text-white p-3 sm:p-4 rounded-2xl disabled:opacity-50 transition-all hover:scale-105 active:scale-95 shadow-lg shadow-[rgba(91,127,232,0.2)]"
           >
             {isCheckingGrammar ? <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" /> : <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />}
           </button>
@@ -87,8 +87,8 @@ export default function GrammarPage(props: GrammarPageProps) {
                 <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
                   {t.correctedVersion}
                 </h4>
-                <div className="bg-blue-50 p-6 rounded-2xl border border-blue-100">
-                  <p className="text-blue-900 text-lg font-bold leading-relaxed">
+                <div className="bg-[rgba(91,127,232,0.08)] p-6 rounded-2xl border border-[rgba(91,127,232,0.2)]">
+                  <p className="text-[#0A0E1A] text-lg font-bold leading-relaxed">
                     {grammarResult.corrected}
                   </p>
                 </div>
@@ -138,14 +138,14 @@ export default function GrammarPage(props: GrammarPageProps) {
                 <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">
                   {uiLang === 'zh' ? '风格检测 (Style Feedback)' : 'Style Feedback'}
                 </h4>
-                <div className="bg-purple-50 p-6 rounded-2xl border border-purple-100 space-y-4">
-                  <p className="text-purple-900 leading-relaxed">
+                <div className="bg-[rgba(168,168,217,0.1)] p-6 rounded-2xl border border-[rgba(168,168,217,0.2)] space-y-4">
+                  <p className="text-[#0A0E1A] leading-relaxed">
                     {grammarResult.styleFeedback}
                   </p>
                   {grammarResult.academicSuggestion && (
-                    <div className="border-t border-purple-200 pt-4">
-                      <p className="text-xs text-purple-500 font-bold mb-2 uppercase tracking-wider">{uiLang === 'zh' ? '学术/正式建议:' : 'Academic/Formal Suggestion:'}</p>
-                      <p className="text-purple-800 text-lg font-medium leading-relaxed italic">
+                    <div className="border-t border-[rgba(168,168,217,0.3)] pt-4">
+                      <p className="text-xs text-[#7D6EA3] font-bold mb-2 uppercase tracking-wider">{uiLang === 'zh' ? '学术/正式建议:' : 'Academic/Formal Suggestion:'}</p>
+                      <p className="text-[#0A0E1A] text-lg font-medium leading-relaxed italic">
                         {grammarResult.academicSuggestion}
                       </p>
                     </div>

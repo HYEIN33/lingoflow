@@ -107,7 +107,7 @@ export default function WordbookPage(props: WordbookPageProps) {
               setSelectedWordbookItem(null);
               setSelectedUsageIndex(0);
             }}
-            className="flex items-center gap-2 text-blue-600 font-bold hover:text-blue-700 transition-colors mb-4"
+            className="flex items-center gap-2 text-[#5B7FE8] font-bold hover:text-[#5B7FE8] transition-colors mb-4"
           >
             <ChevronRight className="w-5 h-5 rotate-180" />
             {uiLang === 'zh' ? '返回列表' : 'Back to List'}
@@ -121,14 +121,14 @@ export default function WordbookPage(props: WordbookPageProps) {
                     <h2 className="text-3xl sm:text-4xl font-black text-gray-900 tracking-tight break-words">
                       {selectedWordbookItem.original}
                     </h2>
-                    <p className="text-lg sm:text-xl font-bold text-blue-600 mt-1">
+                    <p className="text-lg sm:text-xl font-bold text-[#5B7FE8] mt-1">
                       {selectedWordbookItem.usages?.[selectedUsageIndex]?.meaningZh || ''}
                     </p>
                   </div>
                   <button
                     onClick={() => onSpeak(selectedWordbookItem.original)}
                     disabled={loadingAudioText === selectedWordbookItem.original}
-                    className="p-2 text-blue-500 hover:bg-blue-50 rounded-full transition-colors self-start mt-2 disabled:opacity-50"
+                    className="p-2 text-[#5B7FE8] hover:bg-[rgba(91,127,232,0.08)] rounded-full transition-colors self-start mt-2 disabled:opacity-50"
                   >
                     {loadingAudioText === selectedWordbookItem.original ? (
                       <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" />
@@ -139,7 +139,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                 </div>
                 <div className="flex items-center gap-3">
                   {selectedWordbookItem.pronunciation && (
-                    <span className="text-blue-600 font-mono font-medium bg-blue-50 px-3 py-1 rounded-lg text-xs sm:text-sm">
+                    <span className="text-[#5B7FE8] font-mono font-medium bg-[rgba(91,127,232,0.08)] px-3 py-1 rounded-lg text-xs sm:text-sm">
                       {selectedWordbookItem.pronunciation}
                     </span>
                   )}
@@ -170,8 +170,8 @@ export default function WordbookPage(props: WordbookPageProps) {
                     className={cn(
                       "px-4 py-2 rounded-xl text-sm font-bold transition-all border-2",
                       selectedUsageIndex === idx
-                        ? "bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-100 scale-105"
-                        : "bg-white border-gray-100 text-gray-400 hover:border-blue-200 hover:text-blue-400"
+                        ? "bg-[#0A0E1A] border-[#0A0E1A] text-white shadow-lg shadow-[rgba(91,127,232,0.15)] scale-105"
+                        : "bg-white border-gray-100 text-gray-400 hover:border-[rgba(91,127,232,0.4)] hover:text-[rgba(91,127,232,0.6)]"
                     )}
                   >
                     {uiLang === 'zh' ? usage.labelZh : usage.label}
@@ -195,7 +195,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                     <p className="text-gray-800 text-lg font-bold leading-relaxed">
                       {selectedWordbookItem.usages?.[selectedUsageIndex]?.meaning || ''}
                     </p>
-                    <p className="text-blue-600 text-lg font-medium leading-relaxed border-t border-gray-100 pt-3">
+                    <p className="text-[#5B7FE8] text-lg font-medium leading-relaxed border-t border-gray-100 pt-3">
                       {selectedWordbookItem.usages?.[selectedUsageIndex]?.meaningZh || ''}
                     </p>
                   </div>
@@ -204,7 +204,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                 {/* Details Toggle */}
                 <button
                   onClick={() => setShowDetails(!showDetails)}
-                  className="flex items-center gap-2 text-blue-600 font-bold text-sm hover:text-blue-700 transition-colors"
+                  className="flex items-center gap-2 text-[#5B7FE8] font-bold text-sm hover:text-[#5B7FE8] transition-colors"
                 >
                   {showDetails ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                   {showDetails ? t.hideDetails : t.showDetails}
@@ -241,7 +241,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                             </h3>
                             <div className="flex flex-wrap gap-2">
                               {selectedWordbookItem.usages?.[selectedUsageIndex]?.alternatives.map((alt, i) => (
-                                <span key={i} className="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg text-sm font-medium">
+                                <span key={i} className="bg-[rgba(91,127,232,0.1)] text-[#5B7FE8] px-3 py-1 rounded-lg text-sm font-medium">
                                   {alt}
                                 </span>
                               ))}
@@ -259,16 +259,16 @@ export default function WordbookPage(props: WordbookPageProps) {
                   </h3>
                   <div className="space-y-4">
                     {(selectedWordbookItem.usages[selectedUsageIndex]?.examples || []).map((ex, i) => (
-                      <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 space-y-3 group/ex hover:border-blue-200 transition-colors">
+                      <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 space-y-3 group/ex hover:border-[rgba(91,127,232,0.4)] transition-colors">
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex gap-4">
-                            <span className="text-blue-200 font-black text-xl italic">{String(i + 1).padStart(2, '0')}</span>
+                            <span className="text-[rgba(91,127,232,0.3)] font-black text-xl italic">{String(i + 1).padStart(2, '0')}</span>
                             <p className="text-gray-800 font-medium leading-relaxed text-lg">{ex.sentence}</p>
                           </div>
                           <button
                             onClick={() => onSpeak(ex.sentence)}
                             disabled={loadingAudioText === ex.sentence}
-                            className="p-2 text-gray-300 hover:text-blue-500 transition-colors shrink-0 disabled:opacity-50"
+                            className="p-2 text-gray-300 hover:text-[#5B7FE8] transition-colors shrink-0 disabled:opacity-50"
                           >
                             {loadingAudioText === ex.sentence ? (
                               <Loader2 className="w-5 h-5 animate-spin" />
@@ -277,7 +277,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                             )}
                           </button>
                         </div>
-                        <p className="text-gray-500 pl-12 border-l-2 border-blue-50 italic">{ex.translation}</p>
+                        <p className="text-gray-500 pl-12 border-l-2 border-[rgba(91,127,232,0.15)] italic">{ex.translation}</p>
                       </div>
                     ))}
                   </div>
@@ -309,14 +309,14 @@ export default function WordbookPage(props: WordbookPageProps) {
                   placeholder={t.search}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:border-blue-500 outline-none transition-all"
+                  className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:border-[#5B7FE8] outline-none transition-all"
                 />
               </div>
               <button
                 onClick={() => { setBatchMode(!batchMode); setSelectedWordIds(new Set()); }}
                 className={cn(
                   "px-3 py-2 rounded-xl text-xs font-bold transition-all border",
-                  batchMode ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-200 text-gray-500 hover:border-blue-200"
+                  batchMode ? "bg-[#0A0E1A] border-[#0A0E1A] text-white" : "bg-white border-gray-200 text-gray-500 hover:border-[rgba(91,127,232,0.4)]"
                 )}
               >
                 {uiLang === 'zh' ? '批量' : 'Batch'}
@@ -330,7 +330,7 @@ export default function WordbookPage(props: WordbookPageProps) {
               onClick={() => onSetActiveFolder(null)}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border whitespace-nowrap",
-                !activeFolderId ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-100 text-gray-500 hover:border-blue-200"
+                !activeFolderId ? "bg-[#0A0E1A] border-[#0A0E1A] text-white" : "bg-white border-gray-100 text-gray-500 hover:border-[rgba(91,127,232,0.4)]"
               )}
             >
               <BookOpen className="w-3.5 h-3.5" />
@@ -342,7 +342,7 @@ export default function WordbookPage(props: WordbookPageProps) {
               return (
                 <div key={folder.id} className="relative">
                   {editingFolderId === folder.id ? (
-                    <div className="flex items-center gap-1 bg-white border border-blue-300 rounded-lg px-2 py-1">
+                    <div className="flex items-center gap-1 bg-white border border-[rgba(91,127,232,0.4)] rounded-lg px-2 py-1">
                       <input
                         type="text"
                         value={editFolderName}
@@ -362,7 +362,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                       onClick={() => onSetActiveFolder(activeFolderId === folder.id ? null : folder.id)}
                       className={cn(
                         "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border whitespace-nowrap group",
-                        activeFolderId === folder.id ? "bg-blue-600 border-blue-600 text-white" : "bg-white border-gray-100 text-gray-500 hover:border-blue-200"
+                        activeFolderId === folder.id ? "bg-[#0A0E1A] border-[#0A0E1A] text-white" : "bg-white border-gray-100 text-gray-500 hover:border-[rgba(91,127,232,0.4)]"
                       )}
                     >
                       {activeFolderId === folder.id ? <FolderOpen className="w-3.5 h-3.5" /> : <Folder className="w-3.5 h-3.5" />}
@@ -397,7 +397,7 @@ export default function WordbookPage(props: WordbookPageProps) {
               );
             })}
             {showFolderCreate ? (
-              <div className="flex items-center gap-1 bg-white border border-blue-300 rounded-lg px-2 py-1">
+              <div className="flex items-center gap-1 bg-white border border-[rgba(91,127,232,0.4)] rounded-lg px-2 py-1">
                 <input
                   type="text"
                   value={newFolderName}
@@ -416,7 +416,7 @@ export default function WordbookPage(props: WordbookPageProps) {
             ) : (
               <button
                 onClick={() => setShowFolderCreate(true)}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold border border-dashed border-gray-300 text-gray-400 hover:border-blue-300 hover:text-blue-500 transition-all whitespace-nowrap"
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold border border-dashed border-gray-300 text-gray-400 hover:border-[rgba(91,127,232,0.4)] hover:text-[#5B7FE8] transition-all whitespace-nowrap"
               >
                 <FolderPlus className="w-3.5 h-3.5" />
                 {uiLang === 'zh' ? '新建' : 'New'}
@@ -438,8 +438,8 @@ export default function WordbookPage(props: WordbookPageProps) {
                 className={cn(
                   "px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
                   wordbookFilter === filter.id
-                    ? "bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-100"
-                    : "bg-white border-gray-100 text-gray-400 hover:border-blue-200 hover:text-blue-400"
+                    ? "bg-[#0A0E1A] border-[#0A0E1A] text-white shadow-md shadow-[rgba(91,127,232,0.15)]"
+                    : "bg-white border-gray-100 text-gray-400 hover:border-[rgba(91,127,232,0.4)] hover:text-[rgba(91,127,232,0.6)]"
                 )}
               >
                 {filter.label}
@@ -449,15 +449,15 @@ export default function WordbookPage(props: WordbookPageProps) {
 
           {/* Batch action bar */}
           {batchMode && selectedWordIds.size > 0 && (
-            <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl p-3">
-              <span className="text-xs font-bold text-blue-600">
+            <div className="flex items-center gap-2 bg-[rgba(91,127,232,0.08)] border border-[rgba(91,127,232,0.2)] rounded-xl p-3">
+              <span className="text-xs font-bold text-[#5B7FE8]">
                 {uiLang === 'zh' ? `已选 ${selectedWordIds.size} 个` : `${selectedWordIds.size} selected`}
               </span>
               <div className="flex-1" />
               <div className="relative">
                 <button
                   onClick={() => setShowBatchMoveMenu(!showBatchMoveMenu)}
-                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-blue-200 text-blue-600 hover:bg-blue-50"
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-[rgba(91,127,232,0.3)] text-[#5B7FE8] hover:bg-[rgba(91,127,232,0.08)]"
                 >
                   {uiLang === 'zh' ? '移动到...' : 'Move to...'}
                 </button>
@@ -489,7 +489,7 @@ export default function WordbookPage(props: WordbookPageProps) {
               <motion.div
                 layout
                 key={word.id}
-                className="bg-white rounded-2xl border border-gray-100 hover:border-blue-200 transition-all shadow-sm hover:shadow-md"
+                className="bg-white rounded-2xl border border-gray-100 hover:border-[rgba(91,127,232,0.4)] transition-all shadow-sm hover:shadow-md"
               >
                 <div
                   onClick={() => batchMode ? toggleWordSelection(word.id) : setSelectedWordbookItem(word)}
@@ -498,7 +498,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                   {batchMode && (
                     <span className="shrink-0">
                       {selectedWordIds.has(word.id) ? (
-                        <CheckSquare className="w-5 h-5 text-blue-600" />
+                        <CheckSquare className="w-5 h-5 text-[#5B7FE8]" />
                       ) : (
                         <Square className="w-5 h-5 text-gray-300" />
                       )}
@@ -510,7 +510,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                       {word.styleTag && word.styleTag !== 'standard' && (
                         <span className={cn(
                           "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase shrink-0",
-                          word.styleTag === 'authentic' ? "bg-blue-100 text-blue-600" : "bg-purple-100 text-purple-600"
+                          word.styleTag === 'authentic' ? "bg-[rgba(91,127,232,0.1)] text-[#5B7FE8]" : "bg-[rgba(168,168,217,0.18)] text-[#7D6EA3]"
                         )}>
                           {word.styleTag === 'authentic' ? t.styleAuthentic : t.styleAcademic}
                         </span>
@@ -522,7 +522,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                     <button
                       onClick={(e) => { e.stopPropagation(); onSpeak(word.original); }}
                       disabled={loadingAudioText === word.original}
-                      className="p-1.5 text-gray-300 hover:text-blue-500 transition-colors disabled:opacity-50"
+                      className="p-1.5 text-gray-300 hover:text-[#5B7FE8] transition-colors disabled:opacity-50"
                     >
                       {loadingAudioText === word.original ? (
                         <Loader2 className="w-4 h-4 animate-spin" />

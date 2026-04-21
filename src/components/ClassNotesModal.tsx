@@ -260,7 +260,7 @@ export default function ClassNotesModal({ uiLang, userId }: ClassNotesModalProps
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-colors"
+        className="p-2 text-gray-400 hover:text-[#5B7FE8] hover:bg-[rgba(91,127,232,0.08)] rounded-xl transition-colors"
         title={zh ? '我的笔记' : 'My notes'}
         aria-label={zh ? '我的笔记' : 'My notes'}
       >
@@ -292,7 +292,7 @@ export default function ClassNotesModal({ uiLang, userId }: ClassNotesModalProps
                   <>
                     <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                       <div className="flex items-center gap-2">
-                        <BookText className="w-5 h-5 text-blue-600" />
+                        <BookText className="w-5 h-5 text-[#5B7FE8]" />
                         <h2 className="font-black text-lg text-gray-900">
                           {zh ? '我的笔记' : 'My notes'}
                         </h2>
@@ -329,7 +329,7 @@ export default function ClassNotesModal({ uiLang, userId }: ClassNotesModalProps
                       ))}
                       <button
                         onClick={createFolder}
-                        className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-full transition-colors"
+                        className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold text-[#5B7FE8] bg-[rgba(91,127,232,0.08)] hover:bg-[rgba(91,127,232,0.15)] rounded-full transition-colors"
                       >
                         <FolderPlus className="w-3.5 h-3.5" />
                         {zh ? '新建' : 'New'}
@@ -365,12 +365,12 @@ export default function ClassNotesModal({ uiLang, userId }: ClassNotesModalProps
                                         if (e.key === 'Enter') saveTitle(s);
                                         if (e.key === 'Escape') setEditingTitleId(null);
                                       }}
-                                      className="w-full text-sm font-semibold text-gray-900 bg-transparent border-b border-blue-400 focus:outline-none"
+                                      className="w-full text-sm font-semibold text-gray-900 bg-transparent border-b border-[#5B7FE8] focus:outline-none"
                                     />
                                   ) : (
                                     <button
                                       onClick={() => setViewing(s)}
-                                      className="text-left font-semibold text-sm text-gray-900 line-clamp-1 hover:text-blue-600 transition-colors"
+                                      className="text-left font-semibold text-sm text-gray-900 line-clamp-1 hover:text-[#5B7FE8] transition-colors"
                                     >
                                       {title}
                                     </button>
@@ -391,7 +391,7 @@ export default function ClassNotesModal({ uiLang, userId }: ClassNotesModalProps
                                       setTitleDraft(title);
                                       setEditingTitleId(s.id);
                                     }}
-                                    className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                    className="p-1.5 text-gray-400 hover:text-[#5B7FE8] hover:bg-[rgba(91,127,232,0.08)] rounded-lg transition-colors"
                                     title={zh ? '重命名' : 'Rename'}
                                   >
                                     <Pencil className="w-3.5 h-3.5" />
@@ -422,7 +422,7 @@ export default function ClassNotesModal({ uiLang, userId }: ClassNotesModalProps
                                       key={f.id}
                                       onClick={() => moveToFolder(s, f.id)}
                                       disabled={s.folderId === f.id}
-                                      className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 disabled:bg-blue-100 disabled:text-blue-700 disabled:cursor-not-allowed transition-colors"
+                                      className="text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 disabled:bg-[rgba(91,127,232,0.1)] disabled:text-[#5B7FE8] disabled:cursor-not-allowed transition-colors"
                                     >
                                       {f.name}
                                     </button>
@@ -441,7 +441,7 @@ export default function ClassNotesModal({ uiLang, userId }: ClassNotesModalProps
                     <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                       <button
                         onClick={() => setViewing(null)}
-                        className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-blue-600 transition-colors"
+                        className="flex items-center gap-1.5 text-sm font-semibold text-gray-600 hover:text-[#5B7FE8] transition-colors"
                       >
                         <ChevronLeft className="w-4 h-4" />
                         {zh ? '返回列表' : 'Back to list'}
@@ -492,7 +492,7 @@ function FolderChip({
     <div
       className={
         'shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-full text-xs font-bold transition-colors cursor-pointer ' +
-        (active ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')
+        (active ? 'bg-[#0A0E1A] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')
       }
       onClick={onClick}
     >
@@ -506,7 +506,7 @@ function FolderChip({
           }}
           className={
             'ml-1 p-0.5 rounded-full transition-colors ' +
-            (active ? 'hover:bg-blue-500' : 'hover:bg-gray-300')
+            (active ? 'hover:bg-[#1a2440]' : 'hover:bg-gray-300')
           }
           aria-label="Delete folder"
         >

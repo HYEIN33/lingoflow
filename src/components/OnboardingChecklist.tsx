@@ -70,7 +70,7 @@ export function OnboardingChecklist({ uiLang, onDismiss }: OnboardingChecklistPr
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -10 }}
-        className="mb-4 bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200/60 rounded-2xl p-5 shadow-sm relative"
+        className="mb-4 bg-gradient-to-br from-[#E8EEFC] to-[#DDE5F7] border border-[rgba(91,127,232,0.3)] rounded-2xl p-5 shadow-sm relative"
       >
         <button
           onClick={() => {
@@ -83,16 +83,16 @@ export function OnboardingChecklist({ uiLang, onDismiss }: OnboardingChecklistPr
         </button>
 
         <div className="mb-3">
-          <h3 className="font-bold text-indigo-900 text-sm">
+          <h3 className="font-bold text-[#0A0E1A] text-sm">
             {uiLang === 'zh' ? '新手任务' : 'Getting Started'}
           </h3>
-          <p className="text-xs text-indigo-600 mt-0.5">
+          <p className="text-xs text-[#5B7FE8] mt-0.5">
             {completedCount}/{totalCount} {uiLang === 'zh' ? '已完成' : 'completed'}
           </p>
           {/* Progress bar */}
-          <div className="mt-2 h-1.5 bg-indigo-100 rounded-full overflow-hidden">
+          <div className="mt-2 h-1.5 bg-[rgba(91,127,232,0.1)] rounded-full overflow-hidden">
             <motion.div
-              className="h-full bg-indigo-500 rounded-full"
+              className="h-full bg-[#5B7FE8] rounded-full"
               initial={{ width: 0 }}
               animate={{ width: `${(completedCount / totalCount) * 100}%` }}
               transition={{ duration: 0.5 }}
@@ -106,11 +106,11 @@ export function OnboardingChecklist({ uiLang, onDismiss }: OnboardingChecklistPr
             return (
               <li key={item.key} className="flex items-center gap-2.5">
                 {done ? (
-                  <CheckCircle className="w-4 h-4 text-indigo-500 shrink-0" />
+                  <CheckCircle className="w-4 h-4 text-[#5B7FE8] shrink-0" />
                 ) : (
-                  <Circle className="w-4 h-4 text-indigo-300 shrink-0" />
+                  <Circle className="w-4 h-4 text-[rgba(91,127,232,0.4)] shrink-0" />
                 )}
-                <span className={`text-sm ${done ? 'text-indigo-400 line-through' : 'text-indigo-800'}`}>
+                <span className={`text-sm ${done ? 'text-[rgba(91,127,232,0.5)] line-through' : 'text-[#0A0E1A]'}`}>
                   {uiLang === 'zh' ? item.labelZh : item.labelEn}
                 </span>
               </li>

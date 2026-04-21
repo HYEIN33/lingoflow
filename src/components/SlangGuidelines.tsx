@@ -113,20 +113,20 @@ export function SlangGuidelinesPanel({ uiLang, compact = false }: { uiLang: 'en'
 
   if (compact) {
     return (
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
-        <h4 className="text-sm font-bold text-blue-700 flex items-center gap-2">
+      <div className="bg-[rgba(91,127,232,0.08)] border border-[rgba(91,127,232,0.3)] rounded-xl p-4 space-y-2">
+        <h4 className="text-sm font-bold text-[#5B7FE8] flex items-center gap-2">
           <BookOpen className="w-4 h-4" />
           {g.title}
         </h4>
-        <ul className="text-xs text-blue-600 space-y-1">
+        <ul className="text-xs text-[#5B7FE8] space-y-1">
           {g.rules[0].items.slice(0, 2).map((item, i) => (
             <li key={i} className="flex items-start gap-1.5">
-              <span className="text-blue-400 mt-0.5">•</span>
+              <span className="text-[rgba(91,127,232,0.6)] mt-0.5">•</span>
               {item}
             </li>
           ))}
         </ul>
-        <p className="text-[10px] text-blue-500">{g.qualityTips}</p>
+        <p className="text-[10px] text-[#5B7FE8]">{g.qualityTips}</p>
       </div>
     );
   }
@@ -135,7 +135,7 @@ export function SlangGuidelinesPanel({ uiLang, compact = false }: { uiLang: 'en'
     <div className="bg-white/60 backdrop-blur-md border border-white/60 rounded-3xl p-6 shadow-sm space-y-6">
       <div>
         <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-1">
-          <BookOpen className="w-5 h-5 text-blue-600" />
+          <BookOpen className="w-5 h-5 text-[#5B7FE8]" />
           {g.title}
         </h3>
         <p className="text-sm text-gray-500">{g.subtitle}</p>
