@@ -110,6 +110,23 @@ export interface LiveSessionHandle {
   isPaused(): boolean;
   getRecentAudio(seconds: number): string | null;
   getTranscript(): string;
+  /**
+   * Force a Deepgram WebSocket reconnect. Triggered by the "卡住了？重连"
+   * UI button when the automated watchdog hasn't fired (or fires too
+   * slowly) and the user knows the stream is stuck from their side.
+   */
+  forceReconnect(): void;
+  /**
+   * Snapshot of the liveness metrics the UI uses to decide when to
+   * surface the manual-reconnect button. All fields are safe to poll
+   * on an interval — they're plain refs, no allocation per call.
+   */
+  getStuckInfo(): {
+    lastRms: number;
+    msSinceLastNonEmptyFinal: number;  // Infinity before first final
+    msSinceLastRmsWindow: number;       // Infinity before any RMS window
+    emptyFinalStreak: number;
+  };
 }
 
 const RECENT_AUDIO_SECONDS = 30;
@@ -179,7 +196,11 @@ export async function startLiveSession(
   // eslint-disable-next-line no-console
   console.info('[live] got MediaStream, tracks=', mediaStream.getTracks().length);
 
-  const endpointing = opts.mode === 'tutorial' ? 500 : 1200;
+  // Bumped tutorial endpointing from 500 → 800 on 2026-04-21. Combined with
+  // smart_format + punctuate, endpointing=500 was making Nova-3 re-decide
+  // mid-utterance and emit empty is_final=true frames (the "吞英文" bug).
+  // 800ms is Deepgram's own recommended floor for live subtitle scenarios.
+  const endpointing = opts.mode === 'tutorial' ? 800 : 1200;
 
   // Create a Deepgram client with our temporary access token. The SDK
   // handles browser-safe WebSocket auth (no Authorization header trick
@@ -430,23 +451,92 @@ ${englishParagraph}`;
   // starts won't fire SpeechStarted, and the user still deserves feedback.
   setTimeout(() => flipToLiveOnce(), 2000);
 
-  // Interim rescue buffer. Deepgram Nova-3 occasionally delivers empty
-  // is_final=true frames while the interim stream (is_final=false) had
-  // actual text. Observed pattern in production logs:
-  //    #30 is_final=false text="The positiveness of that emerge"
-  //    #40 is_final=true  text=""        ← same utterance's final, empty
+  // ASR-level state for Bug A mitigation. Nova-3 sometimes emits
+  // is_final=true with text="" while the interim stream had real content
+  // (WebSocket "dirty" state). We handle this with a layered defence:
   //
-  // Without rescue, that whole sentence never makes it into pendingBatch
-  // (the if(!text) return guard drops the empty final), so the user sees
-  // the English flash on screen as an interim then vanish, and there's
-  // no Chinese translation because paragraph mode only feeds on finals.
+  //   1. Interim rescue (SAFER VERSION): when final is empty, DON'T
+  //      promote the interim immediately — that over-commits mid-utterance
+  //      text as final and causes duplicate bubbles when Deepgram later
+  //      sends a proper non-empty final for the same span. Instead, mark
+  //      `pendingSyntheticFinal = true` and let the UtteranceEnd event
+  //      (server-authoritative "speaker paused") commit the rescued text.
   //
-  // Rescue strategy: keep the last non-empty interim text. When a final
-  // arrives empty, promote that buffered interim to the final. Reset on
-  // every real (non-empty) final so buffers from one utterance don't
-  // leak into the next.
+  //   2. UtteranceEnd as flush authority: server tells us the speaker
+  //      paused. If we have an unresolved rescue pending, commit it now.
+  //      Then flush pendingBatch — the paragraph is done from the speech
+  //      engine's point of view.
+  //
+  //   3. Auto-recovery watchdog (see healthTimer below): if the speaker
+  //      IS talking (RMS > 300 in recent window) but no non-empty final
+  //      or interim has landed in ~7 s, force a WebSocket reconnect.
+  //      This catches the "stream stuck emitting empty finals forever"
+  //      failure mode, which no amount of rescue can fix on its own.
   let lastInterimText = '';
   let interimEmptyFinalRescueCount = 0;
+  let pendingSyntheticFinal = false;        // "empty final seen, waiting for UtteranceEnd to confirm"
+  let lastNonEmptyTranscriptAt = Date.now(); // wall-clock of last non-empty transcript (interim OR final)
+  let lastNonEmptyFinalAt = 0;               // wall-clock of last non-empty final (for watchdog)
+  let emptyFinalStreak = 0;                  // consecutive empty finals since last non-empty one
+  let finalEventCount = 0;                   // total final events this session (for ratio)
+  let emptyFinalCount = 0;                   // total empty finals this session
+
+  // commitFinalText: the single "this is a real final, treat it as done"
+  // code path. Extracted so both the Transcript handler (non-empty final)
+  // and the UtteranceEnd handler (synthetic final from interim) can reach
+  // it without duplicating the paragraph-trigger logic below.
+  const commitFinalText = (text: string, source: 'final' | 'rescued-interim') => {
+    if (!text) return;
+    if (source === 'rescued-interim') {
+      interimEmptyFinalRescueCount += 1;
+      // eslint-disable-next-line no-console
+      console.info(`[live] rescued interim→final (#${interimEmptyFinalRescueCount}): ${JSON.stringify(text.slice(0, 60))}`);
+    }
+    lastInterimText = '';
+    pendingSyntheticFinal = false;
+    lastNonEmptyFinalAt = Date.now();
+    lastNonEmptyTranscriptAt = Date.now();
+    emptyFinalStreak = 0;
+
+    if (cb.onTranscriptionDelta) {
+      cb.onTranscriptionDelta(text, true);
+    }
+    transcript += (transcript ? '\n' : '') + text;
+
+    // Realtime mode: translate this sentence by itself, skip paragraph triggers.
+    if (opts.translationMode === 'realtime') {
+      const key = `rt-${++pendingKeyCounter}`;
+      cb.onTranslationPending?.(true, key);
+      flushing = flushing
+        .then(() => translateBatch([text]))
+        .finally(() => { cb.onTranslationPending?.(false, key); });
+      return;
+    }
+
+    pendingBatch.push(text);
+
+    const accumulatedChars = pendingBatch.reduce((n, s) => n + s.length, 0);
+    if (accumulatedChars >= PARAGRAPH_MIN_CHARS) {
+      void flushBatch();
+    } else {
+      if (batchTimer) clearTimeout(batchTimer);
+      batchTimer = setTimeout(() => {
+        batchTimer = null;
+        const chars = pendingBatch.reduce((n, s) => n + s.length, 0);
+        if (pendingBatch.length > 0 && chars >= PARAGRAPH_HARD_MIN_CHARS) {
+          void flushBatch();
+        }
+      }, PARAGRAPH_PAUSE_MS);
+      if (batchStartTime === 0) {
+        batchStartTime = Date.now();
+        setTimeout(() => {
+          if (pendingBatch.length > 0 && Date.now() - batchStartTime >= PARAGRAPH_MAX_WAIT_MS - 100) {
+            void flushBatch();
+          }
+        }, PARAGRAPH_MAX_WAIT_MS);
+      }
+    }
+  };
 
   const attachHandlers = (conn: ListenLiveClient) => {
     conn.on(LiveTranscriptionEvents.Transcript, (data: any) => {
@@ -455,105 +545,79 @@ ${englishParagraph}`;
       const alt = data?.channel?.alternatives?.[0];
       const rawText = (alt?.transcript || '').trim();
       const isFinalRaw = !!data.is_final;
+      const speechFinal = !!data.speech_final;
+      const fromFinalize = !!data.from_finalize;
+
+      // Richer log so we can triage "endpoint artifact" vs "stream corrupted"
+      // in production. speech_final=true means Deepgram considers the
+      // utterance over; from_finalize=true flags a client-triggered close.
       if (transcriptEventCount <= 3 || transcriptEventCount % 10 === 0) {
         // eslint-disable-next-line no-console
-        console.info(`[live] Transcript #${transcriptEventCount} is_final=${isFinalRaw} text=${JSON.stringify(rawText.slice(0, 60))}`);
+        console.info(
+          `[live] Transcript #${transcriptEventCount} is_final=${isFinalRaw} speech_final=${speechFinal} from_finalize=${fromFinalize} text=${JSON.stringify(rawText.slice(0, 60))}`
+        );
       }
       if (!alt) return;
 
-      // Non-final events with text: stash as interim buffer and flow on.
+      // Non-final with text: interim buffer for UtteranceEnd to pick up if
+      // the final comes back empty. Update UI with live scrolling text.
       if (!isFinalRaw && rawText) {
         lastInterimText = rawText;
+        lastNonEmptyTranscriptAt = Date.now();
         if (cb.onTranscriptionDelta) cb.onTranscriptionDelta(rawText, false);
         return;
       }
-      // Non-final empty: ignore (Deepgram heartbeat/warmup frames).
+      // Non-final empty: Deepgram heartbeat/warmup; ignore.
       if (!isFinalRaw && !rawText) return;
 
-      // From here on: isFinalRaw === true
-      // Decide the effective text. Prefer Deepgram's final. If empty,
-      // rescue from the last non-empty interim we saw for this utterance.
-      let text = rawText;
-      if (!text && lastInterimText) {
-        text = lastInterimText;
-        interimEmptyFinalRescueCount += 1;
-        if (interimEmptyFinalRescueCount <= 3 || interimEmptyFinalRescueCount % 10 === 0) {
-          // eslint-disable-next-line no-console
-          console.info(`[live] rescued empty-final from interim (#${interimEmptyFinalRescueCount}): ${JSON.stringify(text.slice(0, 60))}`);
-        }
+      // ─── From here: isFinalRaw === true ───
+      finalEventCount += 1;
+
+      if (rawText) {
+        // Normal happy path: real non-empty final.
+        emptyFinalStreak = 0;
+        commitFinalText(rawText, 'final');
+        return;
       }
-      // Reset buffer once we've either consumed a real final or promoted
-      // the interim — next utterance starts fresh.
-      lastInterimText = '';
 
-      if (!text) return;
-      const isFinal = true;
-      if (cb.onTranscriptionDelta) {
-        cb.onTranscriptionDelta(text, isFinal);
+      // Empty final. DO NOT promote interim yet — that caused duplicate
+      // bubbles in the previous fix when Deepgram later sent a proper
+      // non-empty final for the same utterance. Instead, mark for the
+      // UtteranceEnd handler to finalize later.
+      emptyFinalCount += 1;
+      emptyFinalStreak += 1;
+      if (emptyFinalStreak <= 3 || emptyFinalStreak % 10 === 0) {
+        // eslint-disable-next-line no-console
+        console.info(`[live] empty-final streak=${emptyFinalStreak} (lastInterimText=${JSON.stringify(lastInterimText.slice(0, 40))})`);
       }
-      if (isFinal) {
-        transcript += (transcript ? '\n' : '') + text;
+      if (lastInterimText) {
+        pendingSyntheticFinal = true;
+      }
+      // If no interim either: nothing to do. UtteranceEnd may still fire
+      // and cleanly close the utterance; if stream is truly stuck, the
+      // watchdog (healthTimer below) will force reconnect.
+    });
 
-        // Realtime mode: every finalized sentence is translated by
-        // itself with its own Gemini call. No accumulation. Produces
-        // faster per-sentence feedback at the cost of cross-sentence
-        // coherence. Bypass the paragraph triggers entirely.
-        if (opts.translationMode === 'realtime') {
-          const key = `rt-${++pendingKeyCounter}`;
-          cb.onTranslationPending?.(true, key);
-          flushing = flushing
-            .then(() => translateBatch([text]))
-            .finally(() => { cb.onTranslationPending?.(false, key); });
-          return;
-        }
-
-        pendingBatch.push(text);
-
-        // Paragraph-mode trigger logic:
-        //   - If the accumulated English is long enough (>= MIN_CHARS),
-        //     we've got a translatable paragraph. Flush now.
-        //   - Otherwise, start/refresh the pause timer: if PAUSE_MS of
-        //     silence goes by with no new is_final, that's a paragraph
-        //     break and we flush whatever we have.
-        //   - As a hard cap, a MAX_WAIT_MS timer is started on the
-        //     first is_final of the paragraph and is NEVER reset —
-        //     guarantees continuous speech still flushes eventually.
-        const accumulatedChars = pendingBatch.reduce((n, s) => n + s.length, 0);
-        if (accumulatedChars >= PARAGRAPH_MIN_CHARS) {
-          void flushBatch();
-        } else {
-          // Pause timer: resets on each new is_final. If the speaker
-          // pauses for PARAGRAPH_PAUSE_MS, AND we have at least
-          // HARD_MIN_CHARS accumulated, flush. If we're still under the
-          // hard min, keep waiting — a single short sentence followed
-          // by a long pause should NOT be flushed alone. The MAX_WAIT
-          // timer guarantees we eventually flush no matter what.
-          if (batchTimer) clearTimeout(batchTimer);
-          batchTimer = setTimeout(() => {
-            batchTimer = null;
-            const chars = pendingBatch.reduce((n, s) => n + s.length, 0);
-            if (pendingBatch.length > 0 && chars >= PARAGRAPH_HARD_MIN_CHARS) {
-              void flushBatch();
-            }
-          }, PARAGRAPH_PAUSE_MS);
-          // Max-wait timer: set once per paragraph, never reset. Prevents
-          // a non-stop speaker from starving the user of any translation.
-          if (batchStartTime === 0) {
-            batchStartTime = Date.now();
-            setTimeout(() => {
-              if (pendingBatch.length > 0 && Date.now() - batchStartTime >= PARAGRAPH_MAX_WAIT_MS - 100) {
-                void flushBatch();
-              }
-            }, PARAGRAPH_MAX_WAIT_MS);
-          }
-        }
+    // UtteranceEnd: server-authoritative "speaker has paused longer than
+    // utterance_end_ms". This is our primary synthetic-final commit point.
+    conn.on(LiveTranscriptionEvents.UtteranceEnd, () => {
+      // eslint-disable-next-line no-console
+      console.info(`[live] UtteranceEnd (pendingSynthetic=${pendingSyntheticFinal}, lastInterim=${JSON.stringify(lastInterimText.slice(0, 40))})`);
+      if (pendingSyntheticFinal && lastInterimText) {
+        commitFinalText(lastInterimText, 'rescued-interim');
+      } else {
+        // Real finals already committed; just clear any stale interim.
+        lastInterimText = '';
+        pendingSyntheticFinal = false;
+      }
+      // Server says utterance is over → flush paragraph buffer if it has
+      // meaningful content. More reliable than our client-side pause timer.
+      const chars = pendingBatch.reduce((n, s) => n + s.length, 0);
+      if (pendingBatch.length > 0 && chars >= PARAGRAPH_HARD_MIN_CHARS) {
+        void flushBatch();
       }
     });
-    // UtteranceEnd in paragraph mode only matters as a "the speaker
-    // just paused longer than utterance_end_ms" signal — but our
-    // PARAGRAPH_PAUSE_MS timer already captures that, so we don't
-    // need to double-trigger flushes here. Leaving the handler empty
-    // (rather than removing) in case we want to log it later.
+
     conn.on(LiveTranscriptionEvents.SpeechStarted, () => {
       flipToLiveOnce();
     });
@@ -655,41 +719,113 @@ ${englishParagraph}`;
     cb.onStatusChange('error', '连接已断开，请按「开始」重新连接');
   };
 
-  // Periodically probe the mediaStream health. If the OS/browser mutes
-  // the mic behind our back (airpods disconnect mid-session, another app
-  // takes exclusive mic access on Windows, tab share stopped), the
-  // WebSocket stays open but nothing flows — UI claims "正在监听" while
-  // the mic is dead. Surface this to the user.
-  const healthTimer = setInterval(() => {
-    if (userStopped) return;
-    const t = mediaStream.getAudioTracks()[0];
-    if (!t) return;
-    if (t.readyState === 'ended') {
-      clearInterval(healthTimer);
-      cb.onStatusChange('error', '录音已停止（设备断开或分享被取消），请重新按「开始」');
-    } else if (t.muted) {
-      // Muted ≠ ended — Chrome flips `muted` when AirPods disconnect or
-      // the user toggles OS mic privacy. Surface as warning not error.
-      // eslint-disable-next-line no-console
-      console.warn('[live] mic track is muted — audio may not reach Deepgram');
-    }
-  }, 5000);
-
   // Pause state — when true, worklet PCM is dropped on the floor instead
   // of being sent to Deepgram. The WebSocket stays open (keepAlive fires
   // every 8s) so resume is instantaneous.
   let paused = false;
 
-  // Volume diagnostics: samples the RMS level of the PCM stream every 3s
-  // and logs it. Lets us tell apart "mic is silent" (RMS ≈ 0) from "mic
-  // works but Deepgram isn't recognizing" (RMS > ~500 but text empty).
-  // The user-reported "吞英文" bug showed `text=""` for 200+ transcript
-  // events in a row — without this log we can't tell if audio even left
-  // the worklet.
+  // Volume diagnostics: samples the RMS level of the PCM stream every 3s.
+  // Lets us tell apart "mic is silent" (RMS ≈ 0) from "mic works but
+  // Deepgram isn't recognizing" (RMS > ~500 but text empty).
+  //   volLog*      — accumulators for the current in-progress 3 s window
+  //   lastRms      — last COMPLETED 3 s window's RMS value
+  //   lastRmsAt    — wall-clock timestamp of that window completion
+  // healthTimer (auto-recovery watchdog) reads lastRms to tell whether
+  // the speaker is actually talking — i.e. decide if an "ASR stuck"
+  // force-reconnect is warranted.
   let volLogLastMs = 0;
   let volLogPeakAbs = 0;
   let volLogSampleCount = 0;
   let volLogSumSquares = 0;
+  let lastRms = 0;
+  let lastRmsAt = 0;
+  let lastPcmSentAt = Date.now();
+
+  // Auto-recovery watchdog. Runs every 3 s. Force-reconnects Deepgram
+  // when any of these "ASR stuck" conditions hold:
+  //
+  //   (a) AudioContext suspended (tab backgrounded, OS slept) → resume
+  //       it; if resume itself fails, force reconnect.
+  //   (b) media track muted for >6 s (AirPods disconnect, other app
+  //       took mic exclusively) → force reconnect once unmuted.
+  //   (c) no PCM left the worklet for >8 s → reconnect.
+  //   (d) speaker IS talking (RMS > 300 in last window) but no
+  //       non-empty transcript landed for >7 s AND emptyFinalStreak
+  //       >= 6 → the WebSocket is emitting empty finals; reconnect.
+  //   (e) >10 s since last non-empty final even if the speaker was
+  //       quiet (as long as they WERE talking in the last 15 s, per
+  //       lastRmsAt > now - 15000 && lastRms > 300) → reconnect.
+  //
+  // These thresholds come from the Codex + gstack joint review
+  // (2026-04-21). Previous healthTimer only logged track.muted and
+  // did nothing for the empty-final case, which is the bug A user
+  // hit in production logs.
+  let audioStuckForcedReconnect = false; // per-session one-shot guard
+  const healthTimer = setInterval(() => {
+    if (userStopped || reconnecting) return;
+    const t = mediaStream.getAudioTracks()[0];
+    if (!t) return;
+    if (t.readyState === 'ended') {
+      clearInterval(healthTimer);
+      cb.onStatusChange('error', '录音已停止（设备断开或分享被取消），请重新按「开始」');
+      return;
+    }
+
+    const now = Date.now();
+
+    // (a) AudioContext suspended — try to resume in-place. If it fails,
+    // fall through to (c) which will force-reconnect on no-PCM.
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {
+        // eslint-disable-next-line no-console
+        console.warn('[live] audio resume failed, will rely on no-PCM watchdog');
+      });
+    }
+
+    // (b) Track muted for >6 s → reconnect.
+    if (t.muted) {
+      // eslint-disable-next-line no-console
+      console.warn('[live] mic track is muted — audio may not reach Deepgram');
+    }
+
+    // (c) PCM flow stopped for >8 s — worklet died or nothing is
+    // producing audio. Force reconnect.
+    if (now - lastPcmSentAt > 8000 && !audioStuckForcedReconnect) {
+      audioStuckForcedReconnect = true;
+      // eslint-disable-next-line no-console
+      console.warn(`[live] no PCM sent for ${((now - lastPcmSentAt) / 1000).toFixed(1)}s — forcing reconnect`);
+      void reconnect();
+      return;
+    }
+    if (now - lastPcmSentAt <= 8000) {
+      // Reset the guard once PCM is flowing again.
+      audioStuckForcedReconnect = false;
+    }
+
+    // (d) Speaker IS talking but no non-empty transcript in >7 s
+    // AND Deepgram is actively emitting empty finals. The WebSocket
+    // is stuck; reconnect is the only recovery.
+    const recentlyTalking = lastRmsAt > 0 && now - lastRmsAt < 6000 && lastRms > 300;
+    const noTranscriptFor = lastNonEmptyTranscriptAt > 0 ? now - lastNonEmptyTranscriptAt : 0;
+    if (recentlyTalking && noTranscriptFor > 7000 && emptyFinalStreak >= 6) {
+      // eslint-disable-next-line no-console
+      console.warn(`[live] ASR stuck: speaking (RMS=${lastRms.toFixed(0)}) but ${(noTranscriptFor/1000).toFixed(1)}s without non-empty transcript and ${emptyFinalStreak} empty finals in a row — forcing reconnect`);
+      void reconnect();
+      return;
+    }
+
+    // (e) >10 s since last non-empty final while the user has been
+    // speaking in the last 15 s — softer catch-all for stuck streams
+    // that don't emit enough final events to trigger (d).
+    const recentlyTalkingLoose = lastRmsAt > 0 && now - lastRmsAt < 15000 && lastRms > 300;
+    const noFinalFor = lastNonEmptyFinalAt > 0 ? now - lastNonEmptyFinalAt : 0;
+    if (recentlyTalkingLoose && noFinalFor > 10000 && finalEventCount > 3) {
+      // eslint-disable-next-line no-console
+      console.warn(`[live] no non-empty final for ${(noFinalFor/1000).toFixed(1)}s despite recent speech — forcing reconnect`);
+      void reconnect();
+      return;
+    }
+  }, 3000);
 
   // Pipe PCM from the worklet to Deepgram.
   worklet.port.onmessage = (ev) => {
@@ -697,6 +833,7 @@ ${englishParagraph}`;
     if (!pcm || !connection) return;
     if (paused) return;
     const bytes = new Uint8Array(pcm);
+    lastPcmSentAt = Date.now(); // heartbeat for the no-PCM watchdog
 
     // Volume probe: scan as Int16 (linear16 encoding). Track peak abs
     // and sum of squares across the 3s window; log once per window.
@@ -711,6 +848,9 @@ ${englishParagraph}`;
     const now = Date.now();
     if (now - volLogLastMs >= 3000 && volLogSampleCount > 0) {
       const rms = Math.sqrt(volLogSumSquares / volLogSampleCount);
+      // Share last window with the health watchdog.
+      lastRms = rms;
+      lastRmsAt = now;
       // eslint-disable-next-line no-console
       console.info(`[live] mic RMS=${rms.toFixed(0)} peak=${volLogPeakAbs} (3s window, ${volLogSampleCount} samples) — RMS<100 ≈ silence; RMS>500 = real speech`);
       volLogLastMs = now;
@@ -808,6 +948,21 @@ ${englishParagraph}`;
     },
     getTranscript() {
       return transcript;
+    },
+    forceReconnect() {
+      if (userStopped || reconnecting) return;
+      // eslint-disable-next-line no-console
+      console.info('[live] manual forceReconnect triggered by user');
+      void reconnect();
+    },
+    getStuckInfo() {
+      const now = Date.now();
+      return {
+        lastRms,
+        msSinceLastNonEmptyFinal: lastNonEmptyFinalAt > 0 ? now - lastNonEmptyFinalAt : Number.POSITIVE_INFINITY,
+        msSinceLastRmsWindow: lastRmsAt > 0 ? now - lastRmsAt : Number.POSITIVE_INFINITY,
+        emptyFinalStreak,
+      };
     },
   };
 }
