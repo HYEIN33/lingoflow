@@ -74,11 +74,11 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
   const renderGroupTab = () => (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
       {/* Timer */}
-      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-center justify-between">
+      <div className="bg-[rgba(91,127,232,0.08)] border border-[rgba(91,127,232,0.3)] rounded-2xl p-4 flex items-center justify-between">
         <div>
-          <p className="text-blue-600 text-xs font-medium mb-1">{uiLang === 'zh' ? '本周结算倒计时' : 'Weekly reset'}</p>
+          <p className="text-[#5B7FE8] text-xs font-medium mb-1">{uiLang === 'zh' ? '本周结算倒计时' : 'Weekly reset'}</p>
           <p className="text-gray-900 font-mono font-bold text-lg flex items-center gap-2">
-            <Clock className="w-4 h-4 text-blue-500" /> {timeLeft}
+            <Clock className="w-4 h-4 text-[#5B7FE8]" /> {timeLeft}
           </p>
         </div>
         <div className="text-right">
@@ -94,18 +94,18 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
             onClick={() => onUserClick?.(user.id)}
             className={`flex items-center gap-3 p-4 rounded-2xl cursor-pointer transition-all ${
               user.id === currentUserId
-                ? 'bg-blue-50 border-2 border-blue-300 shadow-sm'
+                ? 'bg-[rgba(91,127,232,0.08)] border-2 border-[rgba(91,127,232,0.4)] shadow-sm'
                 : 'bg-white/60 border border-white/60 hover:bg-white/80'
             }`}
           >
             {getRankBadge(index)}
-            <div className="w-10 h-10 rounded-xl bg-blue-100 overflow-hidden shrink-0 flex items-center justify-center text-blue-600 font-bold">
+            <div className="w-10 h-10 rounded-xl bg-[rgba(91,127,232,0.1)] overflow-hidden shrink-0 flex items-center justify-center text-[#5B7FE8] font-bold">
               {user.username.charAt(0)}
             </div>
             <div className="flex-1 min-w-0">
               <h4 className="text-gray-900 font-bold truncate flex items-center gap-2">
                 {user.username}
-                {user.id === currentUserId && <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">YOU</span>}
+                {user.id === currentUserId && <span className="text-[10px] bg-[rgba(91,127,232,0.1)] text-[#5B7FE8] px-2 py-0.5 rounded-full font-bold">YOU</span>}
               </h4>
               <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
                 <span className="flex items-center gap-1"><Flame className="w-3 h-3 text-orange-400" /> {user.weeklyCount} {uiLang === 'zh' ? '词条' : 'entries'}</span>
@@ -135,12 +135,12 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
           onClick={() => onUserClick?.(user.id)}
           className={`flex items-center gap-3 p-4 rounded-2xl cursor-pointer transition-all ${
             index === 0 ? 'bg-amber-50 border border-amber-200' :
-            user.id === currentUserId ? 'bg-blue-50 border-2 border-blue-300' :
+            user.id === currentUserId ? 'bg-[rgba(91,127,232,0.08)] border-2 border-[rgba(91,127,232,0.4)]' :
             'bg-white/60 border border-white/60 hover:bg-white/80'
           }`}
         >
           {getRankBadge(user.rank ? user.rank - 1 : index)}
-          <div className={`w-10 h-10 rounded-xl overflow-hidden shrink-0 flex items-center justify-center font-bold ${index === 0 ? 'bg-amber-200 text-amber-700' : 'bg-blue-100 text-blue-600'}`}>
+          <div className={`w-10 h-10 rounded-xl overflow-hidden shrink-0 flex items-center justify-center font-bold ${index === 0 ? 'bg-amber-200 text-amber-700' : 'bg-[rgba(91,127,232,0.1)] text-[#5B7FE8]'}`}>
             {user.username.charAt(0)}
           </div>
           <div className="flex-1 min-w-0">
@@ -165,7 +165,7 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
         <div key={user.id} className="bg-white/60 border border-white/60 rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white font-bold text-lg shadow-md">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#5B7FE8] to-[#0A0E1A] flex items-center justify-center text-white font-bold text-lg shadow-md">
                 {user.username.charAt(0)}
               </div>
               <div>
@@ -216,7 +216,7 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
             onClick={() => setActiveTab(tab.id as any)}
             className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
               activeTab === tab.id
-                ? 'bg-white/70 text-blue-600 shadow-sm backdrop-blur-md border border-white/60'
+                ? 'bg-white/70 text-[#5B7FE8] shadow-sm backdrop-blur-md border border-white/60'
                 : 'text-gray-500 hover:text-gray-700 hover:bg-white/20'
             }`}
           >
@@ -226,7 +226,7 @@ export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLan
       </div>
 
       {isLoading ? (
-        <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-blue-400" /></div>
+        <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-[rgba(91,127,232,0.6)]" /></div>
       ) : groupData.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
           <Trophy className="w-10 h-10 mx-auto mb-3 text-gray-300" />

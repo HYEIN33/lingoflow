@@ -1,1 +1,127 @@
 @import "tailwindcss";
+
+/* ============================================================
+   MemeFlow design tokens · White-blue + Liquid Glass
+   Introduced 2026-04-21. Replaces the blue-purple SaaS gradient
+   default with a calmer white-blue ambient + thick liquid glass
+   surfaces. Paired with Clash Display / 思源宋体 / Satoshi.
+   ============================================================ */
+
+:root {
+  /* White-blue ambient palette */
+  --bg-top: #F4F7FF;
+  --bg-mid: #E8EEFC;
+  --bg-deep: #DDE5F7;
+  --blue-accent: #5B7FE8;
+  --blue-glow: #89A3F0;
+  --blue-soft: #B8C8F0;
+
+  /* Ink */
+  --ink: #0A0E1A;
+  --ink-soft: rgba(10, 14, 26, 0.58);
+  --ink-subtle: rgba(10, 14, 26, 0.38);
+}
+
+/* Font utility classes — applied via className, not global body override.
+   Keeps existing component styling intact and lets callers opt in per element. */
+.font-display {
+  font-family: "Clash Display", system-ui, sans-serif;
+  letter-spacing: -0.03em;
+}
+.font-body-en {
+  font-family: "Satoshi", system-ui, sans-serif;
+  letter-spacing: -0.005em;
+}
+.font-zh-serif {
+  font-family: "Noto Serif SC", serif;
+  letter-spacing: 0.02em;
+}
+.font-zh-sans {
+  font-family: "Noto Sans SC", system-ui, sans-serif;
+  letter-spacing: 0.04em;
+}
+.font-mono-meta {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  letter-spacing: 0;
+}
+
+/* ============================================================
+   Liquid Glass primitive classes
+   Used inline where Tailwind's `backdrop-blur-*` doesn't reach
+   the 60-80px range needed for iOS 26 Liquid Glass.
+   ============================================================ */
+
+.glass-shell {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.22) 100%),
+              radial-gradient(circle at 85% 10%, rgba(137, 163, 240, 0.18) 0%, transparent 65%);
+  backdrop-filter: blur(40px) saturate(160%);
+  -webkit-backdrop-filter: blur(40px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.15),
+    0 4px 16px rgba(91, 127, 232, 0.06);
+}
+
+.glass-pill-active {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.78) 100%),
+              radial-gradient(circle at 30% 20%, rgba(137, 163, 240, 0.22) 0%, transparent 70%);
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 1),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.5),
+    inset 1px 0 0 rgba(255, 255, 255, 0.6),
+    inset -1px 0 0 rgba(255, 255, 255, 0.3),
+    0 6px 16px rgba(91, 127, 232, 0.2),
+    0 2px 4px rgba(10, 14, 26, 0.08);
+}
+
+.glass-pill-active::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  right: 40%;
+  height: 40%;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0) 70%);
+  border-radius: 14px 14px 0 0;
+  pointer-events: none;
+}
+
+.glass-thick {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0.5) 100%),
+              radial-gradient(circle at 85% 15%, rgba(137, 163, 240, 0.32) 0%, transparent 60%),
+              radial-gradient(circle at 15% 90%, rgba(184, 200, 240, 0.25) 0%, transparent 65%);
+  backdrop-filter: blur(80px) saturate(180%);
+  -webkit-backdrop-filter: blur(80px) saturate(180%);
+  border: 1.5px solid rgba(255, 255, 255, 0.75);
+  box-shadow:
+    inset 0 2.5px 0 rgba(255, 255, 255, 1),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.4),
+    0 24px 60px rgba(91, 127, 232, 0.18),
+    0 8px 20px rgba(91, 127, 232, 0.1),
+    0 2px 6px rgba(10, 14, 26, 0.05);
+}
+
+.glass-chip {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+}
+
+/* Active tab dot — the one "small design" detail that only appears on the
+   selected tab. A tiny blue LED that signals "you're here". */
+.tab-dot-active {
+  width: 4px;
+  height: 4px;
+  min-width: 4px;   /* survive flex shrinking */
+  min-height: 4px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: var(--blue-accent);
+  box-shadow: 0 0 6px rgba(91, 127, 232, 0.8), 0 0 12px rgba(91, 127, 232, 0.3);
+  display: inline-block;
+}

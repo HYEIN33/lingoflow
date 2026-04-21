@@ -250,6 +250,41 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
   const sessionRef = useRef<LiveSessionHandle | null>(null);
   const itemCounter = useRef(0);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  // Manual-reconnect visibility: show a "卡住了？重连" button when the
+  // auto-recovery watchdog hasn't fired yet but the signal pattern looks
+  // stuck from the user's side. Conditions (ANY triggers show):
+  //   - >15 s since the last non-empty final AND user was speaking in
+  //     the last 10 s (RMS > 300).
+  //   - Empty-final streak >= 8 (watchdog triggers at streak 6 with
+  //     tighter time conditions; this is the softer catch).
+  // Refreshed every 2 s during a live session. Only relevant when
+  // status === 'live'.
+  const [showManualReconnect, setShowManualReconnect] = useState(false);
+  useEffect(() => {
+    if (status !== 'live') {
+      if (showManualReconnect) setShowManualReconnect(false);
+      return;
+    }
+    const id = setInterval(() => {
+      const handle = sessionRef.current;
+      if (!handle) return;
+      const info = handle.getStuckInfo();
+      const speakingRecently = info.msSinceLastRmsWindow < 10_000 && info.lastRms > 300;
+      const longNoFinal = info.msSinceLastNonEmptyFinal > 15_000;
+      const streakyEmpty = info.emptyFinalStreak >= 8;
+      const shouldShow = (speakingRecently && longNoFinal) || streakyEmpty;
+      setShowManualReconnect((prev) => (prev === shouldShow ? prev : shouldShow));
+    }, 2000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
+  const handleManualReconnect = () => {
+    sessionRef.current?.forceReconnect();
+    setShowManualReconnect(false);
+    toast.info(uiLang === 'zh' ? '正在重新连接识别引擎…' : 'Reconnecting ASR…');
+  };
   // Mirror of `stream` kept in a ref so async handlers (e.g. handleAsk's
   // buildTranscriptContext) read the latest value, not a stale closure.
   const streamRef = useRef<StreamItem[]>([]);
@@ -759,7 +794,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
                   type="checkbox"
                   checked={agreed}
                   onChange={(e) => setAgreed(e.target.checked)}
-                  className="mt-1 accent-blue-600"
+                  className="mt-1 accent-[#5B7FE8]"
                 />
                 <span className="text-sm text-gray-700">
                   我已阅读并理解上述内容，确认使用本功能所产生的责任由我自己承担。
@@ -769,7 +804,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
               <button
                 onClick={acknowledgeCompliance}
                 disabled={!agreed}
-                className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+                className="w-full bg-[#0A0E1A] text-white py-3 rounded-xl font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#1a2440] transition-colors"
               >
                 我理解并同意，进入课堂同传
               </button>
@@ -804,8 +839,8 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
             disabled={isLive || isBusy}
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
               audioSource === 'tab'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-white/70 text-gray-600 border border-gray-200 hover:bg-blue-50'
+                ? 'bg-[#0A0E1A] text-white shadow-sm'
+                : 'bg-white/70 text-gray-600 border border-gray-200 hover:bg-[rgba(91,127,232,0.08)]'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             <Monitor className="w-4 h-4" />
@@ -816,8 +851,8 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
             disabled={isLive || isBusy}
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
               audioSource === 'mic'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'bg-white/70 text-gray-600 border border-gray-200 hover:bg-blue-50'
+                ? 'bg-[#0A0E1A] text-white shadow-sm'
+                : 'bg-white/70 text-gray-600 border border-gray-200 hover:bg-[rgba(91,127,232,0.08)]'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             <Mic className="w-4 h-4" />
@@ -836,10 +871,10 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
             className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 rounded-xl transition-colors disabled:opacity-50"
           >
             <span className="flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+              <Sparkles className="w-3.5 h-3.5 text-[#5B7FE8]" />
               {uiLang === 'zh' ? '这节课是什么课？（可选，让翻译更准）' : 'What class is this? (optional, better translation)'}
             </span>
-            <span className="text-blue-600 font-bold">
+            <span className="text-[#5B7FE8] font-bold">
               {(() => {
                 if (!selectedCourse) return uiLang === 'zh' ? '未选' : 'none';
                 if (selectedCourse === '__custom__') {
@@ -867,8 +902,8 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
                       className={
                         'text-xs px-2.5 py-1 rounded-full border transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed ' +
                         (active
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'bg-white text-gray-600 border-gray-200 hover:bg-blue-50 hover:border-blue-200')
+                          ? 'bg-[#0A0E1A] text-white border-[#0A0E1A]'
+                          : 'bg-white text-gray-600 border-gray-200 hover:bg-[rgba(91,127,232,0.08)] hover:border-[rgba(91,127,232,0.4)]')
                       }
                     >
                       {uiLang === 'zh' ? p.zh : p.en}
@@ -882,8 +917,8 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
                   className={
                     'text-xs px-2.5 py-1 rounded-full border transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed ' +
                     (selectedCourse === '__custom__'
-                      ? 'bg-blue-600 text-white border-blue-600'
-                      : 'bg-white text-gray-600 border-gray-200 hover:bg-blue-50 hover:border-blue-200')
+                      ? 'bg-[#0A0E1A] text-white border-[#0A0E1A]'
+                      : 'bg-white text-gray-600 border-gray-200 hover:bg-[rgba(91,127,232,0.08)] hover:border-[rgba(91,127,232,0.4)]')
                   }
                 >
                   {uiLang === 'zh' ? '其他…' : 'Other…'}
@@ -897,7 +932,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
                   onChange={(e) => setCustomCourse(e.target.value)}
                   disabled={isLive || isBusy}
                   placeholder={uiLang === 'zh' ? '比如：营销学、海洋生物、古典音乐史' : 'e.g. Marketing, Marine Biology'}
-                  className="mt-2 w-full text-xs bg-white border border-gray-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                  className="mt-2 w-full text-xs bg-white border border-gray-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-[rgba(91,127,232,0.5)] focus:border-transparent"
                 />
               )}
 
@@ -925,7 +960,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
                 className={
                   'flex-1 py-2 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ' +
                   (active
-                    ? 'bg-blue-600 text-white shadow-sm'
+                    ? 'bg-[#0A0E1A] text-white shadow-sm'
                     : 'text-gray-600 hover:bg-gray-50')
                 }
               >
@@ -969,7 +1004,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
             <button
               onClick={handleStart}
               disabled={isBusy}
-              className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition-colors disabled:opacity-50"
+              className="flex-1 flex items-center justify-center gap-2 bg-[#0A0E1A] text-white py-3 rounded-xl font-bold hover:bg-[#1a2440] transition-colors disabled:opacity-50"
             >
               {isBusy
                 ? <Loader2 className="w-5 h-5 animate-spin" />
@@ -1015,13 +1050,13 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           <p>
             {uiLang === 'zh' ? (
               <>
-                上课没听懂？直接在下方<span className="text-blue-600 font-semibold">「问 AI」</span>输入你的问题 —
+                上课没听懂？直接在下方<span className="text-[#5B7FE8] font-semibold">「问 AI」</span>输入你的问题 —
                 比如「老师刚才说的 CAPM 是啥？」AI 会根据已经讲过的内容用中文回答。
               </>
             ) : (
               <>
                 Missed something? Just type your question in the{' '}
-                <span className="text-blue-600 font-semibold">Ask AI</span>{' '}
+                <span className="text-[#5B7FE8] font-semibold">Ask AI</span>{' '}
                 bar below — e.g. "what did the prof mean by CAPM?" AI replies in Chinese using what's been said so far.
               </>
             )}
@@ -1067,6 +1102,20 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
             )}
           </span>
         </div>
+
+        {/* Manual reconnect — only when the watchdog has NOT yet kicked
+            in but the user's side looks stuck (speaking but no transcripts).
+            User-facing escape hatch from a hung ASR. */}
+        {showManualReconnect && status === 'live' && (
+          <button
+            type="button"
+            onClick={handleManualReconnect}
+            className="ml-auto flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#C84A3D] text-white text-xs font-semibold shadow-[0_4px_12px_rgba(200,74,61,0.3)] hover:bg-[#a93a2f] transition-colors"
+          >
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+            {uiLang === 'zh' ? '线路卡住？点这里重连' : 'Stuck? Reconnect'}
+          </button>
+        )}
       </div>
 
       {/* Unified stream: subtitle lines + AI Q&A exchanges interleaved in
@@ -1102,21 +1151,21 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           // card so it stands out from plain subtitles without feeling
           // like a different app mode.
           return (
-            <div key={`q-${item.id}`} className="bg-blue-50 border border-blue-100 rounded-xl p-3 my-2">
+            <div key={`q-${item.id}`} className="bg-[rgba(91,127,232,0.08)] border border-[rgba(91,127,232,0.2)] rounded-xl p-3 my-2">
               <div className="flex items-start gap-2 mb-2">
-                <div className="bg-blue-600 text-white text-[10px] font-black px-2 py-0.5 rounded-md shrink-0 mt-0.5">
+                <div className="bg-[#0A0E1A] text-white text-[10px] font-black px-2 py-0.5 rounded-md shrink-0 mt-0.5">
                   {uiLang === 'zh' ? '你' : 'You'}
                 </div>
                 <p className="text-sm text-gray-800 leading-relaxed">{item.question}</p>
               </div>
               <div className="flex items-start gap-2">
-                <div className="bg-white border border-blue-200 text-blue-600 text-[10px] font-black px-2 py-0.5 rounded-md shrink-0 mt-0.5 flex items-center gap-1">
+                <div className="bg-white border border-[rgba(91,127,232,0.3)] text-[#5B7FE8] text-[10px] font-black px-2 py-0.5 rounded-md shrink-0 mt-0.5 flex items-center gap-1">
                   <Sparkles className="w-2.5 h-2.5" />
                   AI
                 </div>
                 <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap flex-1">
                   {item.pending
-                    ? <Loader2 className="w-4 h-4 animate-spin text-blue-400 inline" />
+                    ? <Loader2 className="w-4 h-4 animate-spin text-[rgba(91,127,232,0.6)] inline" />
                     : item.answer}
                 </p>
               </div>
@@ -1124,7 +1173,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           );
         })}
         {pendingTranslations.size > 0 && (
-          <div className="flex items-center gap-2 text-xs text-indigo-500 px-1 py-1">
+          <div className="flex items-center gap-2 text-xs text-[#5B7FE8] px-1 py-1">
             <Loader2 className="w-3 h-3 animate-spin" />
             <span>{uiLang === 'zh' ? '翻译中…' : 'Translating…'}</span>
           </div>
@@ -1141,7 +1190,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           system context so the user can ask "what did they mean by X?"
           without copy-pasting anything. */}
       <div className="bg-white/60 backdrop-blur-md border border-white/60 rounded-2xl p-3 shadow-sm flex items-center gap-2">
-        <Sparkles className="w-4 h-4 text-blue-500 shrink-0 ml-1" />
+        <Sparkles className="w-4 h-4 text-[#5B7FE8] shrink-0 ml-1" />
         <input
           type="text"
           value={question}
@@ -1154,7 +1203,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
         <button
           onClick={handleAsk}
           disabled={isAsking || question.trim().length === 0}
-          className="bg-blue-600 text-white p-2 rounded-xl disabled:opacity-40 hover:bg-blue-700 transition-colors"
+          className="bg-[#0A0E1A] text-white p-2 rounded-xl disabled:opacity-40 hover:bg-[#1a2440] transition-colors"
           aria-label={uiLang === 'zh' ? '发送' : 'Send'}
         >
           {isAsking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}

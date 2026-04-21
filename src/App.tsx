@@ -233,12 +233,22 @@ function SortableTab({ tab, isActive, onSelect }: SortableTabProps) {
       <button
         onClick={onSelect}
         className={cn(
-          "w-full py-2.5 sm:py-3 rounded-xl text-xs sm:text-sm font-semibold transition-all flex items-center justify-center gap-1.5 sm:gap-2 whitespace-nowrap px-3 select-none",
-          isActive ? "bg-white/70 text-blue-600 shadow-sm backdrop-blur-md border border-white/60" : "text-gray-500 hover:text-gray-700 hover:bg-white/20"
+          "relative w-full py-2.5 sm:py-3 rounded-[17px] text-xs sm:text-sm transition-all flex flex-col items-center justify-center gap-1 whitespace-nowrap px-3 select-none",
+          isActive
+            ? "glass-pill-active text-[#0A0E1A] font-zh-serif font-medium"
+            : "text-[rgba(10,14,26,0.58)] font-zh-sans font-normal hover:text-[#0A0E1A]"
         )}
       >
-        <tab.icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-        {tab.label} {tab.count !== undefined && <span className="hidden xs:inline">({tab.count})</span>}
+        <span className="flex items-center gap-1.5 relative z-[2]">
+          <tab.icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          <span>
+            {tab.label}
+            {tab.count !== undefined && <span className="hidden xs:inline"> ({tab.count})</span>}
+          </span>
+        </span>
+        {/* Tiny glowing blue dot under the label — only on active tab.
+            The "small design" detail that quietly marks the current page. */}
+        {isActive && <span className="tab-dot-active relative z-[2]" aria-hidden="true" />}
       </button>
     </div>
   );
@@ -263,7 +273,7 @@ const ClassroomTab = lazy(() => import('./pages/ClassroomTab'));
 function LazyFallback() {
   return (
     <div className="flex items-center justify-center py-20">
-      <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      <Loader2 className="w-8 h-8 animate-spin text-[#5B7FE8]" />
     </div>
   );
 }
@@ -371,8 +381,8 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
         animate={{ opacity: 1, y: 0 }}
         className="max-w-md w-full bg-white rounded-3xl shadow-none sm:shadow-xl p-6 sm:p-10 border-0 sm:border sm:border-gray-100"
       >
-        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-6 sm:mb-8">
-          <Languages className="w-8 h-8 sm:w-10 sm:h-10 text-blue-600" />
+        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-[rgba(91,127,232,0.08)] rounded-2xl flex items-center justify-center mx-auto mb-6 sm:mb-8">
+          <Languages className="w-8 h-8 sm:w-10 sm:h-10 text-[#5B7FE8]" />
         </div>
         <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-1 tracking-tight">
           {t.appName}
@@ -389,14 +399,14 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
           <div className="space-y-3">
             <button
               onClick={signIn}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-blue-200"
+              className="w-full bg-[#0A0E1A] hover:bg-[#1a2440] text-white font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-[rgba(91,127,232,0.2)]"
             >
               <LogIn className="w-5 h-5" />
               {uiLang === 'zh' ? 'Google 账号登录' : 'Sign in with Google'}
             </button>
             <button
               onClick={() => setMode('email')}
-              className="w-full bg-white hover:bg-blue-50 text-blue-600 border-2 border-blue-200 hover:border-blue-400 font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3"
+              className="w-full bg-white hover:bg-[rgba(91,127,232,0.08)] text-[#5B7FE8] border-2 border-[rgba(91,127,232,0.3)] hover:border-[#5B7FE8] font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3"
             >
               <LogIn className="w-5 h-5" />
               {uiLang === 'zh' ? '邮箱登录 / 注册' : 'Sign in with Email'}
@@ -415,7 +425,7 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
           </div>
         ) : mode === 'email' ? (
           <div className="space-y-4 text-left">
-            <button onClick={() => { setMode('main'); setError(''); setResetSent(false); }} className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+            <button onClick={() => { setMode('main'); setError(''); setResetSent(false); }} className="text-sm text-[#5B7FE8] hover:text-[#5B7FE8] font-medium">
               ← {uiLang === 'zh' ? '返回' : 'Back'}
             </button>
 
@@ -430,7 +440,7 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#5B7FE8] focus:ring-2 focus:ring-[rgba(91,127,232,0.2)] outline-none"
               />
             </div>
             <div>
@@ -440,7 +450,7 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={isSignUp ? (uiLang === 'zh' ? '至少 6 位' : 'At least 6 characters') : '••••••'}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#5B7FE8] focus:ring-2 focus:ring-[rgba(91,127,232,0.2)] outline-none"
                 onKeyDown={(e) => e.key === 'Enter' && handleEmailAuth()}
               />
             </div>
@@ -455,7 +465,7 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
             </button>
 
             <div className="flex items-center justify-between text-sm">
-              <button onClick={() => { setIsSignUp(!isSignUp); setError(''); }} className="text-blue-600 hover:text-blue-700 font-medium">
+              <button onClick={() => { setIsSignUp(!isSignUp); setError(''); }} className="text-[#5B7FE8] hover:text-[#5B7FE8] font-medium">
                 {isSignUp ? (uiLang === 'zh' ? '已有账号？登录' : 'Have an account? Sign in') : (uiLang === 'zh' ? '没有账号？注册' : 'No account? Sign up')}
               </button>
               {!isSignUp && (
@@ -477,7 +487,7 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
           </div>
         ) : mode === 'guest' ? (
           <div className="space-y-4 text-left">
-            <button onClick={() => { setMode('main'); setError(''); setGuestCode(''); }} className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+            <button onClick={() => { setMode('main'); setError(''); setGuestCode(''); }} className="text-sm text-[#5B7FE8] hover:text-[#5B7FE8] font-medium">
               ← {uiLang === 'zh' ? '返回' : 'Back'}
             </button>
             <h3 className="text-lg font-bold text-gray-900">
@@ -491,14 +501,14 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
               value={guestCode}
               onChange={(e) => setGuestCode(e.target.value)}
               placeholder={uiLang === 'zh' ? '请输入邀请码' : 'Enter invite code'}
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none text-center text-lg tracking-widest"
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#5B7FE8] focus:ring-2 focus:ring-[rgba(91,127,232,0.2)] outline-none text-center text-lg tracking-widest"
               maxLength={10}
               onKeyDown={(e) => e.key === 'Enter' && handleGuestLogin()}
             />
             <button
               onClick={handleGuestLogin}
               disabled={loading || !guestCode}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
+              className="w-full bg-[#0A0E1A] hover:bg-[#1a2440] disabled:bg-gray-300 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               {uiLang === 'zh' ? '进入体验' : 'Enter'}
@@ -520,10 +530,10 @@ const MAINTENANCE_MODE = false;
 
 function MaintenancePage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-gradient-to-br from-[#F4F7FF] via-[#E8EEFC] to-[#DDE5F7] flex items-center justify-center p-6">
       <div className="max-w-md w-full bg-white rounded-3xl shadow-xl p-8 sm:p-10 text-center space-y-6">
-        <div className="w-20 h-20 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto">
-          <svg className="w-10 h-10 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <div className="w-20 h-20 bg-[rgba(91,127,232,0.08)] rounded-2xl flex items-center justify-center mx-auto">
+          <svg className="w-10 h-10 text-[#5B7FE8]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
           </svg>
         </div>
@@ -531,9 +541,9 @@ function MaintenancePage() {
         <p className="text-gray-500 leading-relaxed">
           我们正在升级服务器，预计很快恢复。感谢你的耐心等待！
         </p>
-        <div className="bg-blue-50 rounded-2xl p-4">
-          <p className="text-sm text-blue-600 font-medium">System Maintenance in Progress</p>
-          <p className="text-xs text-blue-400 mt-1">We're upgrading our servers. Back soon!</p>
+        <div className="bg-[rgba(91,127,232,0.08)] rounded-2xl p-4">
+          <p className="text-sm text-[#5B7FE8] font-medium">System Maintenance in Progress</p>
+          <p className="text-xs text-[rgba(91,127,232,0.6)] mt-1">We're upgrading our servers. Back soon!</p>
         </div>
       </div>
     </div>
@@ -824,7 +834,7 @@ export default function App() {
   if (!isAuthReady) {
     return (
       <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-[#5B7FE8]" />
       </div>
     );
   }
@@ -834,31 +844,43 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 pb-24 relative overflow-hidden">
-      {/* Decorative background blobs */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-300/30 rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-300/30 rounded-full blur-3xl pointer-events-none"></div>
+    <div
+      className="min-h-screen pb-24 relative overflow-hidden"
+      style={{
+        // White-blue ambient gradient (replaces the blue-via-indigo-to-purple
+        // SaaS default). Multiple radial blue blobs over a vertical white-blue
+        // base — reads as premium iOS 26 Liquid Glass ambient instead of
+        // generic purple-gradient AI slop.
+        background:
+          'radial-gradient(ellipse 60% 45% at 25% 15%, rgba(137, 163, 240, 0.35) 0%, transparent 65%),' +
+          'radial-gradient(ellipse 55% 50% at 85% 35%, rgba(91, 127, 232, 0.25) 0%, transparent 65%),' +
+          'radial-gradient(ellipse 70% 40% at 50% 75%, rgba(184, 200, 240, 0.4) 0%, transparent 70%),' +
+          'radial-gradient(ellipse 50% 45% at 15% 90%, rgba(137, 163, 240, 0.25) 0%, transparent 65%),' +
+          'linear-gradient(180deg, #F4F7FF 0%, #E8EEFC 45%, #DDE5F7 100%)',
+      }}
+    >
+      {/* Decorative blobs — same blue family, no purple */}
+      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#89A3F0]/25 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#B8C8F0]/30 rounded-full blur-3xl pointer-events-none"></div>
 
       {/* Pops the "v0.2.0 is here" toast once per release for returning users */}
       <ChangelogToast currentVersion={APP_VERSION} />
 
       {/* Header */}
-      <header className="bg-white/40 backdrop-blur-md border-b border-white/50 sticky top-0 z-10 shadow-sm">
+      <header className="bg-white/50 backdrop-blur-xl border-b border-white/60 sticky top-0 z-10 shadow-[0_4px_20px_rgba(91,127,232,0.08)]">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-lg sm:rounded-xl flex items-center justify-center">
-              <Languages className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-            </div>
-            <span className="text-lg sm:text-xl font-bold text-gray-900 tracking-tight">{t.appName}</span>
+            {/* App icon removed — brand name alone carries identity. */}
+            <span className="font-display text-xl sm:text-2xl font-semibold text-[#0A0E1A] tracking-tight">{t.appName}</span>
             <span
-              className="hidden sm:inline text-[10px] text-gray-400 font-mono tabular-nums"
+              className="hidden sm:inline text-[10px] font-mono-meta text-[rgba(10,14,26,0.38)] tabular-nums"
               title={`Environment: ${APP_ENV}`}
             >
               v{APP_VERSION}
             </span>
             <ChangelogBell currentVersion={APP_VERSION} />
             {userProfile?.isPro && (
-              <span className="ml-2 px-2 py-0.5 bg-gradient-to-r from-amber-400 to-orange-500 text-white text-[10px] font-black rounded-full shadow-sm uppercase tracking-wider">
+              <span className="ml-2 px-2.5 py-0.5 bg-[#0A0E1A] text-white font-display font-semibold text-[10px] rounded-full uppercase tracking-[0.1em]">
                 {t.proBadge}
               </span>
             )}
@@ -885,7 +907,7 @@ export default function App() {
               aria-label={uiLang === 'zh' ? '我的' : 'Profile'}
               className={cn(
                 "p-1.5 sm:p-2 rounded-full transition-colors",
-                activeTab === 'profile' ? "bg-blue-100 text-blue-600" : "hover:bg-gray-50 text-gray-400 hover:text-blue-500"
+                activeTab === 'profile' ? "bg-[rgba(91,127,232,0.1)] text-[#5B7FE8]" : "hover:bg-gray-50 text-gray-400 hover:text-[#5B7FE8]"
               )}
               title={uiLang === 'zh' ? '我的' : 'Profile'}
             >
@@ -921,7 +943,11 @@ export default function App() {
                 tabs further right on narrow screens. pointer-events-none so
                 it never eats taps meant for the tabs underneath. */}
             <div className="relative mb-6 sm:mb-8">
-              <div className="flex bg-white/30 backdrop-blur-sm border border-white/50 p-1 rounded-2xl overflow-x-auto no-scrollbar shadow-inner scroll-smooth">
+              {/* Thick liquid-glass shell; active tab elevates on top of it
+                  via .glass-pill-active (see src/index.css). The shell is
+                  deliberately thinner/lighter than the active pill to push
+                  the active tab forward on the z-axis. */}
+              <div className="glass-shell flex p-[5px] rounded-[22px] overflow-x-auto no-scrollbar scroll-smooth">
                 {tabs.map((tab) => (
                   <SortableTab
                     key={tab.id}
@@ -933,7 +959,7 @@ export default function App() {
               </div>
               <div
                 aria-hidden="true"
-                className="pointer-events-none absolute top-0 right-0 h-full w-8 rounded-r-2xl bg-gradient-to-l from-white/70 to-transparent"
+                className="pointer-events-none absolute top-0 right-0 h-full w-8 rounded-r-[22px] bg-gradient-to-l from-[#F4F7FF]/70 to-transparent"
               />
             </div>
           </SortableContext>
@@ -1074,7 +1100,7 @@ export default function App() {
               {!userProfile?.isPro && (
                 <button
                   onClick={() => { setPaymentTrigger('default'); setShowPayment(true); }}
-                  className="w-full mb-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl p-4 flex items-center justify-between shadow-lg shadow-blue-200 hover:from-blue-700 hover:to-indigo-700 transition-all"
+                  className="w-full mb-4 bg-gradient-to-r from-[#5B7FE8] to-[#0A0E1A] text-white rounded-2xl p-4 flex items-center justify-between shadow-lg shadow-[rgba(91,127,232,0.2)] hover:from-[#1a2440] hover:to-[#0A0E1A] transition-all"
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
@@ -1082,10 +1108,10 @@ export default function App() {
                     </div>
                     <div className="text-left">
                       <div className="font-bold text-sm">{uiLang === 'zh' ? '升级 Pro' : 'Upgrade to Pro'}</div>
-                      <div className="text-xs text-blue-100">{uiLang === 'zh' ? '解锁无限翻译、复习系统、语气调节' : 'Unlimited translations, review & more'}</div>
+                      <div className="text-xs text-[rgba(91,127,232,0.2)]">{uiLang === 'zh' ? '解锁无限翻译、复习系统、语气调节' : 'Unlimited translations, review & more'}</div>
                     </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-blue-200" />
+                  <ChevronRight className="w-5 h-5 text-[rgba(91,127,232,0.3)]" />
                 </button>
               )}
               <UserProfileComponent

@@ -27,6 +27,21 @@ export interface ChangelogEntry {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: '0.2.15',
+    date: '2026-04-21',
+    title: '全站设计换血 + 课堂同传不再吞英文',
+    changes: [
+      '整站换新视觉：白蓝渐变背景 + 液态玻璃卡片，品牌字换成 Clash Display，中文用思源宋体',
+      'Tab 栏改成玻璃胶囊，当前页底部有一颗发光蓝点做小标识',
+      '翻译页输入框和正式程度滑条合并进一张玻璃大卡，搜索记录降级为半透明小胶囊',
+      '课堂同传修复吞英文：订阅 Deepgram 的 UtteranceEnd 事件，用它来 commit 那些 final 为空但 interim 有字的句子',
+      '课堂同传新增 auto-recovery：当识别引擎发送一连串空 final 但麦克风仍有声音时，自动重连 WebSocket',
+      '课堂同传右上角加「线路卡住？重连」按钮 — 用户也能手动救回',
+      '顶部品牌 logo 小方块去掉，Pro 徽章改纯黑胶囊',
+    ],
+    isMajor: true,
+  },
+  {
     version: '0.2.13',
     date: '2026-04-20',
     title: '课堂同传：往上翻历史不再被新字幕拽回底部',

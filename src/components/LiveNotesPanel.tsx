@@ -30,7 +30,7 @@ export default function LiveNotesPanel({ notes, loading, uiLang }: Props) {
   if (!notes && !loading) return null;
 
   return (
-    <div className="mt-4 bg-gradient-to-br from-indigo-50/80 to-purple-50/80 backdrop-blur-sm border border-indigo-200/60 rounded-3xl shadow-sm overflow-hidden">
+    <div className="mt-4 bg-gradient-to-br from-[#E8EEFC]/80 to-[#DDE5F7]/80 backdrop-blur-sm border border-[rgba(91,127,232,0.3)] rounded-3xl shadow-sm overflow-hidden">
       {/* Header — collapsible */}
       <button
         type="button"
@@ -38,27 +38,27 @@ export default function LiveNotesPanel({ notes, loading, uiLang }: Props) {
         className="w-full flex items-center justify-between px-5 py-3 hover:bg-white/40 transition-colors"
       >
         <div className="flex items-center gap-2">
-          <BookOpen className="w-4 h-4 text-indigo-600" />
-          <span className="font-black text-sm text-indigo-900">
+          <BookOpen className="w-4 h-4 text-[#5B7FE8]" />
+          <span className="font-black text-sm text-[#0A0E1A]">
             {zh ? 'Live 学习笔记' : 'Live Notes'}
           </span>
           {loading && (
-            <span className="flex items-center gap-1 text-[10px] text-indigo-500 ml-1">
+            <span className="flex items-center gap-1 text-[10px] text-[#5B7FE8] ml-1">
               <Loader2 className="w-3 h-3 animate-spin" />
               {zh ? 'AI 整理中' : 'AI summarising'}
             </span>
           )}
           {!loading && notes && (
-            <span className="flex items-center gap-1 text-[10px] text-indigo-400 ml-1">
+            <span className="flex items-center gap-1 text-[10px] text-[rgba(91,127,232,0.5)] ml-1">
               <Sparkles className="w-3 h-3" />
               {zh ? 'Gemini 3 Pro' : 'Gemini 3 Pro'}
             </span>
           )}
         </div>
         {expanded ? (
-          <ChevronUp className="w-4 h-4 text-indigo-400" />
+          <ChevronUp className="w-4 h-4 text-[rgba(91,127,232,0.5)]" />
         ) : (
-          <ChevronDown className="w-4 h-4 text-indigo-400" />
+          <ChevronDown className="w-4 h-4 text-[rgba(91,127,232,0.5)]" />
         )}
       </button>
 
@@ -75,7 +75,7 @@ export default function LiveNotesPanel({ notes, loading, uiLang }: Props) {
             <div className="px-5 pb-5 space-y-4">
               {/* Title */}
               {notes.title && (
-                <h3 className="font-black text-indigo-900 text-lg leading-tight">
+                <h3 className="font-black text-[#0A0E1A] text-lg leading-tight">
                   {notes.title}
                 </h3>
               )}
@@ -83,13 +83,13 @@ export default function LiveNotesPanel({ notes, loading, uiLang }: Props) {
               {/* Overview */}
               {notes.overview && notes.overview.length > 0 && (
                 <section>
-                  <h4 className="text-[10px] font-black tracking-[0.2em] text-indigo-500 uppercase mb-2">
+                  <h4 className="text-[10px] font-black tracking-[0.2em] text-[#5B7FE8] uppercase mb-2">
                     {zh ? '概述' : 'Overview'}
                   </h4>
                   <ul className="space-y-1.5">
                     {notes.overview.map((line, i) => (
                       <li key={i} className="flex gap-2 text-sm text-gray-800 leading-relaxed">
-                        <span className="text-indigo-400 mt-1 shrink-0">•</span>
+                        <span className="text-[rgba(91,127,232,0.5)] mt-1 shrink-0">•</span>
                         <span>{line}</span>
                       </li>
                     ))}
@@ -100,13 +100,13 @@ export default function LiveNotesPanel({ notes, loading, uiLang }: Props) {
               {/* Key points */}
               {notes.keyPoints && notes.keyPoints.length > 0 && (
                 <section>
-                  <h4 className="text-[10px] font-black tracking-[0.2em] text-indigo-500 uppercase mb-2">
+                  <h4 className="text-[10px] font-black tracking-[0.2em] text-[#5B7FE8] uppercase mb-2">
                     {zh ? '重点总结' : 'Key Points'}
                   </h4>
                   <ul className="space-y-1.5">
                     {notes.keyPoints.map((line, i) => (
                       <li key={i} className="flex gap-2 text-sm text-gray-800 leading-relaxed">
-                        <span className="text-purple-400 mt-1 shrink-0">◆</span>
+                        <span className="text-[#7D6EA3] mt-1 shrink-0">◆</span>
                         <span>{line}</span>
                       </li>
                     ))}

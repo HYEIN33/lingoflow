@@ -127,7 +127,7 @@ function CommentSection({ slangId, meaningId, uiLang }: { slangId: string; meani
       {comments.length > 5 && !showAll && (
         <button
           onClick={() => setShowAll(true)}
-          className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-0.5 mb-2"
+          className="text-xs text-[#5B7FE8] hover:text-[#5B7FE8] font-medium flex items-center gap-0.5 mb-2"
         >
           <ChevronDown className="w-3 h-3" />
           {uiLang === 'zh' ? `查看更多 (${comments.length - 5})` : `Show more (${comments.length - 5})`}
@@ -141,12 +141,12 @@ function CommentSection({ slangId, meaningId, uiLang }: { slangId: string; meani
             onChange={(e) => setCommentText(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') handleSubmitComment(); }}
             placeholder={uiLang === 'zh' ? '写评论...' : 'Add a comment...'}
-            className="flex-1 text-xs bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-blue-500/50"
+            className="flex-1 text-xs bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5 outline-none focus:ring-1 focus:ring-[#5B7FE8]/50"
           />
           <button
             onClick={handleSubmitComment}
             disabled={!commentText.trim() || isSubmitting}
-            className="p-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors"
+            className="p-1.5 bg-[#0A0E1A] text-white rounded-lg hover:bg-[#1a2440] disabled:opacity-40 transition-colors"
           >
             <Send className="w-3 h-3" />
           </button>
@@ -1063,7 +1063,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
             }
           }}
           placeholder={uiLang === 'zh' ? '搜索网络热词、梗...' : 'Search internet slang, memes...'}
-          className="w-full bg-white/40 backdrop-blur-md border border-white/50 rounded-2xl py-4 pl-12 pr-4 outline-none focus:ring-2 focus:ring-blue-500/50 transition-all shadow-sm"
+          className="w-full bg-white/40 backdrop-blur-md border border-white/50 rounded-2xl py-4 pl-12 pr-4 outline-none focus:ring-2 focus:ring-[#5B7FE8]/50 transition-all shadow-sm"
         />
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
         {searchTerm && (
@@ -1078,7 +1078,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
         <button
           type="submit"
           disabled={isSearching || !searchTerm.trim()}
-          className="absolute right-2 top-1/2 -translate-y-1/2 bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          className="absolute right-2 top-1/2 -translate-y-1/2 bg-[#0A0E1A] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#1a2440] disabled:opacity-50 transition-colors"
         >
           {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : (uiLang === 'zh' ? '搜索' : 'Search')}
         </button>
@@ -1094,7 +1094,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
             <button
               key={s.id}
               onClick={() => { selectSlang(s); setSearchResults([]); }}
-              className="w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors border-b border-gray-50 last:border-0"
+              className="w-full text-left px-4 py-3 hover:bg-[rgba(91,127,232,0.08)] transition-colors border-b border-gray-50 last:border-0"
             >
               <div className="flex items-center justify-between">
                 <span className="font-bold text-gray-800">{s.term}</span>
@@ -1146,7 +1146,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                     <button
                       key={item.term}
                       onClick={() => doSearch(item.term)}
-                      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-blue-50 transition-colors text-left"
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-[rgba(91,127,232,0.08)] transition-colors text-left"
                     >
                       {/* Previously red/orange/yellow/gray — retired the
                           rainbow in favor of a monochrome blue gradient so
@@ -1154,9 +1154,9 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                           page's blue palette. Depth still conveys rank. */}
                       <span className={cn(
                         "w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black",
-                        idx === 0 ? "bg-blue-600 text-white" :
-                        idx === 1 ? "bg-blue-100 text-blue-600" :
-                        idx === 2 ? "bg-blue-50 text-blue-500" :
+                        idx === 0 ? "bg-[#0A0E1A] text-white" :
+                        idx === 1 ? "bg-[rgba(91,127,232,0.1)] text-[#5B7FE8]" :
+                        idx === 2 ? "bg-[rgba(91,127,232,0.08)] text-[#5B7FE8]" :
                         "bg-gray-100 text-gray-500"
                       )}>
                         {idx + 1}
@@ -1203,7 +1203,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                         <button
                           key={slang.id}
                           onClick={() => doSearch(slang.term)}
-                          className="px-3 py-1.5 bg-white/60 border border-white/60 rounded-xl text-sm font-medium text-gray-700 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 transition-colors"
+                          className="px-3 py-1.5 bg-white/60 border border-white/60 rounded-xl text-sm font-medium text-gray-700 hover:bg-[rgba(91,127,232,0.08)] hover:border-[rgba(91,127,232,0.4)] hover:text-[#5B7FE8] transition-colors"
                         >
                           {slang.term}
                         </button>
@@ -1219,7 +1219,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
           {auth.currentUser && (
             <button
               onClick={() => setShowGuidelines(!showGuidelines)}
-              className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+              className="text-sm text-[#5B7FE8] hover:text-[#5B7FE8] font-medium flex items-center gap-1"
             >
               {uiLang === 'zh' ? (showGuidelines ? '收起贡献准则' : '查看贡献准则') : (showGuidelines ? 'Hide Guidelines' : 'View Contribution Guidelines')}
             </button>
@@ -1250,7 +1250,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
           </p>
           <button
             onClick={() => setShowAddForm(true)}
-            className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl font-medium hover:bg-blue-700 transition-colors shadow-md shadow-blue-200"
+            className="inline-flex items-center gap-2 bg-[#0A0E1A] text-white px-6 py-3 rounded-xl font-medium hover:bg-[#1a2440] transition-colors shadow-md shadow-[rgba(91,127,232,0.2)]"
           >
             <Plus className="w-5 h-5" />
             {uiLang === 'zh' ? '添加解释' : 'Add Meaning'}
@@ -1267,7 +1267,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
             {!showAddForm && (
               <button
                 onClick={() => setShowAddForm(true)}
-                className="flex items-center gap-1 text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                className="flex items-center gap-1 text-[#5B7FE8] bg-[rgba(91,127,232,0.08)] hover:bg-[rgba(91,127,232,0.15)] px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
               >
                 <Plus className="w-4 h-4" />
                 {uiLang === 'zh' ? '补充解释' : 'Add Meaning'}
@@ -1286,13 +1286,13 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
               >
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold text-sm">
+                    <div className="w-8 h-8 bg-[rgba(91,127,232,0.1)] rounded-full flex items-center justify-center text-[#5B7FE8] font-bold text-sm">
                       {meaning.authorName ? meaning.authorName.charAt(0).toUpperCase() : 'A'}
                     </div>
                     <div>
                       <p className="text-sm font-bold text-gray-900">{meaning.authorName || 'Anonymous'}</p>
                       {meaning.authorTitle && (
-                        <p className="text-xs text-blue-600 font-medium">{meaning.authorTitle}</p>
+                        <p className="text-xs text-[#5B7FE8] font-medium">{meaning.authorTitle}</p>
                       )}
                     </div>
                   </div>
@@ -1340,7 +1340,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                       className={cn(
                         "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
                         upvotedMeanings.has(meaning.id)
-                          ? "bg-blue-100 text-blue-700"
+                          ? "bg-[rgba(91,127,232,0.1)] text-[#5B7FE8]"
                           : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                       )}
                     >
@@ -1408,7 +1408,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                   <button
                     onClick={() => handlePlayAudio(meaning)}
                     disabled={playingAudioId === meaning.id}
-                    className="p-2 text-gray-400 hover:text-blue-600 transition-colors disabled:opacity-50"
+                    className="p-2 text-gray-400 hover:text-[#5B7FE8] transition-colors disabled:opacity-50"
                     title={uiLang === 'zh' ? '朗读' : 'Read aloud'}
                   >
                     {playingAudioId === meaning.id ? (
@@ -1417,7 +1417,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                       <div className="relative">
                         <Volume2 className="w-5 h-5" />
                         {meaning.userAudioUrl && (
-                          <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full border border-white" />
+                          <div className="absolute -top-1 -right-1 w-2 h-2 bg-[#5B7FE8] rounded-full border border-white" />
                         )}
                       </div>
                     )}
@@ -1453,8 +1453,8 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
               </h3>
 
               {/* Example reference card */}
-              <div className="bg-blue-50/80 border border-blue-100 rounded-xl p-3 text-xs text-gray-600 space-y-1.5">
-                <p className="font-bold text-blue-700 text-sm">{uiLang === 'zh' ? '参考示例 💡' : 'Example for reference 💡'}</p>
+              <div className="bg-[rgba(91,127,232,0.08)]/80 border border-[rgba(91,127,232,0.2)] rounded-xl p-3 text-xs text-gray-600 space-y-1.5">
+                <p className="font-bold text-[#5B7FE8] text-sm">{uiLang === 'zh' ? '参考示例 💡' : 'Example for reference 💡'}</p>
                 <div className="bg-white/80 rounded-lg p-2.5 space-y-1">
                   <p><span className="font-bold text-gray-800">{uiLang === 'zh' ? '词条：' : 'Term: '}</span>yyds</p>
                   <p><span className="font-bold text-gray-800">{uiLang === 'zh' ? '含义：' : 'Meaning: '}</span>{uiLang === 'zh' ? '"永远的神"拼音首字母缩写，源自电竞圈，用于表达对某人或某物的极致推崇。' : '"Forever God" — acronym from Chinese gaming, used to express ultimate admiration.'}</p>
@@ -1475,7 +1475,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                       if (term) fetchSuggestion(term, newMeaning, true);
                     }}
                     disabled={isLoadingSuggestion}
-                    className="flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="flex items-center gap-1 text-xs font-semibold text-[#5B7FE8] hover:text-[#5B7FE8] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     title={uiLang === 'zh' ? '让 AI 帮你起个草稿' : 'Let AI draft it for you'}
                   >
                     <Wand2 className="w-3.5 h-3.5" />
@@ -1490,11 +1490,11 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                   value={newMeaning}
                   onChange={(e) => handleMeaningChange(e.target.value)}
                   placeholder={uiLang === 'zh' ? '例：源自电竞圈的缩写，后来在全网流行，用来夸赞...' : 'e.g. An acronym from gaming that went viral, used to praise...'}
-                  className="w-full bg-white/50 border border-white/50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500/50 min-h-[100px] resize-none"
+                  className="w-full bg-white/50 border border-white/50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-[#5B7FE8]/50 min-h-[100px] resize-none"
                   required
                 />
                 {isLoadingSuggestion && (
-                  <span className="flex items-center gap-1 text-xs text-blue-500 mt-1">
+                  <span className="flex items-center gap-1 text-xs text-[#5B7FE8] mt-1">
                     <Loader2 className="w-3 h-3 animate-spin" />
                     AI 思考中...
                   </span>
@@ -1505,18 +1505,18 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                       initial={{ opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -4 }}
-                      className="mt-2 bg-blue-50 border border-blue-200 rounded-xl p-3 cursor-pointer hover:bg-blue-100 transition-colors group"
+                      className="mt-2 bg-[rgba(91,127,232,0.08)] border border-[rgba(91,127,232,0.3)] rounded-xl p-3 cursor-pointer hover:bg-[rgba(91,127,232,0.15)] transition-colors group"
                       onClick={() => { setNewMeaning(aiSuggestion); setAiSuggestion(''); }}
                     >
                       <div className="flex items-start gap-2">
-                        <Wand2 className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                        <Wand2 className="w-4 h-4 text-[#5B7FE8] mt-0.5 shrink-0" />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs font-medium text-blue-600 mb-1">
+                          <p className="text-xs font-medium text-[#5B7FE8] mb-1">
                             {uiLang === 'zh' ? 'AI 建议' : 'AI Suggestion'}
                           </p>
                           <p className="text-sm text-gray-700 leading-relaxed">{aiSuggestion}</p>
                         </div>
-                        <span className="text-[10px] text-blue-400 group-hover:text-blue-600 shrink-0 mt-0.5">
+                        <span className="text-[10px] text-[rgba(91,127,232,0.6)] group-hover:text-[#5B7FE8] shrink-0 mt-0.5">
                           {uiLang === 'zh' ? '点击采纳' : 'Click to apply'}
                         </span>
                       </div>
@@ -1550,7 +1550,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                       }
                     }}
                     disabled={isGeneratingExample}
-                    className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 disabled:opacity-50"
+                    className="text-xs text-[#5B7FE8] hover:text-[#5B7FE8] font-medium flex items-center gap-1 disabled:opacity-50"
                   >
                     {isGeneratingExample ? <Loader2 className="w-3 h-3 animate-spin" /> : '✨'}
                     {uiLang === 'zh' ? 'AI 帮我写' : 'AI Generate'}
@@ -1560,7 +1560,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                   value={newExample}
                   onChange={(e) => setNewExample(e.target.value)}
                   placeholder={uiLang === 'zh' ? '例：这家面馆的味道真的YYDS，每次路过都要吃。' : 'e.g. This noodle shop is YYDS, I eat here every time.'}
-                  className="w-full bg-white/50 border border-white/50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500/50 min-h-[80px] resize-none"
+                  className="w-full bg-white/50 border border-white/50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-[#5B7FE8]/50 min-h-[80px] resize-none"
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   {uiLang === 'zh' ? '选填。如果不提供例句，词条的审核优先级和质量评分将会降低。' : 'Optional. Without an example, the review priority and quality score will be lower.'}
@@ -1576,7 +1576,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                     value={newVoiceName}
                     onChange={(e) => setNewVoiceName(e.target.value)}
                     disabled={!!audioFile}
-                    className="w-full bg-white/50 border border-white/50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500/50 disabled:opacity-50"
+                    className="w-full bg-white/50 border border-white/50 rounded-xl p-3 outline-none focus:ring-2 focus:ring-[#5B7FE8]/50 disabled:opacity-50"
                   >
                     <option value="Kore">Kore (Female)</option>
                     <option value="Puck">Puck (Male)</option>
@@ -1590,15 +1590,15 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     {uiLang === 'zh' ? '上传自定义语音 (可选)' : 'Upload Custom Voice (Optional)'}
                   </label>
-                  <label className="flex items-center justify-center gap-2 bg-white/50 border border-dashed border-gray-300 rounded-xl p-3 cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 transition-all">
+                  <label className="flex items-center justify-center gap-2 bg-white/50 border border-dashed border-gray-300 rounded-xl p-3 cursor-pointer hover:border-[#5B7FE8] hover:bg-[rgba(91,127,232,0.08)]/30 transition-all">
                     <input 
                       type="file" 
                       accept="audio/*" 
                       onChange={handleAudioFileChange} 
                       className="hidden" 
                     />
-                    <Mic className={cn("w-4 h-4", audioFile ? "text-blue-600" : "text-gray-400")} />
-                    <span className={cn("text-xs truncate max-w-[120px]", audioFile ? "text-blue-600 font-medium" : "text-gray-500")}>
+                    <Mic className={cn("w-4 h-4", audioFile ? "text-[#5B7FE8]" : "text-gray-400")} />
+                    <span className={cn("text-xs truncate max-w-[120px]", audioFile ? "text-[#5B7FE8] font-medium" : "text-gray-500")}>
                       {audioFile ? audioFile.name : (uiLang === 'zh' ? '上传录音' : 'Upload Audio')}
                     </span>
                     {audioFile && (
@@ -1619,7 +1619,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                   {uiLang === 'zh' ? '上传媒体 (可选)' : 'Upload Media (Optional)'}
                 </label>
                 <div className="flex items-center gap-4">
-                  <label className="flex-1 flex items-center justify-center gap-2 bg-white/50 border border-dashed border-gray-300 rounded-xl p-4 cursor-pointer hover:border-blue-400 hover:bg-blue-50/30 transition-all">
+                  <label className="flex-1 flex items-center justify-center gap-2 bg-white/50 border border-dashed border-gray-300 rounded-xl p-4 cursor-pointer hover:border-[#5B7FE8] hover:bg-[rgba(91,127,232,0.08)]/30 transition-all">
                     <input 
                       type="file" 
                       accept="image/*,video/*,.gif" 
@@ -1627,7 +1627,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                       className="hidden" 
                     />
                     {mediaFile ? (
-                      <span className="text-sm text-blue-600 font-medium truncate max-w-[200px]">{mediaFile.name}</span>
+                      <span className="text-sm text-[#5B7FE8] font-medium truncate max-w-[200px]">{mediaFile.name}</span>
                     ) : (
                       <>
                         <ImageIcon className="w-5 h-5 text-gray-400" />
@@ -1660,8 +1660,8 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                 </p>
               </div>
 
-              <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-3 text-sm text-blue-800 flex items-start gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-blue-500" />
+              <div className="bg-[rgba(91,127,232,0.08)]/50 border border-[rgba(91,127,232,0.2)] rounded-xl p-3 text-sm text-[#0A0E1A] flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-[#5B7FE8]" />
                 <p>
                   {uiLang === 'zh' 
                     ? '提醒：您发布的每个内容都将经过 AI 严格审查，包含仇恨言论、严重脏话或无关垃圾信息的内容将被拒绝。' 
@@ -1687,7 +1687,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
                 <button
                   type="submit"
                   disabled={isSubmitting || isUploading}
-                  className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2 rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                  className="flex items-center gap-2 bg-[#0A0E1A] text-white px-6 py-2 rounded-xl text-sm font-medium hover:bg-[#1a2440] disabled:opacity-50 transition-colors"
                 >
                   {(isSubmitting || isUploading) && <Loader2 className="w-4 h-4 animate-spin" />}
                   {isUploading ? (uiLang === 'zh' ? '上传中...' : 'Uploading...') : (uiLang === 'zh' ? '提交' : 'Submit')}

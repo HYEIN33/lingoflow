@@ -80,7 +80,7 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
     <>
       <button
         onClick={handleOpen}
-        className="relative p-2 text-gray-400 hover:text-blue-600 transition-colors rounded-xl hover:bg-blue-50"
+        className="relative p-2 text-gray-400 hover:text-[#5B7FE8] transition-colors rounded-xl hover:bg-[rgba(91,127,232,0.08)]"
         title={hasUnseen ? '有新内容！' : '更新日志'}
         aria-label="更新日志"
       >
@@ -119,7 +119,7 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
               {/* Header */}
               <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
                 <div className="flex items-center gap-2">
-                  <Bell className="w-5 h-5 text-blue-600" />
+                  <Bell className="w-5 h-5 text-[#5B7FE8]" />
                   <h2 className="font-black text-lg text-gray-900">更新日志</h2>
                 </div>
                 <button
@@ -148,7 +148,7 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
                           -right-2 pill was getting clipped by the modal's
                           rounded-3xl + overflow-hidden container. */}
                       <div className="flex items-center flex-wrap gap-2 mb-2">
-                        <span className="font-black text-blue-600 text-sm">
+                        <span className="font-black text-[#5B7FE8] text-sm">
                           v{entry.version}
                         </span>
                         <span className="text-xs text-gray-400">{entry.date}</span>
@@ -167,7 +167,7 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
                             key={i}
                             className="text-sm text-gray-600 leading-relaxed flex gap-2"
                           >
-                            <span className="text-blue-400 shrink-0">·</span>
+                            <span className="text-[rgba(91,127,232,0.6)] shrink-0">·</span>
                             <span>{change}</span>
                           </li>
                         ))}

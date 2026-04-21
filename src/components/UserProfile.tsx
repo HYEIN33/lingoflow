@@ -349,11 +349,11 @@ export default function UserProfile({
         <div className="flex items-start gap-5">
           {/* Avatar */}
           <div className="relative group">
-            <div className="w-20 h-20 rounded-2xl bg-blue-100 overflow-hidden shadow-md">
+            <div className="w-20 h-20 rounded-2xl bg-[rgba(91,127,232,0.1)] overflow-hidden shadow-md">
               {photoURL ? (
                 <img src={photoURL} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-blue-600">
+                <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-[#5B7FE8]">
                   {displayName.charAt(0).toUpperCase()}
                 </div>
               )}
@@ -391,14 +391,14 @@ export default function UserProfile({
                     value={editName}
                     onChange={e => setEditName(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleSaveName()}
-                    className="bg-white border border-blue-300 rounded-lg px-2 py-1 text-lg font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 w-40"
+                    className="bg-white border border-[rgba(91,127,232,0.4)] rounded-lg px-2 py-1 text-lg font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#5B7FE8] w-40"
                     maxLength={20}
                     placeholder={displayName}
                   />
                   <button
                     onClick={handleSaveName}
                     disabled={isSavingName}
-                    className="p-1 text-blue-600 hover:bg-blue-50 rounded-lg"
+                    className="p-1 text-[#5B7FE8] hover:bg-[rgba(91,127,232,0.08)] rounded-lg"
                   >
                     {isSavingName ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                   </button>
@@ -419,7 +419,7 @@ export default function UserProfile({
                   {isOwnProfile && (
                     <button
                       onClick={() => { setEditName(displayName); setIsEditingName(true); }}
-                      className="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      className="p-1 text-gray-400 hover:text-[#5B7FE8] hover:bg-[rgba(91,127,232,0.08)] rounded-lg transition-colors"
                     >
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
@@ -427,17 +427,17 @@ export default function UserProfile({
                 </>
               )}
               {userProfile?.isPro && (
-                <span className="px-2 py-0.5 bg-gradient-to-r from-amber-400 to-orange-500 text-white text-[10px] font-black rounded-full">Pro</span>
+                <span className="px-2 py-0.5 bg-gradient-to-r from-[#F0D78A] to-[#E88B7D] text-white text-[10px] font-black rounded-full">Pro</span>
               )}
             </div>
 
             {/* Title badges */}
             <div className="flex flex-wrap gap-1.5 mb-3">
               {userProfile?.titleLevel1 && (
-                <span className="px-2 py-0.5 bg-blue-50 text-blue-600 text-xs font-medium rounded-lg border border-blue-200">{userProfile.titleLevel1}</span>
+                <span className="px-2 py-0.5 bg-[rgba(91,127,232,0.1)] text-[#5B7FE8] text-xs font-medium rounded-lg border border-[rgba(91,127,232,0.3)]">{userProfile.titleLevel1}</span>
               )}
               {userProfile?.titleLevel2 && (
-                <span className="px-2 py-0.5 bg-purple-50 text-purple-600 text-xs font-medium rounded-lg border border-purple-200">{userProfile.titleLevel2}</span>
+                <span className="px-2 py-0.5 bg-[rgba(168,168,217,0.1)] text-[#7D6EA3] text-xs font-medium rounded-lg border border-[rgba(168,168,217,0.3)]">{userProfile.titleLevel2}</span>
               )}
               {userProfile?.titleLevel3 && (
                 <span className="px-2 py-0.5 bg-amber-50 text-amber-600 text-xs font-medium rounded-lg border border-amber-200">{userProfile.titleLevel3}</span>
@@ -466,7 +466,7 @@ export default function UserProfile({
       {/* Stats Grid */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: uiLang === 'zh' ? '词条贡献' : 'Contributions', value: userProfile?.approvedSlangCount || 0, color: 'text-blue-600', bg: 'bg-blue-50' },
+          { label: uiLang === 'zh' ? '词条贡献' : 'Contributions', value: userProfile?.approvedSlangCount || 0, color: 'text-[#5B7FE8]', bg: 'bg-[rgba(91,127,232,0.08)]' },
           { label: uiLang === 'zh' ? '信誉分' : 'Reputation', value: userProfile?.reputationScore || 100, color: 'text-emerald-600', bg: 'bg-emerald-50' },
           { label: uiLang === 'zh' ? '连续天数' : 'Streak', value: userProfile?.currentStreak || 0, color: 'text-orange-600', bg: 'bg-orange-50', suffix: uiLang === 'zh' ? ' 天' : 'd' },
         ].map((stat, i) => (
@@ -496,18 +496,18 @@ export default function UserProfile({
                 key={achievement.id}
                 onClick={() => unlocked && handleEquipBadge(achievement.id)}
                 className={`flex flex-col items-center gap-1.5 group relative rounded-2xl p-2 transition-all ${
-                  isEquipped ? 'bg-blue-50 ring-2 ring-blue-400 shadow-sm' : 'hover:bg-gray-50'
+                  isEquipped ? 'bg-[rgba(91,127,232,0.08)] ring-2 ring-[rgba(91,127,232,0.5)] shadow-sm' : 'hover:bg-gray-50'
                 } ${!unlocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}
               >
                 <AchievementBadge achievement={achievement} unlocked={unlocked} size="md" />
-                <span className={`text-[10px] font-medium text-center leading-tight ${isEquipped ? 'text-blue-600 font-bold' : unlocked ? 'text-gray-700' : 'text-gray-400'}`}>
+                <span className={`text-[10px] font-medium text-center leading-tight ${isEquipped ? 'text-[#5B7FE8] font-bold' : unlocked ? 'text-gray-700' : 'text-gray-400'}`}>
                   {uiLang === 'zh' ? achievement.name : achievement.nameEn}
                 </span>
                 {!unlocked && (
                   <span className="text-[9px] text-gray-400 text-center leading-tight">{achievement.requirement}</span>
                 )}
                 {isEquipped && (
-                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#5B7FE8] rounded-full flex items-center justify-center">
                     <Check className="w-2.5 h-2.5 text-white" />
                   </span>
                 )}
@@ -531,11 +531,11 @@ export default function UserProfile({
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
-              className={`flex-1 py-3 text-sm font-semibold transition-colors relative ${activeTab === tab.id ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
+              className={`flex-1 py-3 text-sm font-semibold transition-colors relative ${activeTab === tab.id ? 'text-[#5B7FE8]' : 'text-gray-400 hover:text-gray-600'}`}
             >
               {tab.label}
               {activeTab === tab.id && (
-                <motion.div layoutId="profileTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600" />
+                <motion.div layoutId="profileTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#0A0E1A]" />
               )}
             </button>
           ))}
@@ -615,7 +615,7 @@ export default function UserProfile({
                     <div className="flex items-center justify-between">
                       <span className="font-bold text-lg text-gray-900">{userProfile?.isPro ? 'Pro' : 'Free'}</span>
                       {!userProfile?.isPro && (
-                        <button onClick={() => onOpenPayment('default')} className="bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-colors">
+                        <button onClick={() => onOpenPayment('default')} className="bg-[#0A0E1A] text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-[#1a2440] transition-colors">
                           {uiLang === 'zh' ? '升级 Pro' : 'Upgrade'}
                         </button>
                       )}
@@ -633,7 +633,7 @@ export default function UserProfile({
                     </div>
                     <button
                       onClick={handleExportData}
-                      className="w-full flex items-center justify-center gap-2 p-3 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-xl transition-colors text-sm font-bold mt-2"
+                      className="w-full flex items-center justify-center gap-2 p-3 bg-[rgba(91,127,232,0.1)] text-[#5B7FE8] hover:bg-[rgba(91,127,232,0.15)] rounded-xl transition-colors text-sm font-bold mt-2"
                     >
                       {uiLang === 'zh' ? '导出单词本' : 'Export Wordbook'}
                     </button>
@@ -645,7 +645,7 @@ export default function UserProfile({
                   <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">{uiLang === 'zh' ? '通知' : 'Notifications'}</h3>
                   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl text-sm">
                     <span className="flex items-center gap-2 text-gray-600"><Bell className="w-4 h-4" /> {uiLang === 'zh' ? '推送通知' : 'Push'}</span>
-                    <div className="w-10 h-6 bg-blue-600 rounded-full relative cursor-pointer">
+                    <div className="w-10 h-6 bg-[#0A0E1A] rounded-full relative cursor-pointer">
                       <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow" />
                     </div>
                   </div>
