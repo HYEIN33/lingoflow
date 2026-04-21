@@ -316,7 +316,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
   // finalized and (b) still lack a translation. Merge them into the
   // first one (its transcription becomes the joined paragraph, its
   // translation becomes `zh`), drop the rest.
-  const applyTranslationBatch = (pairs: Array<{ en: string; zh: string }>) => {
+  const applyTranslationBatch = (pairs: Array<{ en: string; zh: string; sentences: string[] }>) => {
     setStream((prev) => {
       let next = [...prev];
       for (const pair of pairs) {
@@ -354,10 +354,20 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           continue;
         }
 
-        // Paragraph mode: session joined N sentences into one `en`; merge
-        // all un-translated finalized lines into the first, drop the rest.
+        // Paragraph mode: session flushed N sentences and Gemini returned
+        // ONE paragraph translation. We merge EXACTLY those N un-translated
+        // finalized lines into the first — not "all un-translated finalized
+        // lines", because between flushBatch() and Gemini's return, more
+        // sentences may have landed in the stream. Greedy merging used to
+        // swallow them (the "吞英文" bug: D arrived after flush, then got
+        // splice-deleted when A+B+C's translation returned).
+        //
+        // Precise merge: only the first `pair.sentences.length` un-translated
+        // finalized lines belong to THIS pair. Later ones stay untouched and
+        // will be picked up by the next flushBatch+translate cycle.
+        const N = Math.max(1, pair.sentences?.length ?? 1);
         const indices: number[] = [];
-        for (let i = 0; i < next.length; i++) {
+        for (let i = 0; i < next.length && indices.length < N; i++) {
           const item = next[i];
           if (item.kind === 'line' && item.finalized && !item.translation) {
             indices.push(i);

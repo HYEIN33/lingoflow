@@ -46,7 +46,14 @@ export interface LiveSessionCallbacks {
    * ship them as one translate call. The model is told to return one
    * line per input, separated by a sentinel, so we can split it back.
    */
-  onTranslationBatch: (pairs: Array<{ en: string; zh: string }>) => void;
+  // `sentences` is the exact list of finalized-English lines that this
+  // translation pair covers. The UI uses its length to merge ONLY that
+  // many un-translated lines, instead of greedily swallowing every
+  // un-translated line in the stream (which lets sentences that arrived
+  // AFTER flushBatch but BEFORE Gemini returned get silently deleted —
+  // the "吞英文" bug). `en` is the joined paragraph actually sent to
+  // Gemini; `zh` is the Chinese paragraph returned.
+  onTranslationBatch: (pairs: Array<{ en: string; zh: string; sentences: string[] }>) => void;
   /**
    * English transcription. isFinal=false → interim (keep replacing the
    * in-flight line), true → the segment is locked in and a translation
@@ -392,11 +399,11 @@ ${englishParagraph}`;
       // paragraph than N pairs. Callsite keys translations by exact en
       // match; join with a space so a single pair matches the single
       // joined English block we display.
-      cb.onTranslationBatch([{ en: englishParagraph, zh }]);
+      cb.onTranslationBatch([{ en: englishParagraph, zh, sentences: batch }]);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('[live] paragraph translate failed after retries:', err);
-      cb.onTranslationBatch([{ en: englishParagraph, zh: '（翻译失败，稍后重试）' }]);
+      cb.onTranslationBatch([{ en: englishParagraph, zh: '（翻译失败，稍后重试）', sentences: batch }]);
     }
   };
 
@@ -423,20 +430,64 @@ ${englishParagraph}`;
   // starts won't fire SpeechStarted, and the user still deserves feedback.
   setTimeout(() => flipToLiveOnce(), 2000);
 
+  // Interim rescue buffer. Deepgram Nova-3 occasionally delivers empty
+  // is_final=true frames while the interim stream (is_final=false) had
+  // actual text. Observed pattern in production logs:
+  //    #30 is_final=false text="The positiveness of that emerge"
+  //    #40 is_final=true  text=""        ← same utterance's final, empty
+  //
+  // Without rescue, that whole sentence never makes it into pendingBatch
+  // (the if(!text) return guard drops the empty final), so the user sees
+  // the English flash on screen as an interim then vanish, and there's
+  // no Chinese translation because paragraph mode only feeds on finals.
+  //
+  // Rescue strategy: keep the last non-empty interim text. When a final
+  // arrives empty, promote that buffered interim to the final. Reset on
+  // every real (non-empty) final so buffers from one utterance don't
+  // leak into the next.
+  let lastInterimText = '';
+  let interimEmptyFinalRescueCount = 0;
+
   const attachHandlers = (conn: ListenLiveClient) => {
     conn.on(LiveTranscriptionEvents.Transcript, (data: any) => {
       flipToLiveOnce();
       transcriptEventCount += 1;
       const alt = data?.channel?.alternatives?.[0];
       const rawText = (alt?.transcript || '').trim();
+      const isFinalRaw = !!data.is_final;
       if (transcriptEventCount <= 3 || transcriptEventCount % 10 === 0) {
         // eslint-disable-next-line no-console
-        console.info(`[live] Transcript #${transcriptEventCount} is_final=${!!data.is_final} text=${JSON.stringify(rawText.slice(0, 60))}`);
+        console.info(`[live] Transcript #${transcriptEventCount} is_final=${isFinalRaw} text=${JSON.stringify(rawText.slice(0, 60))}`);
       }
       if (!alt) return;
-      const text = rawText;
+
+      // Non-final events with text: stash as interim buffer and flow on.
+      if (!isFinalRaw && rawText) {
+        lastInterimText = rawText;
+        if (cb.onTranscriptionDelta) cb.onTranscriptionDelta(rawText, false);
+        return;
+      }
+      // Non-final empty: ignore (Deepgram heartbeat/warmup frames).
+      if (!isFinalRaw && !rawText) return;
+
+      // From here on: isFinalRaw === true
+      // Decide the effective text. Prefer Deepgram's final. If empty,
+      // rescue from the last non-empty interim we saw for this utterance.
+      let text = rawText;
+      if (!text && lastInterimText) {
+        text = lastInterimText;
+        interimEmptyFinalRescueCount += 1;
+        if (interimEmptyFinalRescueCount <= 3 || interimEmptyFinalRescueCount % 10 === 0) {
+          // eslint-disable-next-line no-console
+          console.info(`[live] rescued empty-final from interim (#${interimEmptyFinalRescueCount}): ${JSON.stringify(text.slice(0, 60))}`);
+        }
+      }
+      // Reset buffer once we've either consumed a real final or promoted
+      // the interim — next utterance starts fresh.
+      lastInterimText = '';
+
       if (!text) return;
-      const isFinal = !!data.is_final;
+      const isFinal = true;
       if (cb.onTranscriptionDelta) {
         cb.onTranscriptionDelta(text, isFinal);
       }
@@ -629,12 +680,45 @@ ${englishParagraph}`;
   // every 8s) so resume is instantaneous.
   let paused = false;
 
+  // Volume diagnostics: samples the RMS level of the PCM stream every 3s
+  // and logs it. Lets us tell apart "mic is silent" (RMS ≈ 0) from "mic
+  // works but Deepgram isn't recognizing" (RMS > ~500 but text empty).
+  // The user-reported "吞英文" bug showed `text=""` for 200+ transcript
+  // events in a row — without this log we can't tell if audio even left
+  // the worklet.
+  let volLogLastMs = 0;
+  let volLogPeakAbs = 0;
+  let volLogSampleCount = 0;
+  let volLogSumSquares = 0;
+
   // Pipe PCM from the worklet to Deepgram.
   worklet.port.onmessage = (ev) => {
     const pcm = ev.data?.pcm as ArrayBuffer | undefined;
     if (!pcm || !connection) return;
     if (paused) return;
     const bytes = new Uint8Array(pcm);
+
+    // Volume probe: scan as Int16 (linear16 encoding). Track peak abs
+    // and sum of squares across the 3s window; log once per window.
+    const i16 = new Int16Array(pcm);
+    for (let i = 0; i < i16.length; i++) {
+      const v = i16[i];
+      const absV = v < 0 ? -v : v;
+      if (absV > volLogPeakAbs) volLogPeakAbs = absV;
+      volLogSumSquares += v * v;
+    }
+    volLogSampleCount += i16.length;
+    const now = Date.now();
+    if (now - volLogLastMs >= 3000 && volLogSampleCount > 0) {
+      const rms = Math.sqrt(volLogSumSquares / volLogSampleCount);
+      // eslint-disable-next-line no-console
+      console.info(`[live] mic RMS=${rms.toFixed(0)} peak=${volLogPeakAbs} (3s window, ${volLogSampleCount} samples) — RMS<100 ≈ silence; RMS>500 = real speech`);
+      volLogLastMs = now;
+      volLogPeakAbs = 0;
+      volLogSampleCount = 0;
+      volLogSumSquares = 0;
+    }
+
     let written = 0;
     while (written < bytes.byteLength) {
       const space = recentPcm.byteLength - recentWriteOffset;
