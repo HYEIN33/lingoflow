@@ -47,13 +47,18 @@ export interface LiveSessionCallbacks {
    * line per input, separated by a sentinel, so we can split it back.
    */
   // `sentences` is the exact list of finalized-English lines that this
-  // translation pair covers. The UI uses its length to merge ONLY that
-  // many un-translated lines, instead of greedily swallowing every
-  // un-translated line in the stream (which lets sentences that arrived
-  // AFTER flushBatch but BEFORE Gemini returned get silently deleted —
-  // the "吞英文" bug). `en` is the joined paragraph actually sent to
-  // Gemini; `zh` is the Chinese paragraph returned.
-  onTranslationBatch: (pairs: Array<{ en: string; zh: string; sentences: string[] }>) => void;
+  // translation pair covers. `batchId` is a stable identifier (e.g. "bx-3")
+  // — the UI snapshots which line item ids belong to this batch when the
+  // batch opens (onBatchOpen), then uses batchId to match those exact ids
+  // when zh returns. Match-by-batchId makes concurrent translate safe:
+  // out-of-order arrivals can no longer overwrite the wrong paragraph.
+  onTranslationBatch: (pairs: Array<{ en: string; zh: string; sentences: string[]; batchId: string }>) => void;
+  // Fires the moment a paragraph batch is dispatched to Gemini, before
+  // the translate completes. UI uses this to snapshot which line ids
+  // belong to this batchId — the equivalent of "marking the lines as
+  // claimed by batch X". Receives the batch's English sentence count so
+  // the UI can validate length when zh later returns.
+  onBatchOpen?: (batchId: string, sentenceCount: number) => void;
   /**
    * English transcription. isFinal=false → interim (keep replacing the
    * in-flight line), true → the segment is locked in and a translation
@@ -87,23 +92,24 @@ export interface LiveSessionOptions {
   course?: string;
   keyterms?: string[];
   /**
-   * Translation cadence:
-   *   'paragraph' (default) — accumulate via char/pause/max-wait triggers,
-   *     then translate the whole paragraph in one Gemini call. Smooth
-   *     prose, latency a few seconds longer.
-   *   'realtime' — translate each finalized sentence immediately on
-   *     is_final. Lower per-sentence latency but produces fragmented,
-   *     less coherent Chinese without cross-sentence context.
+   * Translation cadence — paragraph only after realtime mode was retired
+   * 2026-04-27 evening (it produced fragmented, low-quality Chinese
+   * without cross-sentence context, and the Pro-gated concurrent path
+   * doesn't need realtime as a "low latency option" anymore). Kept as a
+   * field for forward compatibility but only 'paragraph' is honored.
    */
-  translationMode?: 'paragraph' | 'realtime';
-  /**
-   * Pro tier flag — controls translate concurrency cap.
-   *   false (default): N=2 concurrent Gemini paragraph translations
-   *   true (Pro):       N=5 concurrent
-   * A higher cap means a fast-talking speaker's later paragraphs don't
-   * starve waiting for earlier ones to return. Pro caps higher because
-   * Pro users are more likely to use long-form classroom recording.
-   */
+  translationMode?: 'paragraph';
+  // Pro tier flag — controls translate concurrency cap.
+  //   false (non-Pro): serial — each paragraph waits for the previous one
+  //     to finish before its translate fires.
+  //   true (Pro): N=3 concurrent paragraphs.
+  //
+  // Concurrency was a Pro-only feature originally; the 2026-04-27 morning
+  // PR briefly applied it to all users and produced a paragraph-splitting
+  // bug (out-of-order returns made applyTranslationBatch's "first N
+  // un-translated lines" pick the wrong N). The current version (afternoon)
+  // pairs each batch with a stable batchId so merges target the correct
+  // line items regardless of arrival order — see flushBatch + onBatchOpen.
   isPro?: boolean;
 }
 
@@ -341,25 +347,24 @@ export async function startLiveSession(
   // Timing tuned to beat EasyNoteAI on latency. Their cadence appears to
   // be ~30-60s accumulation before a translate call; we aim for 6-15s
   // typical. The user still reads coherent paragraphs, just sooner.
-  // Paragraph triggers (re-tuned 2026-04-27 — agressively shorter for
-  // tighter feedback loop):
-  //   - WORD_HARD_CAP: never let a paragraph exceed this many English
-  //     words. Beyond ~80 words Gemini's translation quality drops and
-  //     the user can't keep up reading. Counting WORDS (not chars) means
-  //     short choppy sentences and long flowing ones get the same budget.
-  //   - PAUSE_MS: silence threshold to treat as a paragraph break. 1.5s
-  //     is short enough that natural speech turns feel snappy, long
-  //     enough that intra-sentence breaths don't fragment the paragraph.
-  //   - PAUSE_MIN_WORDS: even if the pause fires, never flush a 1-word
-  //     micro-paragraph. Force at least ~1 short sentence of context so
-  //     Gemini has something to work with.
+  // Paragraph triggers (re-re-tuned 2026-04-27 evening — pulled back from
+  // the aggressive 1.5s/80 word triggers because they fragmented natural
+  // speech: a speaker pausing 1.6s mid-thought got their paragraph chopped,
+  // then concurrent translate made the visual splits worse. The new
+  // numbers below mirror EasyNoteAI's "wait for a real paragraph break"
+  // philosophy but cut the wait by 10x (they're 30-60s, we're 3s).
   //
-  // No MAX_WAIT_MS in this design — the word cap is the ceiling. A
-  // monologue speaker triggering WORD_HARD_CAP will produce paragraphs
-  // back-to-back (concurrent translate, see PR2).
-  const PARAGRAPH_WORD_HARD_CAP = 80;  // ≈ 25-35 seconds of speech
-  const PARAGRAPH_PAUSE_MS = 1500;     // 1.5s silence = paragraph break
-  const PARAGRAPH_PAUSE_MIN_WORDS = 8; // never flush 1-word micro-paragraph
+  //   - WORD_HARD_CAP=100: lets a single thought run to ~30-40s of
+  //     speech before forcing a flush. Most teachers naturally land
+  //     under this; only true monologues hit the cap.
+  //   - PAUSE_MS=3000: 3s silence is a deliberate pause / topic shift,
+  //     not "thinking of the next word". Halves the rate of accidental
+  //     mid-thought splits vs the old 1.5s.
+  //   - PAUSE_MIN_WORDS=10: bumped from 8 to absorb the slightly longer
+  //     paragraphs the new triggers produce.
+  const PARAGRAPH_WORD_HARD_CAP = 100;  // ≈ 30-45 seconds of speech
+  const PARAGRAPH_PAUSE_MS = 3000;      // 3s silence = paragraph break
+  const PARAGRAPH_PAUSE_MIN_WORDS = 10; // never flush a tiny fragment
 
   // Word counter for the accumulated batch. Splits on whitespace and
   // filters empties (handles double-spaces from naive joining).
@@ -370,13 +375,21 @@ export async function startLiveSession(
   let pendingBatch: string[] = [];
   let batchTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingKeyCounter = 0;
+  let batchIdCounter = 0;
 
-  // Concurrency semaphore for paragraph translates (PR2 — 2026-04-27).
-  // Free users: 2 concurrent. Pro users: 5 concurrent. When the cap is
-  // reached, additional translate jobs queue and resolve in arrival order
-  // (FIFO). A non-Pro user blasting >2 paragraphs in a row sees the 3rd
-  // paragraph's "翻译中" stay on screen a bit longer — acceptable tradeoff.
-  const TRANSLATE_CONCURRENCY = opts.isPro ? 5 : 2;
+  // Concurrency semaphore for paragraph translates (Pro-only).
+  //   non-Pro: TRANSLATE_CONCURRENCY=1 → effectively serial
+  //   Pro:     TRANSLATE_CONCURRENCY=3 → up to 3 in-flight Gemini calls
+  // Why 3 not 5: 5 produced too many simultaneous batches in long classes,
+  // making the visual "翻译中" pile uncomfortably tall and increasing the
+  // surface area for arrival-order surprises (which are now batchId-safe
+  // but still cleaner with a tighter cap).
+  //
+  // The race that earlier serial-→-concurrent migration produced is now
+  // structurally fixed: each batch carries a batchId, and ClassroomTab
+  // matches the zh return to the exact line ids it snapshotted at
+  // onBatchOpen time. Concurrent arrival order no longer matters.
+  const TRANSLATE_CONCURRENCY = opts.isPro ? 3 : 1;
   let activeTranslations = 0;
   const translateQueue: Array<() => void> = [];
 
@@ -402,14 +415,15 @@ export async function startLiveSession(
     if (pendingBatch.length === 0) return;
     const batch = pendingBatch;
     pendingBatch = [];
+    const batchId = `bx-${++batchIdCounter}`;
     const key = `pg-${++pendingKeyCounter}`;
     cb.onTranslationPending?.(true, key);
-    // Concurrent translate (PR2 — 2026-04-27): each paragraph gets its
-    // own translateBatch invocation, gated only by a Pro-aware semaphore.
-    // No serial chain — paragraph 2 doesn't wait for paragraph 1's Gemini
-    // round-trip. Out-of-order completion is fine: applyTranslationBatch
-    // in ClassroomTab merges by exact-match on `en`, not by arrival order.
-    void runWithConcurrencyLimit(() => translateBatch(batch))
+    // Tell the UI "these N sentences are now mine" — the UI snapshots
+    // which line ids belong to this batchId BEFORE the network call,
+    // so when zh comes back (out of order vs other batches), the merge
+    // targets exactly those ids.
+    cb.onBatchOpen?.(batchId, batch.length);
+    void runWithConcurrencyLimit(() => translateBatch(batch, batchId))
       .finally(() => { cb.onTranslationPending?.(false, key); });
   };
 
@@ -432,7 +446,7 @@ export async function startLiveSession(
     throw lastErr;
   };
 
-  const translateBatch = async (batch: string[]) => {
+  const translateBatch = async (batch: string[], batchId: string = `bx-rt-${++batchIdCounter}`) => {
     // Paragraph-mode translation: join ALL sentences in the batch into
     // a single English paragraph, send it to Gemini as one piece, and
     // receive one Chinese paragraph back. No sentinel splitting, no
@@ -460,11 +474,11 @@ ${englishParagraph}`;
       // paragraph than N pairs. Callsite keys translations by exact en
       // match; join with a space so a single pair matches the single
       // joined English block we display.
-      cb.onTranslationBatch([{ en: englishParagraph, zh, sentences: batch }]);
+      cb.onTranslationBatch([{ en: englishParagraph, zh, sentences: batch, batchId }]);
     } catch (err) {
       // eslint-disable-next-line no-console
       console.warn('[live] paragraph translate failed after retries:', err);
-      cb.onTranslationBatch([{ en: englishParagraph, zh: '（翻译失败，稍后重试）', sentences: batch }]);
+      cb.onTranslationBatch([{ en: englishParagraph, zh: '（翻译失败，稍后重试）', sentences: batch, batchId }]);
     }
   };
 
@@ -543,17 +557,9 @@ ${englishParagraph}`;
     }
     transcript += (transcript ? '\n' : '') + text;
 
-    // Realtime mode: translate this sentence by itself, skip paragraph triggers.
-    // Uses the same concurrency semaphore as paragraph mode — free users
-    // get 2 concurrent realtime translates, Pro gets 5.
-    if (opts.translationMode === 'realtime') {
-      const key = `rt-${++pendingKeyCounter}`;
-      cb.onTranslationPending?.(true, key);
-      void runWithConcurrencyLimit(() => translateBatch([text]))
-        .finally(() => { cb.onTranslationPending?.(false, key); });
-      return;
-    }
-
+    // Realtime mode retired 2026-04-27. Always go through pendingBatch +
+    // paragraph triggers — produces coherent Chinese with cross-sentence
+    // context instead of disjointed per-sentence flickers.
     pendingBatch.push(text);
 
     // Word-cap path: this final pushed us past 80 words. Flush immediately
