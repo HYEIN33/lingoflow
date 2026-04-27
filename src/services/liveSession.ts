@@ -211,11 +211,16 @@ export async function startLiveSession(
   // eslint-disable-next-line no-console
   console.info('[live] got MediaStream, tracks=', mediaStream.getTracks().length);
 
-  // Bumped tutorial endpointing from 500 → 800 on 2026-04-21. Combined with
-  // smart_format + punctuate, endpointing=500 was making Nova-3 re-decide
-  // mid-utterance and emit empty is_final=true frames (the "吞英文" bug).
-  // 800ms is Deepgram's own recommended floor for live subtitle scenarios.
-  const endpointing = opts.mode === 'tutorial' ? 800 : 1200;
+  // Endpointing tuning history:
+  //   500 → 800 (2026-04-21): nova-3 was re-deciding mid-utterance with
+  //     smart_format and emitting empty is_final=true frames.
+  //   800 → 1500 (2026-04-27 evening): user reported "识别不完全, 说一句
+  //     覆盖一句" — interim text wasn't accumulating between turns and
+  //     finals weren't landing reliably. 1500ms gives nova-3 enough
+  //     silence to commit a real final instead of re-segmenting on every
+  //     micro-pause. Slight latency cost (~700ms more silence before final
+  //     arrives) is worth not losing transcript content.
+  const endpointing = opts.mode === 'tutorial' ? 1500 : 1500;
 
   // Create a Deepgram client with our temporary access token. The SDK
   // handles browser-safe WebSocket auth (no Authorization header trick
@@ -240,14 +245,11 @@ export async function startLiveSession(
     interim_results: true,
     smart_format: true,
     endpointing,
-    // 1500ms: Deepgram's recommended minimum. We used to set this to
-    // 4000 to try to batch multiple sentences before UtteranceEnd, but
-    // that meant the user waited 4s of silence + translate latency
-    // before any zh appeared — unacceptable for a live subtitle. Going
-    // back to 1500ms so UtteranceEnd fires quickly; whatever sentences
-    // happened to arrive in that window are flushed as a batch, rather
-    // than us artificially holding up single sentences.
-    utterance_end_ms: 1500,
+    // utterance_end_ms must be > endpointing (now 1500) so the rescue
+    // path (UtteranceEnd commits any pendingSyntheticFinal) fires AFTER
+    // Deepgram had a chance to send a real final. 2000ms = endpointing +
+    // 500ms safety margin. Per Deepgram docs the floor is 1000ms.
+    utterance_end_ms: 2000,
     vad_events: true,
     punctuate: true,
   };

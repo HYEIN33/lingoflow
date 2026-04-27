@@ -435,6 +435,11 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
   // translates and deleted user-visible paragraphs).
   const handleBatchOpen = (batchId: string, sentenceCount: number) => {
     setStream((prev) => {
+      // Walk forward, claim the first `sentenceCount` line items that
+      // are finalized AND not yet sealed by another batch AND not yet
+      // translated. Mark them sealedByBatch so the renderer can split
+      // them off into a "整段翻译" card with a divider AFTER (so new
+      // transcripts appear below in a fresh card).
       const claimed: number[] = [];
       const next = prev.map((item) => {
         if (item.kind !== 'line') return item;
@@ -446,8 +451,6 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
         return { ...item, sealedByBatch: batchId };
       });
       batchToLineIdsRef.current.set(batchId, claimed);
-      // eslint-disable-next-line no-console
-      console.info(`[classroom] onBatchOpen ${batchId}: requested ${sentenceCount}, claimed ${claimed.length} lines`, claimed, 'stream finalized lines:', prev.filter(i => i.kind === 'line' && i.finalized).map((i: any) => ({ id: i.id, hasZh: !!i.translation, sealed: i.sealedByBatch })));
       return next;
     });
   };
@@ -480,8 +483,10 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
         }
 
         if (liveIndices.length === 0) {
-          // eslint-disable-next-line no-console
-          console.warn(`[classroom] applyTranslationBatch ${pair.batchId}: NO claimed lines found! Appending fresh. claimedIds=`, claimedIds, 'streamLineIds=', next.filter(i => i.kind === 'line').map((i: any) => i.id));
+          // Nothing left to merge into — either the batch's lines were
+          // never created (rare) or got deleted by some other code path.
+          // Fallback: append a fresh translated line so the user still
+          // sees the zh.
           next.push({
             kind: 'line',
             id: itemCounter.current++,
@@ -492,8 +497,6 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
           });
           continue;
         }
-        // eslint-disable-next-line no-console
-        console.info(`[classroom] applyTranslationBatch ${pair.batchId}: merging ${liveIndices.length} lines into 1`, claimedIds);
 
         // Merge: first claimed line gets the joined English + zh; the
         // rest are removed. Walk in reverse so splice doesn't shift
