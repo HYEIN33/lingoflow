@@ -96,6 +96,15 @@ export interface LiveSessionOptions {
    *     less coherent Chinese without cross-sentence context.
    */
   translationMode?: 'paragraph' | 'realtime';
+  /**
+   * Pro tier flag — controls translate concurrency cap.
+   *   false (default): N=2 concurrent Gemini paragraph translations
+   *   true (Pro):       N=5 concurrent
+   * A higher cap means a fast-talking speaker's later paragraphs don't
+   * starve waiting for earlier ones to return. Pro caps higher because
+   * Pro users are more likely to use long-form classroom recording.
+   */
+  isPro?: boolean;
 }
 
 export interface LiveSessionHandle {
@@ -332,30 +341,58 @@ export async function startLiveSession(
   // Timing tuned to beat EasyNoteAI on latency. Their cadence appears to
   // be ~30-60s accumulation before a translate call; we aim for 6-15s
   // typical. The user still reads coherent paragraphs, just sooner.
-  // Paragraph triggers (tuned 2026-04-20 after users reported per-sentence
-  // output on video-lecture audio):
-  //   - MIN_CHARS: flush once paragraph is "long enough", ~3-4 sentences.
-  //   - PAUSE_MS: how long a silence has to last before we treat it as
-  //     a paragraph break. Video lectures often have 2-3s pauses between
-  //     sentences that are still within the same paragraph, so this MUST
-  //     be generous or we end up translating every sentence individually.
-  //   - HARD_MIN_CHARS: even if the pause timer fires, never flush a
-  //     stubbornly short batch (<60 chars = ~1 short sentence). Force
-  //     the user to either (a) hit 60 chars, (b) hit MAX_WAIT, or
-  //     (c) stop speaking long enough for PAUSE_MS. This is the fix
-  //     that actually eliminates the "1-sentence-at-a-time" feeling.
-  //   - MAX_WAIT_MS: absolute ceiling for continuous speech.
-  const PARAGRAPH_MIN_CHARS = 180;     // ~3-4 spoken sentences of English
-  const PARAGRAPH_HARD_MIN_CHARS = 60; // never flush less than this on pause
-  const PARAGRAPH_PAUSE_MS = 4500;     // 4.5s silence = real paragraph break
-  const PARAGRAPH_MAX_WAIT_MS = 18000; // hard cap for non-stop speech
+  // Paragraph triggers (re-tuned 2026-04-27 — agressively shorter for
+  // tighter feedback loop):
+  //   - WORD_HARD_CAP: never let a paragraph exceed this many English
+  //     words. Beyond ~80 words Gemini's translation quality drops and
+  //     the user can't keep up reading. Counting WORDS (not chars) means
+  //     short choppy sentences and long flowing ones get the same budget.
+  //   - PAUSE_MS: silence threshold to treat as a paragraph break. 1.5s
+  //     is short enough that natural speech turns feel snappy, long
+  //     enough that intra-sentence breaths don't fragment the paragraph.
+  //   - PAUSE_MIN_WORDS: even if the pause fires, never flush a 1-word
+  //     micro-paragraph. Force at least ~1 short sentence of context so
+  //     Gemini has something to work with.
+  //
+  // No MAX_WAIT_MS in this design — the word cap is the ceiling. A
+  // monologue speaker triggering WORD_HARD_CAP will produce paragraphs
+  // back-to-back (concurrent translate, see PR2).
+  const PARAGRAPH_WORD_HARD_CAP = 80;  // ≈ 25-35 seconds of speech
+  const PARAGRAPH_PAUSE_MS = 1500;     // 1.5s silence = paragraph break
+  const PARAGRAPH_PAUSE_MIN_WORDS = 8; // never flush 1-word micro-paragraph
+
+  // Word counter for the accumulated batch. Splits on whitespace and
+  // filters empties (handles double-spaces from naive joining).
+  const countWords = (segments: string[]) =>
+    segments.reduce((n, s) => n + s.split(/\s+/).filter(Boolean).length, 0);
   const BATCH_SENTINEL = '|||';       // legacy, unused in new path but
                                       // referenced elsewhere — keep defined.
   let pendingBatch: string[] = [];
   let batchTimer: ReturnType<typeof setTimeout> | null = null;
-  let batchStartTime = 0; // wall-clock when the current paragraph started
-  let flushing: Promise<void> = Promise.resolve();
   let pendingKeyCounter = 0;
+
+  // Concurrency semaphore for paragraph translates (PR2 — 2026-04-27).
+  // Free users: 2 concurrent. Pro users: 5 concurrent. When the cap is
+  // reached, additional translate jobs queue and resolve in arrival order
+  // (FIFO). A non-Pro user blasting >2 paragraphs in a row sees the 3rd
+  // paragraph's "翻译中" stay on screen a bit longer — acceptable tradeoff.
+  const TRANSLATE_CONCURRENCY = opts.isPro ? 5 : 2;
+  let activeTranslations = 0;
+  const translateQueue: Array<() => void> = [];
+
+  const runWithConcurrencyLimit = async <T,>(fn: () => Promise<T>): Promise<T> => {
+    if (activeTranslations >= TRANSLATE_CONCURRENCY) {
+      await new Promise<void>((resolve) => translateQueue.push(resolve));
+    }
+    activeTranslations += 1;
+    try {
+      return await fn();
+    } finally {
+      activeTranslations -= 1;
+      const next = translateQueue.shift();
+      if (next) next();
+    }
+  };
 
   const flushBatch = async () => {
     if (batchTimer) {
@@ -365,11 +402,14 @@ export async function startLiveSession(
     if (pendingBatch.length === 0) return;
     const batch = pendingBatch;
     pendingBatch = [];
-    batchStartTime = 0; // reset so next paragraph starts its own max-wait clock
     const key = `pg-${++pendingKeyCounter}`;
     cb.onTranslationPending?.(true, key);
-    flushing = flushing
-      .then(() => translateBatch(batch))
+    // Concurrent translate (PR2 — 2026-04-27): each paragraph gets its
+    // own translateBatch invocation, gated only by a Pro-aware semaphore.
+    // No serial chain — paragraph 2 doesn't wait for paragraph 1's Gemini
+    // round-trip. Out-of-order completion is fine: applyTranslationBatch
+    // in ClassroomTab merges by exact-match on `en`, not by arrival order.
+    void runWithConcurrencyLimit(() => translateBatch(batch))
       .finally(() => { cb.onTranslationPending?.(false, key); });
   };
 
@@ -504,38 +544,40 @@ ${englishParagraph}`;
     transcript += (transcript ? '\n' : '') + text;
 
     // Realtime mode: translate this sentence by itself, skip paragraph triggers.
+    // Uses the same concurrency semaphore as paragraph mode — free users
+    // get 2 concurrent realtime translates, Pro gets 5.
     if (opts.translationMode === 'realtime') {
       const key = `rt-${++pendingKeyCounter}`;
       cb.onTranslationPending?.(true, key);
-      flushing = flushing
-        .then(() => translateBatch([text]))
+      void runWithConcurrencyLimit(() => translateBatch([text]))
         .finally(() => { cb.onTranslationPending?.(false, key); });
       return;
     }
 
     pendingBatch.push(text);
 
-    const accumulatedChars = pendingBatch.reduce((n, s) => n + s.length, 0);
-    if (accumulatedChars >= PARAGRAPH_MIN_CHARS) {
+    // Word-cap path: this final pushed us past 80 words. Flush immediately
+    // — the speaker is on a roll and we need to free the buffer for the
+    // next paragraph (which concurrently translates, see PR2).
+    const accumulatedWords = countWords(pendingBatch);
+    if (accumulatedWords >= PARAGRAPH_WORD_HARD_CAP) {
       void flushBatch();
-    } else {
-      if (batchTimer) clearTimeout(batchTimer);
-      batchTimer = setTimeout(() => {
-        batchTimer = null;
-        const chars = pendingBatch.reduce((n, s) => n + s.length, 0);
-        if (pendingBatch.length > 0 && chars >= PARAGRAPH_HARD_MIN_CHARS) {
-          void flushBatch();
-        }
-      }, PARAGRAPH_PAUSE_MS);
-      if (batchStartTime === 0) {
-        batchStartTime = Date.now();
-        setTimeout(() => {
-          if (pendingBatch.length > 0 && Date.now() - batchStartTime >= PARAGRAPH_MAX_WAIT_MS - 100) {
-            void flushBatch();
-          }
-        }, PARAGRAPH_MAX_WAIT_MS);
-      }
+      return;
     }
+
+    // Pause path: arm a 1.5s timer. If no new final lands by then, the
+    // speaker has paused and we close the paragraph (provided we have
+    // enough context — at least PAUSE_MIN_WORDS words).
+    if (batchTimer) clearTimeout(batchTimer);
+    batchTimer = setTimeout(() => {
+      batchTimer = null;
+      if (pendingBatch.length > 0 && countWords(pendingBatch) >= PARAGRAPH_PAUSE_MIN_WORDS) {
+        void flushBatch();
+      }
+      // If under PAUSE_MIN_WORDS, do nothing — keep accumulating until
+      // the next final extends the buffer or the next pause re-fires
+      // this same logic.
+    }, PARAGRAPH_PAUSE_MS);
   };
 
   const attachHandlers = (conn: ListenLiveClient) => {
@@ -612,8 +654,10 @@ ${englishParagraph}`;
       }
       // Server says utterance is over → flush paragraph buffer if it has
       // meaningful content. More reliable than our client-side pause timer.
-      const chars = pendingBatch.reduce((n, s) => n + s.length, 0);
-      if (pendingBatch.length > 0 && chars >= PARAGRAPH_HARD_MIN_CHARS) {
+      // Match the same PAUSE_MIN_WORDS gate as commitFinalText() so the
+      // two flush paths have identical "is this paragraph worth shipping"
+      // semantics.
+      if (pendingBatch.length > 0 && countWords(pendingBatch) >= PARAGRAPH_PAUSE_MIN_WORDS) {
         void flushBatch();
       }
     });
@@ -915,7 +959,13 @@ ${englishParagraph}`;
       // before flushing. Otherwise the last spoken sentence is lost.
       // Nothing special — flushBatch picks up whatever is in pendingBatch.
       try { await flushBatch(); } catch { /* nothing */ }
-      try { await flushing; } catch { /* nothing */ }
+      // Drain in-flight concurrent translates — wait until the semaphore
+      // is empty so the user's last paragraph has a chance to land.
+      // Bounded by a 5s ceiling so a hung Gemini call doesn't block stop().
+      const drainStart = Date.now();
+      while (activeTranslations > 0 && Date.now() - drainStart < 5000) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
       try { connection?.requestClose(); } catch { /* already closed */ }
       try { worklet.disconnect(); } catch { /* nothing */ }
       try { sourceNode.disconnect(); } catch { /* nothing */ }

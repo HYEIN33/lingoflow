@@ -49,7 +49,7 @@ import { startLiveSession, LiveSessionHandle } from '../services/liveSession';
 import ClassNotesModal from '../components/ClassNotesModal';
 import LiveNotesPanel from '../components/LiveNotesPanel';
 import { generateLiveNotes, type LiveNotes } from '../services/ai';
-import { aiChat } from '../services/ai';
+import { aiChat, translateSimple } from '../services/ai';
 import { cn } from '../lib/utils';
 
 const COMPLIANCE_ACK_KEY = 'memeflow_classroom_compliance_ack';
@@ -92,7 +92,7 @@ type Status =
 // Rendering them in the same stream means the user sees their questions
 // in the context where they asked them, not in a separate chat panel.
 type StreamItem =
-  | { kind: 'line'; id: number; translation: string; transcription: string; finalized: boolean }
+  | { kind: 'line'; id: number; translation: string; transcription: string; finalized: boolean; failed?: boolean }
   | { kind: 'qa'; id: number; question: string; answer: string; pending: boolean };
 
 // Convert raw exceptions from startLiveSession (permissions, network, token,
@@ -174,7 +174,7 @@ function friendlyStartError(e: any, source: 'tab' | 'mic', lang: 'en' | 'zh'): s
     : `Start failed: ${msg || 'unknown error'}`;
 }
 
-export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
+export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' | 'zh'; isPro?: boolean }) {
   const [showCompliance, setShowCompliance] = useState<boolean>(
     () => typeof window !== 'undefined' && !localStorage.getItem(COMPLIANCE_ACK_KEY)
   );
@@ -377,10 +377,17 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
   // finalized and (b) still lack a translation. Merge them into the
   // first one (its transcription becomes the joined paragraph, its
   // translation becomes `zh`), drop the rest.
+  // Sentinel zh string returned by liveSession.translateBatch when Gemini
+  // fails after retries. Identifying it here lets the UI surface a "重试"
+  // button (PR4 — 2026-04-27) instead of leaving the user with a frozen
+  // "翻译失败" string and no recourse.
+  const TRANSLATION_FAILED_ZH = '（翻译失败，稍后重试）';
+
   const applyTranslationBatch = (pairs: Array<{ en: string; zh: string; sentences: string[] }>) => {
     setStream((prev) => {
       let next = [...prev];
       for (const pair of pairs) {
+        const isFailed = pair.zh === TRANSLATION_FAILED_ZH;
         // Realtime mode: session emits one pair per finalized sentence.
         // pair.en matches exactly one line; 1:1 match, no merge.
         if (translationMode === 'realtime') {
@@ -391,7 +398,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
             if (!item.finalized) continue;
             if (item.translation) continue;
             if (item.transcription === pair.en) {
-              next[i] = { ...item, translation: pair.zh };
+              next[i] = { ...item, translation: pair.zh, failed: isFailed };
               matched = true;
               break;
             }
@@ -400,7 +407,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
             for (let i = 0; i < next.length; i++) {
               const item = next[i];
               if (item.kind === 'line' && item.finalized && !item.translation) {
-                next[i] = { ...item, translation: pair.zh };
+                next[i] = { ...item, translation: pair.zh, failed: isFailed };
                 matched = true;
                 break;
               }
@@ -409,7 +416,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           if (!matched) {
             next.push({
               kind: 'line', id: itemCounter.current++,
-              translation: pair.zh, transcription: pair.en, finalized: true,
+              translation: pair.zh, transcription: pair.en, finalized: true, failed: isFailed,
             });
           }
           continue;
@@ -441,15 +448,16 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
             translation: pair.zh,
             transcription: pair.en,
             finalized: true,
+            failed: isFailed,
           });
           continue;
         }
         const firstIdx = indices[0];
         const first = next[firstIdx] as {
-          kind: 'line'; id: number; translation: string; transcription: string; finalized: boolean;
+          kind: 'line'; id: number; translation: string; transcription: string; finalized: boolean; failed?: boolean;
         };
         const mergedTranscription = pair.en || indices.map((i) => (next[i] as any).transcription).join(' ');
-        next[firstIdx] = { ...first, transcription: mergedTranscription, translation: pair.zh };
+        next[firstIdx] = { ...first, transcription: mergedTranscription, translation: pair.zh, failed: isFailed };
         for (let k = indices.length - 1; k >= 1; k--) {
           next.splice(indices[k], 1);
         }
@@ -460,6 +468,74 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
 
   const appendTranscriptionDelta = (delta: string, isFinal: boolean) => {
     upsertLiveLine(delta, isFinal);
+  };
+
+  // Resolve current course context for prompt building. Mirrors the
+  // logic in startSession (single source of truth would be nicer; this
+  // small duplication is the simplest path while we keep startSession's
+  // local-var idiom). Used by retryFailedTranslation below.
+  const resolveActiveCourse = (): string | undefined => {
+    if (selectedCourse === '__custom__') {
+      const t = customCourse.trim();
+      return t || undefined;
+    }
+    if (selectedCourse) {
+      const preset = COURSE_PRESETS.find((p) => p.zh === selectedCourse || p.en === selectedCourse);
+      if (preset) return uiLang === 'zh' ? preset.zh : preset.en;
+    }
+    return undefined;
+  };
+
+  // Retry handler for a failed translation card (PR4 — 2026-04-27).
+  // Re-runs the same prompt liveSession would have built and updates the
+  // line in place. While in flight the card swaps from "翻译失败 ⚠️ 重试"
+  // back to "翻译中…" so users get clear feedback the retry is happening.
+  const retryFailedTranslation = async (lineId: number) => {
+    const target = stream.find((it) => it.kind === 'line' && it.id === lineId);
+    if (!target || target.kind !== 'line') return;
+    const englishParagraph = target.transcription;
+    if (!englishParagraph) return;
+
+    // Reset to "in flight" state so user sees activity.
+    setStream((prev) => prev.map((it) =>
+      it.kind === 'line' && it.id === lineId
+        ? { ...it, translation: '', failed: false }
+        : it
+    ));
+
+    const activeCourse = resolveActiveCourse();
+    const courseHint = activeCourse
+      ? ` The class subject is: ${activeCourse}. Translate technical terms in that subject's convention; keep well-known English initialisms (e.g. CAPM, GDP, DNA) untranslated.`
+      : '';
+    const prompt = `You are translating a live classroom lecture from English to Chinese for a Chinese international student.${courseHint}
+
+The input below is a continuous paragraph of spoken English from a live lecture (transcribed by a speech model, so it may contain repetitions or filler). Produce a SINGLE natural, fluent Chinese paragraph that reads as if a Chinese teacher re-explained the same material. Do not mirror every word — clean up repetitions, smooth broken phrasing, and group related sentences into flowing Chinese prose.
+
+Rules:
+- Output is ONE Chinese paragraph. No bullet points, no numbering, no English.
+- Keep the teaching register (口语化 / 教学用语), not stiff written Chinese.
+- Preserve technical terms the student needs to learn; if the English phrase is the teaching target (e.g. "fresh powder", "pit stop"), keep it in parentheses after the Chinese gloss, like: 新雪（fresh powder）.
+- Do not add commentary about the quality of the transcription.
+
+English paragraph:
+${englishParagraph}`;
+
+    try {
+      const zh = (await translateSimple(prompt)).trim();
+      setStream((prev) => prev.map((it) =>
+        it.kind === 'line' && it.id === lineId
+          ? { ...it, translation: zh, failed: false }
+          : it
+      ));
+    } catch (e) {
+      Sentry.captureException(e, { tags: { component: 'ClassroomTab', op: 'retryFailedTranslation' } });
+      setStream((prev) => prev.map((it) =>
+        it.kind === 'line' && it.id === lineId
+          ? { ...it, translation: TRANSLATION_FAILED_ZH, failed: true }
+          : it
+      ));
+      toast.error(uiLang === 'zh' ? '重试失败，请稍后再试' : 'Retry failed, please try again later');
+    }
   };
 
   const finalizeCurrentLine = () => {
@@ -476,18 +552,59 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
     });
   };
 
-  // Auto-scroll to latest content — but ONLY if the user is already
-  // at (or near) the bottom. If they've scrolled up to read earlier
-  // material, respect that and don't yank them back down on every new
-  // subtitle. "Near bottom" tolerance = 80px to absorb line-height jitter.
+  // Smart scroll (PR3 — 2026-04-27 upgrade):
+  //   - User near bottom (within 100px) → auto-stick to latest, like a chat app
+  //   - User scrolled up to read → don't yank, show a "↓ N new" button
+  // The threshold is the standard YouTube Live / Discord cutoff. 100px ≈ 5
+  // lines of subtitle text — enough to absorb line-height jitter from
+  // streaming interim text but tight enough that "I scrolled up to read"
+  // is detected reliably.
+  const STICK_THRESHOLD_PX = 100;
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [unseenCount, setUnseenCount] = useState(0);
+  const lastSeenStreamLenRef = useRef(0);
+
+  // Auto-scroll on stream change — only when user is at bottom.
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
-    if (distanceFromBottom <= 80) {
+    if (distanceFromBottom <= STICK_THRESHOLD_PX) {
       el.scrollTop = el.scrollHeight;
+      lastSeenStreamLenRef.current = stream.length;
+      setUnseenCount(0);
+    } else {
+      // User has scrolled away — count new items they haven't seen.
+      // We approximate "new" by stream length growth since last bottom-stick.
+      const delta = stream.length - lastSeenStreamLenRef.current;
+      if (delta > 0) setUnseenCount(delta);
     }
   }, [stream]);
+
+  // Track scroll position so the "↓ N new" pill knows when to hide.
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const handler = () => {
+      const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
+      const atBottom = distanceFromBottom <= STICK_THRESHOLD_PX;
+      setIsAtBottom(atBottom);
+      if (atBottom) {
+        lastSeenStreamLenRef.current = stream.length;
+        setUnseenCount(0);
+      }
+    };
+    el.addEventListener('scroll', handler, { passive: true });
+    return () => el.removeEventListener('scroll', handler);
+  }, [stream.length]);
+
+  const jumpToLatest = () => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    lastSeenStreamLenRef.current = stream.length;
+    setUnseenCount(0);
+  };
 
   // Live Notes refresh trigger. Runs on every stream change, guarded by
   // min-interval and min-new-chars. The async work happens in the
@@ -721,7 +838,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
         localStorage.setItem(COURSE_CUSTOM_KEY, customCourse);
       } catch { /* quota */ }
       const handle = await startLiveSession(
-        { audioSource, mode, targetLang: 'zh-CN', course, keyterms, translationMode },
+        { audioSource, mode, targetLang: 'zh-CN', course, keyterms, translationMode, isPro },
         {
           onStatusChange: (s, detail) => {
             setStatus(s);
@@ -1525,68 +1642,150 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
             </div>
           )}
 
-          {stream.map((item) => {
-            if (item.kind === 'line') {
-              const live = !item.finalized;
+          {/* Render with on-the-fly grouping (PR3 — 2026-04-27).
+              Consecutive `kind:'line'` items that are still un-translated
+              (regardless of finalized state) merge into ONE visual card —
+              no per-sentence dividers, no "1-sentence-at-a-time" feel.
+              The card shows the joined English (live + finalized) and a
+              single "翻译中…" pending indicator. The dashed-border divider
+              only appears between groups, so users only see a divider
+              when a paragraph has actually closed and translation has
+              shipped. Translated lines (kind:'line' with .translation)
+              render one-per-card as before — by then the merge in
+              applyTranslationBatch has already collapsed N un-translated
+              lines down to 1 translated line, so this loop sees a clean
+              single entry per finalized paragraph. */}
+          {(() => {
+            type LineItem = Extract<typeof stream[number], { kind: 'line' }>;
+            type QaItem = Extract<typeof stream[number], { kind: 'qa' }>;
+            type Group =
+              | { kind: 'pending-group'; items: LineItem[] }
+              | { kind: 'translated-line'; item: LineItem }
+              | { kind: 'qa'; item: QaItem };
+
+            const groups: Group[] = [];
+            for (const item of stream) {
+              if (item.kind === 'qa') {
+                groups.push({ kind: 'qa', item });
+                continue;
+              }
+              if (item.translation) {
+                groups.push({ kind: 'translated-line', item });
+                continue;
+              }
+              // un-translated line → extend the open pending-group, or start one
+              const last = groups[groups.length - 1];
+              if (last && last.kind === 'pending-group') {
+                last.items.push(item);
+              } else {
+                groups.push({ kind: 'pending-group', items: [item] });
+              }
+            }
+
+            return groups.map((group, idx) => {
+              if (group.kind === 'qa') {
+                const item = group.item;
+                return (
+                  <div key={`q-${item.id}`} className="my-[18px] -mx-1.5 p-[16px_18px] border border-[rgba(91,127,232,0.2)] rounded-[18px]"
+                    style={{ background: 'linear-gradient(135deg, rgba(91,127,232,0.12), rgba(137,163,240,0.06))' }}
+                  >
+                    <div className="flex gap-3 items-start">
+                      <span className="shrink-0 px-[9px] py-[3px] rounded-[7px] font-mono-meta text-[10px] font-bold tracking-[0.08em] bg-[var(--ink)] text-white mt-0.5">
+                        YOU
+                      </span>
+                      <p className="flex-1 min-w-0 font-zh-serif text-[14.5px] leading-[1.85] text-[var(--ink)] m-0">
+                        {item.question}
+                      </p>
+                    </div>
+                    <div className="flex gap-3 items-start mt-2.5 pt-3 border-t border-dashed border-[rgba(91,127,232,0.22)]">
+                      <span className="shrink-0 px-[9px] py-[3px] rounded-[7px] font-mono-meta text-[10px] font-bold tracking-[0.08em] bg-white text-[var(--blue-accent)] border border-[rgba(91,127,232,0.3)] inline-flex items-center gap-1 mt-0.5">
+                        <Sparkles className="w-2.5 h-2.5" /> AI
+                      </span>
+                      <p className="flex-1 min-w-0 font-zh-serif text-[14.5px] leading-[1.85] text-[var(--ink)] m-0 whitespace-pre-wrap [&_strong]:text-[var(--blue-accent)] [&_strong]:font-semibold">
+                        {item.pending
+                          ? <Loader2 className="w-4 h-4 animate-spin text-[rgba(91,127,232,0.6)] inline" />
+                          : item.answer}
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (group.kind === 'translated-line') {
+                const item = group.item;
+                const isFailed = !!item.failed;
+                return (
+                  <div key={`l-${item.id}`} className={cn("py-[14px]", idx > 0 && "border-t border-dashed border-[rgba(10,14,26,0.07)]")}>
+                    <span className={cn(
+                      "inline-block font-mono-meta text-[9px] font-bold tracking-[0.15em] uppercase px-[7px] py-[2px] rounded-[5px] mb-2",
+                      isFailed
+                        ? "bg-[rgba(229,56,43,0.1)] text-[var(--red-warn)]"
+                        : translationMode === 'paragraph'
+                          ? "bg-[rgba(91,127,232,0.1)] text-[var(--blue-accent)]"
+                          : "bg-[rgba(232,180,60,0.18)] text-[#8A5D0E]"
+                    )}>
+                      {isFailed
+                        ? (uiLang === 'zh' ? '翻译失败' : 'translation failed')
+                        : translationMode === 'paragraph' ? 'paragraph · 整段翻译' : 'realtime · 实时'}
+                    </span>
+                    {item.transcription && (
+                      <p className="font-display italic text-[13px] leading-[1.5] text-[rgba(10,14,26,0.48)] m-0 mb-1.5">
+                        "{item.transcription}"
+                      </p>
+                    )}
+                    {isFailed ? (
+                      <div className="flex items-center gap-3 mt-1">
+                        <p className="font-zh-serif text-[14px] leading-[1.6] m-0 text-[var(--red-warn)]">
+                          ⚠️ {uiLang === 'zh' ? '翻译失败，可点重试' : 'Translation failed'}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => retryFailedTranslation(item.id)}
+                          className="px-3 py-1 rounded-full bg-[var(--red-warn)] text-white font-mono-meta text-[10px] font-bold tracking-[0.05em] hover:bg-[var(--red-deep)] cursor-pointer border-0 shadow-[0_2px_8px_rgba(229,56,43,0.25)]"
+                        >
+                          {uiLang === 'zh' ? '重试' : 'Retry'}
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="font-zh-serif text-[17px] leading-[1.8] m-0 text-[rgba(10,14,26,0.78)]">
+                        {item.translation}
+                      </p>
+                    )}
+                  </div>
+                );
+              }
+
+              // pending-group: merged "still being typed / awaiting translation" card.
+              // Join all items' English into ONE block. No per-item divider — the
+              // whole group reads as one paragraph in flight.
+              const joinedEnglish = group.items
+                .map((it) => it.transcription)
+                .filter(Boolean)
+                .join(' ');
+              const groupKey = `pg-${group.items[0]?.id ?? idx}`;
               return (
-                <div key={`l-${item.id}`} className={cn("py-[14px]", "border-t border-dashed border-[rgba(10,14,26,0.07)] first:border-t-0")}>
+                <div key={groupKey} className={cn("py-[14px]", idx > 0 && "border-t border-dashed border-[rgba(10,14,26,0.07)]")}>
                   <span className={cn(
                     "inline-block font-mono-meta text-[9px] font-bold tracking-[0.15em] uppercase px-[7px] py-[2px] rounded-[5px] mb-2",
                     translationMode === 'paragraph'
                       ? "bg-[rgba(91,127,232,0.1)] text-[var(--blue-accent)]"
                       : "bg-[rgba(232,180,60,0.18)] text-[#8A5D0E]"
                   )}>
-                    {translationMode === 'paragraph'
-                      ? (live ? 'paragraph · 正在攒句' : 'paragraph · 整段翻译')
-                      : (live ? 'realtime · 正在翻' : 'realtime · 实时')}
+                    {translationMode === 'paragraph' ? 'paragraph · 正在攒句' : 'realtime · 正在翻'}
                   </span>
-                  {item.transcription && (
+                  {joinedEnglish && (
                     <p className="font-display italic text-[13px] leading-[1.5] text-[rgba(10,14,26,0.48)] m-0 mb-1.5">
-                      "{item.transcription}"
+                      "{joinedEnglish}"
                     </p>
                   )}
-                  <p className={cn(
-                    "font-zh-serif text-[17px] leading-[1.8] m-0",
-                    live
-                      ? "text-[var(--blue-accent)] font-semibold italic"
-                      : "text-[rgba(10,14,26,0.78)]"
-                  )}>
-                    {item.translation || (live && !item.translation ? (uiLang === 'zh' ? '翻译中' : 'translating') : '')}
-                    {live && (
-                      <span
-                        className="inline-block w-2 h-[18px] align-[-3px] ml-1.5 bg-[var(--blue-accent)] animate-pulse"
-                      />
-                    )}
+                  <p className="font-zh-serif text-[17px] leading-[1.8] m-0 text-[var(--blue-accent)] font-semibold italic">
+                    {uiLang === 'zh' ? '翻译中' : 'translating'}
+                    <span className="inline-block w-2 h-[18px] align-[-3px] ml-1.5 bg-[var(--blue-accent)] animate-pulse" />
                   </p>
                 </div>
               );
-            }
-            // QA bubble
-            return (
-              <div key={`q-${item.id}`} className="my-[18px] -mx-1.5 p-[16px_18px] border border-[rgba(91,127,232,0.2)] rounded-[18px]"
-                style={{ background: 'linear-gradient(135deg, rgba(91,127,232,0.12), rgba(137,163,240,0.06))' }}
-              >
-                <div className="flex gap-3 items-start">
-                  <span className="shrink-0 px-[9px] py-[3px] rounded-[7px] font-mono-meta text-[10px] font-bold tracking-[0.08em] bg-[var(--ink)] text-white mt-0.5">
-                    YOU
-                  </span>
-                  <p className="flex-1 min-w-0 font-zh-serif text-[14.5px] leading-[1.85] text-[var(--ink)] m-0">
-                    {item.question}
-                  </p>
-                </div>
-                <div className="flex gap-3 items-start mt-2.5 pt-3 border-t border-dashed border-[rgba(91,127,232,0.22)]">
-                  <span className="shrink-0 px-[9px] py-[3px] rounded-[7px] font-mono-meta text-[10px] font-bold tracking-[0.08em] bg-white text-[var(--blue-accent)] border border-[rgba(91,127,232,0.3)] inline-flex items-center gap-1 mt-0.5">
-                    <Sparkles className="w-2.5 h-2.5" /> AI
-                  </span>
-                  <p className="flex-1 min-w-0 font-zh-serif text-[14.5px] leading-[1.85] text-[var(--ink)] m-0 whitespace-pre-wrap [&_strong]:text-[var(--blue-accent)] [&_strong]:font-semibold">
-                    {item.pending
-                      ? <Loader2 className="w-4 h-4 animate-spin text-[rgba(91,127,232,0.6)] inline" />
-                      : item.answer}
-                  </p>
-                </div>
-              </div>
-            );
-          })}
+            });
+          })()}
 
           {pendingTranslations.size > 0 && (
             <div className="flex items-center gap-2 font-mono-meta text-[11px] text-[var(--blue-accent)] px-1 py-1 mt-2">
@@ -1595,6 +1794,22 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
             </div>
           )}
         </div>
+        {/* "↓ N 新内容" jump-to-latest pill (PR3 — 2026-04-27).
+            Shows when user has scrolled up away from bottom AND new
+            content has landed since. Click → smooth scroll to bottom +
+            re-engage auto-stick. Positioned absolute over the scroller
+            (above ask-AI dock), centered. */}
+        {!isAtBottom && unseenCount > 0 && (
+          <button
+            type="button"
+            onClick={jumpToLatest}
+            aria-label={uiLang === 'zh' ? `跳到最新（${unseenCount} 条新内容）` : `Jump to latest (${unseenCount} new)`}
+            className="absolute left-1/2 -translate-x-1/2 bottom-2 z-20 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[var(--blue-accent)] text-white font-mono-meta text-[11px] font-semibold tracking-[0.05em] shadow-[0_4px_14px_rgba(91,127,232,0.4)] hover:bg-[var(--blue-accent-deep)] cursor-pointer border-0"
+          >
+            <span>↓</span>
+            <span>{uiLang === 'zh' ? `${unseenCount} 条新内容` : `${unseenCount} new`}</span>
+          </button>
+        )}
       </div>
 
       {/* Ask-AI dock — visually welded to the subtitle stream above.
