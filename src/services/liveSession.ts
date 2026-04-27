@@ -349,71 +349,51 @@ export async function startLiveSession(
   // Timing tuned to beat EasyNoteAI on latency. Their cadence appears to
   // be ~30-60s accumulation before a translate call; we aim for 6-15s
   // typical. The user still reads coherent paragraphs, just sooner.
-  // Paragraph triggers (re-re-tuned 2026-04-27 evening — pulled back from
-  // the aggressive 1.5s/80 word triggers because they fragmented natural
-  // speech: a speaker pausing 1.6s mid-thought got their paragraph chopped,
-  // then concurrent translate made the visual splits worse. The new
-  // numbers below mirror EasyNoteAI's "wait for a real paragraph break"
-  // philosophy but cut the wait by 10x (they're 30-60s, we're 3s).
+  // Paragraph segmentation (rewritten 2026-04-27 night, EasyNoteAI-style):
   //
-  //   - WORD_HARD_CAP=100: lets a single thought run to ~30-40s of
-  //     speech before forcing a flush. Most teachers naturally land
-  //     under this; only true monologues hit the cap.
-  //   - PAUSE_MS=3000: 3s silence is a deliberate pause / topic shift,
-  //     not "thinking of the next word". Halves the rate of accidental
-  //     mid-thought splits vs the old 1.5s.
-  //   - PAUSE_MIN_WORDS=10: bumped from 8 to absorb the slightly longer
-  //     paragraphs the new triggers produce.
-  const PARAGRAPH_WORD_HARD_CAP = 100;  // ≈ 30-45 seconds of speech
-  const PARAGRAPH_PAUSE_MS = 3000;      // 3s silence = paragraph break
-  const PARAGRAPH_PAUSE_MIN_WORDS = 10; // never flush a tiny fragment
+  // Old approach (pre-2026-04-27 night): client-side setTimeout(1.5-3s)
+  // hacked endpointing. Fragile under flaky audio / interim quirks —
+  // a 3s thought got chopped if Deepgram had a 1.6s lull.
+  //
+  // New approach: trust Deepgram's segmentation signals exclusively.
+  //   - is_final=true & speech_final=true  → Deepgram VAD says speaker
+  //     stopped at a sentence boundary; consider this segment "settled".
+  //   - UtteranceEnd event                   → text-gap detector says
+  //     speaker stopped (more noise-tolerant than VAD); rescue path.
+  //   - CHAR_HARD_CAP=320                    → never let a paragraph
+  //     exceed 320 chars before flushing, even if speech_final never
+  //     fires (monologue speakers / model failure mode). 320 chars ≈
+  //     EasyNoteAI's observed threshold.
+  //   - MIN_CHARS=40                         → on UtteranceEnd, only
+  //     flush if we've accumulated at least this much (prevents "okay."
+  //     micro-paragraphs from triggering an entire Gemini call).
+  //
+  // No setTimeout at all — every flush is event-driven from Deepgram.
+  const PARAGRAPH_CHAR_HARD_CAP = 320;
+  const PARAGRAPH_MIN_CHARS = 40;
 
-  // Word counter for the accumulated batch. Splits on whitespace and
-  // filters empties (handles double-spaces from naive joining).
-  const countWords = (segments: string[]) =>
-    segments.reduce((n, s) => n + s.split(/\s+/).filter(Boolean).length, 0);
+  // Char counter — sums actual character length (whitespace included).
+  // Roughly proportional to spoken duration in English.
+  const countChars = (segments: string[]) =>
+    segments.reduce((n, s) => n + s.length, 0);
   const BATCH_SENTINEL = '|||';       // legacy, unused in new path but
                                       // referenced elsewhere — keep defined.
   let pendingBatch: string[] = [];
-  let batchTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingKeyCounter = 0;
   let batchIdCounter = 0;
 
-  // Concurrency semaphore for paragraph translates (Pro-only).
-  //   non-Pro: TRANSLATE_CONCURRENCY=1 → effectively serial
-  //   Pro:     TRANSLATE_CONCURRENCY=3 → up to 3 in-flight Gemini calls
-  // Why 3 not 5: 5 produced too many simultaneous batches in long classes,
-  // making the visual "翻译中" pile uncomfortably tall and increasing the
-  // surface area for arrival-order surprises (which are now batchId-safe
-  // but still cleaner with a tighter cap).
-  //
-  // The race that earlier serial-→-concurrent migration produced is now
-  // structurally fixed: each batch carries a batchId, and ClassroomTab
-  // matches the zh return to the exact line ids it snapshotted at
-  // onBatchOpen time. Concurrent arrival order no longer matters.
-  const TRANSLATE_CONCURRENCY = opts.isPro ? 3 : 1;
-  let activeTranslations = 0;
-  const translateQueue: Array<() => void> = [];
-
-  const runWithConcurrencyLimit = async <T,>(fn: () => Promise<T>): Promise<T> => {
-    if (activeTranslations >= TRANSLATE_CONCURRENCY) {
-      await new Promise<void>((resolve) => translateQueue.push(resolve));
-    }
-    activeTranslations += 1;
-    try {
-      return await fn();
-    } finally {
-      activeTranslations -= 1;
-      const next = translateQueue.shift();
-      if (next) next();
-    }
-  };
+  // Serial translate chain (re-introduced 2026-04-27 night). The earlier
+  // concurrent path (N=3) tried to use batchId snapshots to defeat
+  // arrival-order races, but in practice race edge cases kept resurfacing
+  // (e.g. lines deleted by an earlier batch's splice before a later
+  // batch's zh landed). Serial guarantees: paragraph N's zh always
+  // lands BEFORE paragraph N+1's batch starts. Cost: a fast speaker's
+  // 3rd paragraph waits ~3-6s on paragraph 2's Gemini round-trip — but
+  // with the new 320-char hard cap and speech_final-driven flushing
+  // the queue should rarely back up beyond 1-2 segments.
+  let flushing: Promise<void> = Promise.resolve();
 
   const flushBatch = async () => {
-    if (batchTimer) {
-      clearTimeout(batchTimer);
-      batchTimer = null;
-    }
     if (pendingBatch.length === 0) return;
     const batch = pendingBatch;
     pendingBatch = [];
@@ -421,11 +401,11 @@ export async function startLiveSession(
     const key = `pg-${++pendingKeyCounter}`;
     cb.onTranslationPending?.(true, key);
     // Tell the UI "these N sentences are now mine" — the UI snapshots
-    // which line ids belong to this batchId BEFORE the network call,
-    // so when zh comes back (out of order vs other batches), the merge
-    // targets exactly those ids.
+    // which line ids belong to this batchId so the renderer can split
+    // them into a sealed-group card with a divider after.
     cb.onBatchOpen?.(batchId, batch.length);
-    void runWithConcurrencyLimit(() => translateBatch(batch, batchId))
+    flushing = flushing
+      .then(() => translateBatch(batch, batchId))
       .finally(() => { cb.onTranslationPending?.(false, key); });
   };
 
@@ -538,11 +518,17 @@ ${englishParagraph}`;
   let finalEventCount = 0;                   // total final events this session (for ratio)
   let emptyFinalCount = 0;                   // total empty finals this session
 
-  // commitFinalText: the single "this is a real final, treat it as done"
-  // code path. Extracted so both the Transcript handler (non-empty final)
-  // and the UtteranceEnd handler (synthetic final from interim) can reach
-  // it without duplicating the paragraph-trigger logic below.
-  const commitFinalText = (text: string, source: 'final' | 'rescued-interim') => {
+  // commitFinalText: handle a "this is a real final" event from Deepgram.
+  // Three paths:
+  //   1. char-cap exceeded (320+) → flush regardless of speech_final
+  //   2. speech_final=true        → Deepgram VAD says speaker stopped at
+  //                                 a sentence boundary; if we have at
+  //                                 least MIN_CHARS, that's a paragraph.
+  //   3. speech_final=false       → just an in-progress final, keep
+  //                                 accumulating; no flush.
+  // No setTimeout — segmentation is event-driven from Deepgram alone.
+  // UtteranceEnd handler (separate code path below) is the safety net.
+  const commitFinalText = (text: string, source: 'final' | 'rescued-interim', speechFinal: boolean) => {
     if (!text) return;
     if (source === 'rescued-interim') {
       interimEmptyFinalRescueCount += 1;
@@ -560,33 +546,27 @@ ${englishParagraph}`;
     }
     transcript += (transcript ? '\n' : '') + text;
 
-    // Realtime mode retired 2026-04-27. Always go through pendingBatch +
-    // paragraph triggers — produces coherent Chinese with cross-sentence
-    // context instead of disjointed per-sentence flickers.
     pendingBatch.push(text);
 
-    // Word-cap path: this final pushed us past 80 words. Flush immediately
-    // — the speaker is on a roll and we need to free the buffer for the
-    // next paragraph (which concurrently translates, see PR2).
-    const accumulatedWords = countWords(pendingBatch);
-    if (accumulatedWords >= PARAGRAPH_WORD_HARD_CAP) {
+    // Path 1: char-cap. Speaker on a roll, force a flush so the next
+    // paragraph isn't held hostage by an unending utterance.
+    const accumulatedChars = countChars(pendingBatch);
+    if (accumulatedChars >= PARAGRAPH_CHAR_HARD_CAP) {
       void flushBatch();
       return;
     }
 
-    // Pause path: arm a 1.5s timer. If no new final lands by then, the
-    // speaker has paused and we close the paragraph (provided we have
-    // enough context — at least PAUSE_MIN_WORDS words).
-    if (batchTimer) clearTimeout(batchTimer);
-    batchTimer = setTimeout(() => {
-      batchTimer = null;
-      if (pendingBatch.length > 0 && countWords(pendingBatch) >= PARAGRAPH_PAUSE_MIN_WORDS) {
-        void flushBatch();
-      }
-      // If under PAUSE_MIN_WORDS, do nothing — keep accumulating until
-      // the next final extends the buffer or the next pause re-fires
-      // this same logic.
-    }, PARAGRAPH_PAUSE_MS);
+    // Path 2: speech_final=true with enough material → real paragraph.
+    // (Below MIN_CHARS we keep accumulating — single-word "Yeah." finals
+    // shouldn't ship a Gemini call by themselves.)
+    if (speechFinal && accumulatedChars >= PARAGRAPH_MIN_CHARS) {
+      void flushBatch();
+      return;
+    }
+
+    // Path 3: in-progress final (speech_final=false) or below MIN_CHARS.
+    // Don't flush. UtteranceEnd handler is the safety net if Deepgram
+    // never sends a speech_final for this paragraph.
   };
 
   const attachHandlers = (conn: ListenLiveClient) => {
@@ -625,9 +605,11 @@ ${englishParagraph}`;
       finalEventCount += 1;
 
       if (rawText) {
-        // Normal happy path: real non-empty final.
+        // Normal happy path: real non-empty final. Pass through
+        // speech_final so commitFinalText's segmentation logic can
+        // decide whether to flush this utterance as a paragraph.
         emptyFinalStreak = 0;
-        commitFinalText(rawText, 'final');
+        commitFinalText(rawText, 'final', speechFinal);
         return;
       }
 
@@ -649,24 +631,25 @@ ${englishParagraph}`;
       // watchdog (healthTimer below) will force reconnect.
     });
 
-    // UtteranceEnd: server-authoritative "speaker has paused longer than
-    // utterance_end_ms". This is our primary synthetic-final commit point.
+    // UtteranceEnd: text-gap detector (more noise-tolerant than VAD).
+    // This is the safety-net flush trigger when speech_final never
+    // fires for a paragraph (Deepgram says it should be rare but it
+    // happens). Called whether or not we have pending synthetic finals.
     conn.on(LiveTranscriptionEvents.UtteranceEnd, () => {
       // eslint-disable-next-line no-console
       console.info(`[live] UtteranceEnd (pendingSynthetic=${pendingSyntheticFinal}, lastInterim=${JSON.stringify(lastInterimText.slice(0, 40))})`);
       if (pendingSyntheticFinal && lastInterimText) {
-        commitFinalText(lastInterimText, 'rescued-interim');
+        // Synthetic final from rescued interim. We call this with
+        // speechFinal=true because UtteranceEnd's whole job is to mark
+        // the utterance as done — semantically equivalent.
+        commitFinalText(lastInterimText, 'rescued-interim', true);
       } else {
-        // Real finals already committed; just clear any stale interim.
         lastInterimText = '';
         pendingSyntheticFinal = false;
       }
-      // Server says utterance is over → flush paragraph buffer if it has
-      // meaningful content. More reliable than our client-side pause timer.
-      // Match the same PAUSE_MIN_WORDS gate as commitFinalText() so the
-      // two flush paths have identical "is this paragraph worth shipping"
-      // semantics.
-      if (pendingBatch.length > 0 && countWords(pendingBatch) >= PARAGRAPH_PAUSE_MIN_WORDS) {
+      // Belt-and-suspenders flush: if speech_final never fired for the
+      // currently pending batch but we have enough material, ship it.
+      if (pendingBatch.length > 0 && countChars(pendingBatch) >= PARAGRAPH_MIN_CHARS) {
         void flushBatch();
       }
     });
@@ -986,13 +969,16 @@ ${englishParagraph}`;
       // before flushing. Otherwise the last spoken sentence is lost.
       // Nothing special — flushBatch picks up whatever is in pendingBatch.
       try { await flushBatch(); } catch { /* nothing */ }
-      // Drain in-flight concurrent translates — wait until the semaphore
-      // is empty so the user's last paragraph has a chance to land.
-      // Bounded by a 5s ceiling so a hung Gemini call doesn't block stop().
-      const drainStart = Date.now();
-      while (activeTranslations > 0 && Date.now() - drainStart < 5000) {
-        await new Promise((r) => setTimeout(r, 100));
-      }
+      // Drain the serial translate chain — wait for the in-flight
+      // translateBatch (started by flushBatch above) to land so the
+      // user's last paragraph appears before we tear down. 5s ceiling
+      // via Promise.race so a hung Gemini call doesn't block stop().
+      try {
+        await Promise.race([
+          flushing,
+          new Promise((r) => setTimeout(r, 5000)),
+        ]);
+      } catch { /* swallow; stop() is best-effort */ }
       try { connection?.requestClose(); } catch { /* already closed */ }
       try { worklet.disconnect(); } catch { /* nothing */ }
       try { sourceNode.disconnect(); } catch { /* nothing */ }
