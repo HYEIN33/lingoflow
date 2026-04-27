@@ -1092,7 +1092,7 @@ export default function App() {
             </div>
           ) : activeTab === 'classroom' ? (
             <div>
-              <ClassroomTab uiLang={uiLang} />
+              <ClassroomTab uiLang={uiLang} isPro={!!userProfile?.isPro} />
             </div>
           ) : activeTab === 'leaderboard' ? (
             <div>

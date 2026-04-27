@@ -244,3 +244,139 @@
   text-transform: uppercase;
   font-weight: 800;
 }
+
+/* ============================================================
+   Sonner toast theme — MemeFlow liquid-glass (added 2026-04-27).
+   Replaces sonner's default solid-color richColors so toasts
+   blend with the white-blue ambient. Each variant gets a tinted
+   left accent border + a tinted icon area, but the body always
+   shares the same translucent white glass shell.
+   ============================================================ */
+
+/* Base shell — glass white, dark ink, blue-tinted shadow.
+   Applied to EVERY toast variant. Variant-specific classes below
+   only paint the accent border + icon tint. */
+.toast-glass-base {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  max-width: 420px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92) 0%, rgba(244, 247, 255, 0.85) 100%);
+  backdrop-filter: blur(40px) saturate(160%);
+  -webkit-backdrop-filter: blur(40px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 18px 48px rgba(91, 127, 232, 0.18), 0 2px 8px rgba(10, 14, 26, 0.06);
+  color: var(--ink);
+  font-family: "Noto Sans SC", system-ui, sans-serif;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Variant accents — a 4px left bar painted via ::before. Keeps the
+   semantic "this is an error / this is a warning" cue without
+   flooding the whole toast in saturated color. */
+.toast-glass-base::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--blue-accent);
+  opacity: 0.7;
+}
+.toast-glass-success::before { background: var(--green-ok); opacity: 0.85; }
+.toast-glass-info::before    { background: var(--blue-accent); opacity: 0.7; }
+.toast-glass-warning::before { background: #C9940F; opacity: 0.85; }
+.toast-glass-error::before   { background: var(--red-warn); opacity: 0.9; }
+
+/* Sonner injects an icon span inside the toast — tint by variant. */
+.toast-glass-base [data-icon] {
+  color: var(--blue-accent);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.toast-glass-success [data-icon] { color: var(--green-ok); }
+.toast-glass-warning [data-icon] { color: #8A5D0E; }
+.toast-glass-error [data-icon]   { color: var(--red-warn); }
+
+/* Title + description typography. Title bold dark ink, desc softer. */
+.toast-glass-title {
+  font-family: "Noto Sans SC", system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ink);
+  letter-spacing: -0.005em;
+}
+.toast-glass-description {
+  font-family: "Noto Sans SC", system-ui, sans-serif;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  margin-top: 2px;
+}
+
+/* Action / cancel buttons — paint the action with the variant accent,
+   cancel stays neutral. Compact pill with inline shadow. */
+.toast-glass-action {
+  font-family: "Noto Sans SC", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  background: var(--blue-accent);
+  color: #fff;
+  border: 0;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(91, 127, 232, 0.3);
+  transition: background 0.15s ease;
+}
+.toast-glass-action:hover { background: var(--blue-accent-deep); }
+/* Variant-specific action buttons — painted by sonner inside the
+   toast root. We can't easily target ".sonner-warning .action" because
+   sonner classNames don't cascade; instead override via the warning/
+   error roots if needed in future. Default action stays blue, which
+   is fine for "确定" on a warning toast (the variant signal is the
+   left accent bar + icon tint). */
+
+.toast-glass-cancel {
+  font-family: "Noto Sans SC", system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  background: rgba(10, 14, 26, 0.06);
+  color: var(--ink-body);
+  border: 0;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.toast-glass-cancel:hover { background: rgba(10, 14, 26, 0.1); }
+
+/* Close (×) button — tiny ghost icon top-right. Sonner positions it
+   absolutely; we just style the affordance. */
+.toast-glass-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: transparent;
+  border: 0;
+  color: var(--ink-subtle);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.toast-glass-close:hover {
+  background: rgba(10, 14, 26, 0.08);
+  color: var(--ink);
+}
