@@ -880,6 +880,13 @@ ${englishParagraph}`;
     }
   }, 3000);
 
+  // Tracks consecutive PCM send failures for the fast-fail reconnect path.
+  // When the WebSocket dies silently the SDK's send() throws but the
+  // close event hasn't fired yet — without this counter we'd happily
+  // pour PCM into a dead socket for 12s waiting on Deepgram's idle
+  // timeout. 3 consecutive failures = trigger immediate reconnect.
+  let consecutiveSendFailures = 0;
+
   // Pipe PCM from the worklet to Deepgram.
   worklet.port.onmessage = (ev) => {
     const pcm = ev.data?.pcm as ArrayBuffer | undefined;
@@ -926,16 +933,27 @@ ${englishParagraph}`;
     }
     try {
       connection.send(pcm);
-    } catch {
-      // Connection may have closed between readyState check and send.
+      consecutiveSendFailures = 0;
+    } catch (err) {
+      // Connection closed between checks. Increment a counter — if we
+      // see this repeatedly (>= 3 in a row), the socket is dead and the
+      // SDK isn't catching it, force a manual reconnect so PCM doesn't
+      // pour into a closed socket for 12s waiting on Deepgram timeout.
+      consecutiveSendFailures += 1;
+      if (consecutiveSendFailures >= 3 && !reconnecting && !userStopped) {
+        // eslint-disable-next-line no-console
+        console.warn('[live] PCM send failed 3x in a row — forcing reconnect', err);
+        consecutiveSendFailures = 0;
+        void reconnect();
+      }
     }
   };
 
   // Deepgram expects a KeepAlive ping every ≤12 s on idle streams,
-  // otherwise it considers the session abandoned and closes the socket.
-  // The SDK exposes keepAlive() but we also send the raw JSON as a
-  // fallback — if the SDK method silently no-ops (different method name
-  // between minor versions), the raw send still hits Deepgram.
+  // otherwise it considers the session abandoned and closes the socket
+  // (code 1011 = "did not receive audio data or text in timeout window").
+  // 8s was getting hit repeatedly in user testing on flaky networks —
+  // tightened to 5s for ~2x safety margin. Cost: trivial extra traffic.
   const keepAliveTimer = setInterval(() => {
     if (!connection) return;
     try {
@@ -944,7 +962,7 @@ ${englishParagraph}`;
     try {
       (connection as any).send?.(JSON.stringify({ type: 'KeepAlive' }));
     } catch { /* ignore */ }
-  }, 8000);
+  }, 5000);
 
   return {
     pause() {
