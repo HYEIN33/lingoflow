@@ -19,6 +19,29 @@ function aiBreadcrumb(message: string, data?: Record<string, unknown>) {
 
 export type AIProvider = 'gemini';
 
+// Per-bucket rate-limit identifier sent to /api/generate. Mirrors the
+// BUCKETS table in functions/index.js. Each surface has its own quota,
+// so heavy translate use no longer chokes classroom or grammar.
+export type BucketName = 'translate' | 'classroom' | 'grammar' | 'chat' | 'slang';
+
+// Custom error thrown when /api/generate returns 429. Lets callers (and a
+// global error handler) distinguish rate-limit from other failures and
+// surface the RateLimitModal with the right bucket / retry-after / pro flag.
+export class RateLimitError extends Error {
+  bucket: BucketName | string;
+  reason: 'minute' | 'day';
+  retryAfter: number;  // seconds
+  isPro: boolean;
+  constructor(payload: { error: string; bucket?: string; reason?: string; retryAfter?: number; isPro?: boolean }) {
+    super(payload.error || '请求太频繁，请稍后再试');
+    this.name = 'RateLimitError';
+    this.bucket = (payload.bucket as BucketName) || 'translate';
+    this.reason = (payload.reason === 'day' ? 'day' : 'minute');
+    this.retryAfter = Math.max(1, Number(payload.retryAfter) || 60);
+    this.isPro = !!payload.isPro;
+  }
+}
+
 async function getAuthToken(): Promise<string | null> {
   const user = auth.currentUser;
   if (!user) return null;
@@ -67,6 +90,7 @@ async function callGeminiProxy(
   contents: string | object[],
   config?: Record<string, any>,
   onChunk?: (textDelta: string) => void,
+  bucket?: BucketName,
 ): Promise<any> {
   const body: Record<string, any> = {
     model,
@@ -76,6 +100,10 @@ async function callGeminiProxy(
   };
   if (config) body.config = config;
   if (onChunk) body.stream = true;
+  // Bucket label for the new per-bucket rate limiter (functions/index.js).
+  // Server defaults to 'translate' if missing, so old calls without bucket
+  // still work — but every callsite SHOULD set this for correct counting.
+  if (bucket) body.bucket = bucket;
 
   const token = await getAuthToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -92,6 +120,9 @@ async function callGeminiProxy(
     });
     if (!res.ok || !res.body) {
       const err = await res.json().catch(() => ({ error: res.statusText }));
+      if (res.status === 429) {
+        throw new RateLimitError(err);
+      }
       const error: any = new Error(err.error || `Proxy error: ${res.status}`);
       error.status = res.status;
       throw error;
@@ -137,10 +168,14 @@ async function callGeminiProxy(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    // Attach status so geminiGenerate's 503/429 fallback chain can detect it.
-    // Without this, a 503 from the proxy propagates as an opaque error and
-    // the fallback model chain never triggers — user sees "翻译失败" instead
-    // of the automatic retry on the next Gemini model.
+    // 429 = rate-limited. Throw a typed RateLimitError so a global handler
+    // (App.tsx) can surface the RateLimitModal with bucket / retryAfter /
+    // pro-flag — instead of users seeing a generic red "翻译失败" toast.
+    if (res.status === 429) {
+      throw new RateLimitError(err);
+    }
+    // Other non-2xx: attach status so geminiGenerate's 503 fallback chain
+    // can detect it and try the next model.
     const error: any = new Error(err.error || `Proxy error: ${res.status}`);
     error.status = res.status;
     throw error;
@@ -180,6 +215,7 @@ async function geminiGenerate(opts: {
   contents: string | { parts: { text: string }[] }[];
   config?: Record<string, any>;
   onChunk?: (delta: string) => void;
+  bucket?: BucketName;
 }): Promise<string> {
   const models = [opts.model, ...FALLBACK_MODELS.filter(m => m !== opts.model)];
 
@@ -201,7 +237,7 @@ async function geminiGenerate(opts: {
     }
     try {
       if (USE_PROXY) {
-        const result = await callGeminiProxy(currentModel, opts.contents, effectiveConfig, opts.onChunk);
+        const result = await callGeminiProxy(currentModel, opts.contents, effectiveConfig, opts.onChunk, opts.bucket);
         aiBreadcrumb('generate.success', { model: currentModel, path: 'proxy', attempt: i + 1, stream: !!opts.onChunk });
         return result.text;
       }
@@ -240,7 +276,7 @@ async function geminiGenerate(opts: {
         console.warn(`Direct API blocked (${msg.substring(0, 80)}), trying proxy...`);
         aiBreadcrumb('generate.region_fallback_to_proxy', { model: currentModel });
         try {
-          const result = await callGeminiProxy(currentModel, opts.contents, effectiveConfig);
+          const result = await callGeminiProxy(currentModel, opts.contents, effectiveConfig, undefined, opts.bucket);
           aiBreadcrumb('generate.proxy_fallback_success', { model: currentModel });
           return result.text;
         } catch (proxyErr: any) {
@@ -379,11 +415,11 @@ export async function explainSlang(text: string): Promise<SlangExplanationResult
       required: ["term", "meaning", "meaningEn", "origin", "usage", "examples"]
     }
   };
-  const text_ = await geminiGenerate({ model, contents, config });
+  const text_ = await geminiGenerate({ model, contents, config, bucket: 'slang' });
   return JSON.parse(text_);
 }
 
-export async function translateText(text: string, formalityLevel?: number, uiLang: 'zh' | 'en' = 'zh'): Promise<TranslationResult> {
+export async function translateText(text: string, formalityLevel?: number, uiLang: 'zh' | 'en' = 'zh', bucket: BucketName = 'translate'): Promise<TranslationResult> {
   const { model } = getEffectiveConfig();
 
   let formalityPrompt = "";
@@ -470,7 +506,7 @@ export async function translateText(text: string, formalityLevel?: number, uiLan
       required: ["original", "usages"],
     },
   };
-  const text_ = await geminiGenerate({ model, contents, config });
+  const text_ = await geminiGenerate({ model, contents, config, bucket });
   const parsed = JSON.parse(text_);
   // Mirror the produced field into the missing slot so all existing UI
   // (WordbookPage, UsagePicker, Detail panel) that reads meaning/label
@@ -542,7 +578,7 @@ export async function loadTranslationDetails(
       }
     }
   };
-  const text_ = await geminiGenerate({ model, contents, config });
+  const text_ = await geminiGenerate({ model, contents, config, bucket: 'translate' });
   return JSON.parse(text_);
 }
 
@@ -584,7 +620,7 @@ export async function checkGrammar(text: string): Promise<GrammarCheckResult> {
       required: ["original", "corrected", "explanation", "explanationZh", "hasErrors"]
     }
   };
-  const text_ = await geminiGenerate({ model, contents, config });
+  const text_ = await geminiGenerate({ model, contents, config, bucket: 'grammar' });
   return JSON.parse(text_);
 }
 
@@ -616,6 +652,7 @@ export async function extractTextFromImage(base64Image: string, mimeType: string
 export async function translateSimple(
   text: string,
   onChunk?: (delta: string) => void,
+  bucket: BucketName = 'translate',
 ): Promise<string> {
   // Model choice, 2026-04-20 benchmark on real Deepgram classroom output
   // (spoken English with repetitions, idioms, teaching phrases):
@@ -646,7 +683,7 @@ Guidelines:
 
 Input:
 ${text}`;
-  const result = await geminiGenerate({ model, contents, onChunk });
+  const result = await geminiGenerate({ model, contents, onChunk, bucket });
   return result.trim();
 }
 
@@ -665,7 +702,7 @@ export async function getReviewHint(word: string, meaningZh: string): Promise<st
 
 要求：简洁，每条不超过一行，总共不超过3行。不要标号。`;
 
-  const result = await geminiGenerate({ model, contents });
+  const result = await geminiGenerate({ model, contents, bucket: 'translate' });
   return result.trim();
 }
 
@@ -742,7 +779,7 @@ ${transcript}`;
       required: ['title', 'overview', 'keyPoints'],
     },
   };
-  const raw = await geminiGenerate({ model, contents: prompt, config });
+  const raw = await geminiGenerate({ model, contents: prompt, config, bucket: 'classroom' });
   try {
     return JSON.parse(raw) as LiveNotes;
   } catch (e) {
@@ -778,7 +815,7 @@ Keep answers concise, practical, and encouraging. Use examples when helpful.`;
     ...chatHistory
   ];
 
-  const result = await geminiGenerate({ model, contents });
+  const result = await geminiGenerate({ model, contents, bucket: 'chat' });
   return result.trim();
 }
 
@@ -865,7 +902,7 @@ Important Rules:
       required: ["isValid", "reason", "qualityScore", "violationLevel"]
     }
   };
-  const text = await geminiGenerate({ model, contents, config });
+  const text = await geminiGenerate({ model, contents, config, bucket: 'slang' });
   return JSON.parse(text);
 }
 
@@ -902,7 +939,7 @@ export async function suggestSlangMeaning(term: string, partialInput: string): P
     Preserve their tone and word choice; don't rewrite what they already have.
     Keep it concise (1-2 sentences), accurate.
     Only output the suggested definition text, nothing else.`;
-  const result = await geminiGenerate({ model, contents });
+  const result = await geminiGenerate({ model, contents, bucket: 'slang' });
   return result.trim();
 }
 
@@ -915,6 +952,6 @@ export async function generateSlangExample(term: string, meaning: string): Promi
 
     Term: "${term}"
     Meaning: "${meaning}"`;
-  const result = await geminiGenerate({ model, contents });
+  const result = await geminiGenerate({ model, contents, bucket: 'slang' });
   return result.trim();
 }

@@ -592,7 +592,7 @@ ${englishParagraph}`;
 
     try {
       const zh = await Promise.race([
-        translateSimple(prompt).then((s) => s.trim()),
+        translateSimple(prompt, undefined, 'classroom').then((s) => s.trim()),
         new Promise<string>((_, reject) =>
           setTimeout(() => reject(new Error('timeout: 15s')), 15000)
         ),

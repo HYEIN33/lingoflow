@@ -57,6 +57,8 @@ import { APP_VERSION, APP_ENV, IS_STAGING } from './version';
 import ChangelogBell from './components/ChangelogBell';
 import SettingsModal from './components/SettingsModal';
 import ChangelogToast from './components/ChangelogToast';
+import RateLimitModal, { RateLimitInfo } from './components/RateLimitModal';
+import { RateLimitError } from './services/ai';
 import { useAuth } from './hooks/useAuth';
 import { useAudio } from './hooks/useAudio';
 import { useSpeechRecognition } from './hooks/useSpeechRecognition';
@@ -650,6 +652,31 @@ export default function App() {
     setShowPayment(true);
   };
 
+  // Global RateLimitError handler. Any time a Gemini call throws 429,
+  // ai.ts wraps it in RateLimitError and re-throws. The window-level
+  // unhandledrejection listener catches it here and surfaces the modal.
+  // Any code that swallows the error in its own catch (e.g. liveSession's
+  // translateWithRetry → "翻译失败" placeholder) is fine — modal only
+  // fires for errors that escape the call stack.
+  const [rateLimitInfo, setRateLimitInfo] = useState<RateLimitInfo | null>(null);
+  useEffect(() => {
+    const handler = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      if (reason instanceof RateLimitError) {
+        setRateLimitInfo({
+          bucket: reason.bucket,
+          reason: reason.reason,
+          retryAfter: reason.retryAfter,
+          isPro: reason.isPro,
+        });
+        // Mark handled — no console error noise for an expected-UX path.
+        event.preventDefault();
+      }
+    };
+    window.addEventListener('unhandledrejection', handler);
+    return () => window.removeEventListener('unhandledrejection', handler);
+  }, []);
+
   const { savedWords, searchQuery, setSearchQuery, wordbookFilter, setWordbookFilter, filteredWords, selectedWordbookItem, setSelectedWordbookItem, handleDeleteWord, folders, wordFolderMap, activeFolderId, setActiveFolderId, createFolder, renameFolder, deleteFolder, moveWordsToFolder } = useWordbook(user);
 
   const {
@@ -1132,6 +1159,17 @@ export default function App() {
             </div>
           ) : null}
         </Suspense>
+
+        {/* Rate Limit Modal — global, fires on any 429 from /api/generate */}
+        <RateLimitModal
+          info={rateLimitInfo}
+          onClose={() => setRateLimitInfo(null)}
+          onUpgrade={() => {
+            setRateLimitInfo(null);
+            onPaymentNeeded('rate_limit_upgrade');
+          }}
+          uiLang={uiLang}
+        />
 
         {/* Payment Modal */}
         <AnimatePresence>
