@@ -271,6 +271,23 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
   // still work, but the UI no longer offers a toggle.
   const translationMode = 'paragraph' as const;
 
+  // Show original English alongside Chinese? Default false (Chinese-only)
+  // because most users want a clean reading experience and don't need to
+  // verify the source. Persisted in localStorage so the choice survives
+  // refreshes. Power users who do want to see the source for English
+  // study can toggle it on in the config card.
+  const SHOW_ORIGINAL_KEY = 'memeflow_classroom_show_original';
+  const [showOriginal, setShowOriginal] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(SHOW_ORIGINAL_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(SHOW_ORIGINAL_KEY, String(showOriginal)); } catch { /* quota */ }
+  }, [showOriginal]);
+
   // In-flight translation indicator — a Set of batch keys currently
   // translating. We render a "翻译中…" placeholder whenever the set is
   // non-empty so users know the Chinese is on its way and not broken.
@@ -504,17 +521,36 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
     return undefined;
   };
 
-  // Retry handler for a failed translation card (PR4 — 2026-04-27).
+  // Retry handler for a failed translation card.
   // Re-runs the same prompt liveSession would have built and updates the
   // line in place. While in flight the card swaps from "翻译失败 ⚠️ 重试"
   // back to "翻译中…" so users get clear feedback the retry is happening.
+  //
+  // Hardening (2026-04-27 evening):
+  //   - Read the line via setStream's prev callback instead of the stream
+  //     closure so a freshly-mounted retry handler always sees current state
+  //     (avoids stale-closure race during concurrent batchId updates).
+  //   - 15s timeout: a hung Gemini call must not leave the user staring
+  //     at "翻译中▍" forever — flip back to failed state with an actionable
+  //     toast.
+  //   - Surface the actual error status (429 = rate limit, 503 = upstream
+  //     overloaded, etc.) so users / Sentry know WHY.
   const retryFailedTranslation = async (lineId: number) => {
-    const target = stream.find((it) => it.kind === 'line' && it.id === lineId);
-    if (!target || target.kind !== 'line') return;
-    const englishParagraph = target.transcription;
-    if (!englishParagraph) return;
+    let englishParagraph = '';
+    setStream((prev) => {
+      const target = prev.find((it) => it.kind === 'line' && it.id === lineId);
+      if (target && target.kind === 'line') {
+        englishParagraph = target.transcription;
+      }
+      return prev;
+    });
+    if (!englishParagraph) {
+      toast.error(uiLang === 'zh' ? '找不到要重试的内容' : 'Nothing to retry');
+      return;
+    }
 
-    // Reset to "in flight" state so user sees activity.
+    // Reset to "in flight" state so user sees activity. translation=''
+    // + failed=false makes the card render as a "still pending" group.
     setStream((prev) => prev.map((it) =>
       it.kind === 'line' && it.id === lineId
         ? { ...it, translation: '', failed: false }
@@ -539,20 +575,42 @@ English paragraph:
 ${englishParagraph}`;
 
     try {
-      const zh = (await translateSimple(prompt)).trim();
+      const zh = await Promise.race([
+        translateSimple(prompt).then((s) => s.trim()),
+        new Promise<string>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout: 15s')), 15000)
+        ),
+      ]);
       setStream((prev) => prev.map((it) =>
         it.kind === 'line' && it.id === lineId
           ? { ...it, translation: zh, failed: false }
           : it
       ));
-    } catch (e) {
-      Sentry.captureException(e, { tags: { component: 'ClassroomTab', op: 'retryFailedTranslation' } });
+    } catch (e: any) {
+      const status = e?.status || (e?.message?.match(/(\d{3})/)?.[1]);
+      const msg = e?.message || String(e);
+      Sentry.captureException(e, {
+        tags: { component: 'ClassroomTab', op: 'retryFailedTranslation', status: String(status || 'unknown') },
+      });
       setStream((prev) => prev.map((it) =>
         it.kind === 'line' && it.id === lineId
           ? { ...it, translation: TRANSLATION_FAILED_ZH, failed: true }
           : it
       ));
-      toast.error(uiLang === 'zh' ? '重试失败，请稍后再试' : 'Retry failed, please try again later');
+      // Tailor the toast to the actual cause so users know what to do.
+      let userMsg: string;
+      if (status === 429 || /rate limit/i.test(msg)) {
+        userMsg = uiLang === 'zh' ? '请求太频繁，请等几秒再试' : 'Too many requests, wait a few seconds';
+      } else if (msg.includes('timeout')) {
+        userMsg = uiLang === 'zh' ? '翻译超时（15 秒），网络可能不稳' : 'Translation timed out (15s)';
+      } else if (status === 503) {
+        userMsg = uiLang === 'zh' ? 'AI 服务暂时不可用，稍后重试' : 'AI service temporarily unavailable';
+      } else if (status === 401 || status === 403) {
+        userMsg = uiLang === 'zh' ? '登录可能过期，请刷新页面' : 'Session expired, please refresh';
+      } else {
+        userMsg = uiLang === 'zh' ? `重试失败：${msg.slice(0, 60)}` : `Retry failed: ${msg.slice(0, 60)}`;
+      }
+      toast.error(userMsg);
     }
   };
 
@@ -1476,6 +1534,49 @@ ${englishParagraph}`;
             because realtime produced disjointed Chinese and we now always
             run paragraph mode. */}
 
+        {/* Row 2b: show-original toggle (added 2026-04-27 evening). Default
+            off = users see Chinese-only, the cleanest reading experience.
+            Power users studying English can flip it on to compare. */}
+        <div className="flex items-center gap-[14px] py-[10px] border-t border-[var(--ink-hairline)]">
+          <div className="shrink-0 w-[110px]">
+            <div className="font-mono-meta text-[10.5px] tracking-[0.2em] uppercase font-extrabold text-[var(--ink-soft)]">display</div>
+            <div className="font-zh-sans font-semibold text-[12px] text-[var(--ink-body)] tracking-[0.02em] mt-1">
+              {uiLang === 'zh' ? '字幕显示' : 'subtitles'}
+            </div>
+          </div>
+          <div className="flex-1 flex items-center gap-1.5 flex-wrap">
+            <button
+              onClick={() => setShowOriginal(false)}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-zh-serif text-[13px] border transition-colors",
+                !showOriginal
+                  ? "bg-[var(--ink)] text-white border-[var(--ink)] shadow-[0_3px_8px_rgba(10,14,26,0.22)]"
+                  : "bg-white/55 border-white/75 text-[rgba(10,14,26,0.7)] hover:text-[var(--ink)]"
+              )}
+            >
+              {!showOriginal && <span className="w-1 h-1 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />}
+              {uiLang === 'zh' ? '只看中文' : 'Chinese only'}
+            </button>
+            <button
+              onClick={() => setShowOriginal(true)}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-zh-serif text-[13px] border transition-colors",
+                showOriginal
+                  ? "bg-[var(--ink)] text-white border-[var(--ink)] shadow-[0_3px_8px_rgba(10,14,26,0.22)]"
+                  : "bg-white/55 border-white/75 text-[rgba(10,14,26,0.7)] hover:text-[var(--ink)]"
+              )}
+            >
+              {showOriginal && <span className="w-1 h-1 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />}
+              {uiLang === 'zh' ? '中英对照' : 'bilingual'}
+            </button>
+            <span className="ml-auto font-zh-serif text-[11px] text-[var(--ink-muted)] self-center">
+              {showOriginal
+                ? (uiLang === 'zh' ? '同时显示英文原文 · 适合学英语' : 'show English source')
+                : (uiLang === 'zh' ? '只看翻译 · 阅读更专注' : 'Chinese only · cleanest read')}
+            </span>
+          </div>
+        </div>
+
         {/* Row 3 (collapsed): course summary — reduces the "wall of options"
             feeling for first-time users. One click expands the real picker. */}
         {!showCourseDetail && (
@@ -1834,7 +1935,7 @@ ${englishParagraph}`;
                         ? (uiLang === 'zh' ? '翻译失败' : 'translation failed')
                         : 'paragraph · 整段翻译'}
                     </span>
-                    {item.transcription && (
+                    {showOriginal && item.transcription && (
                       <p className="font-display italic text-[13px] leading-[1.5] text-[rgba(10,14,26,0.48)] m-0 mb-1.5">
                         "{item.transcription}"
                       </p>
@@ -1874,7 +1975,7 @@ ${englishParagraph}`;
                   <span className="inline-block font-mono-meta text-[9px] font-bold tracking-[0.15em] uppercase px-[7px] py-[2px] rounded-[5px] mb-2 bg-[rgba(91,127,232,0.1)] text-[var(--blue-accent)]">
                     paragraph · 正在攒句
                   </span>
-                  {joinedEnglish && (
+                  {showOriginal && joinedEnglish && (
                     <p className="font-display italic text-[13px] leading-[1.5] text-[rgba(10,14,26,0.48)] m-0 mb-1.5">
                       "{joinedEnglish}"
                     </p>
@@ -1888,12 +1989,10 @@ ${englishParagraph}`;
             });
           })()}
 
-          {pendingTranslations.size > 0 && (
-            <div className="flex items-center gap-2 font-mono-meta text-[11px] text-[var(--blue-accent)] px-1 py-1 mt-2">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              <span>{uiLang === 'zh' ? '翻译中…' : 'Translating…'}</span>
-            </div>
-          )}
+          {/* Removed 2026-04-27: this global "翻译中…" indicator was
+              redundant — each pending paragraph card already shows its
+              own "翻译中▍" cursor inside the bubble. Two indicators
+              looked like a bug to users. */}
         </div>
         {/* "↓ N 新内容" jump-to-latest pill (PR3 — 2026-04-27).
             Shows when user has scrolled up away from bottom AND new
