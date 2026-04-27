@@ -418,7 +418,7 @@ export async function startLiveSession(
     for (let i = 0; i < delays.length; i++) {
       if (delays[i] > 0) await new Promise((r) => setTimeout(r, delays[i]));
       try {
-        return await translateSimple(prompt);
+        return await translateSimple(prompt, undefined, 'classroom');
       } catch (err) {
         lastErr = err;
         // eslint-disable-next-line no-console

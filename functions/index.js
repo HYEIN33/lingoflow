@@ -15,18 +15,42 @@ function firestoreDb() {
 }
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-// Bumped 2026-04-27 evening: 30/300 was too tight for power-user testing
-// (developer hit 300/day in one afternoon). 60/2000 buys ~6x more headroom
-// while still capping abuse at the same per-minute burst rate (60 covers
-// concurrent paragraph translates without choking on classroom long-form).
-// Long-term plan is per-bucket limits + Pro-tier multipliers (see todo).
-const MAX_PER_MINUTE = 60;
-const MAX_PER_DAY = 2000;
-// Touched 2026-04-27 to force a redeploy that resets in-memory rate-limit
-// counters across all Cloud Run instances. After we cleared the user's
-// _rate_limits doc, the live instances still held cached call timestamps
-// in `memCounters` and would not re-hydrate (hydrated flag stays true for
-// the lifetime of the instance). A redeploy = full cold start = clean Map.
+
+// ============================================================
+// Bucket-based rate limiting (rewritten 2026-04-27 night).
+//
+// Replaces the global "30/min, 300/day per user" model. Each API
+// type now has its own bucket: heavy translate usage no longer
+// chokes the classroom flow, and admins are exempt entirely.
+//
+// Limits per bucket (per minute / per day):
+//   bucket          non-Pro          Pro
+//   translate       40   / 500       150  / 3000
+//   classroom       80   / 1000      300  / 6000
+//   grammar         30   / 400       100  / 2500
+//   chat            40   / 500       150  / 3000
+//   slang           80   / 800       250  / 4000
+//   live-token      15   / —         20   / —
+//
+// Each request includes `bucket` in the body (or x-mf-bucket
+// header). Missing/unknown bucket → defaults to `translate` for
+// backward compatibility with old clients.
+// ============================================================
+const BUCKETS = {
+  translate: { perMinute: { free: 40, pro: 150 },  perDay: { free: 500, pro: 3000 } },
+  classroom: { perMinute: { free: 80, pro: 300 },  perDay: { free: 1000, pro: 6000 } },
+  grammar:   { perMinute: { free: 30, pro: 100 },  perDay: { free: 400, pro: 2500 } },
+  chat:      { perMinute: { free: 40, pro: 150 },  perDay: { free: 500, pro: 3000 } },
+  slang:     { perMinute: { free: 80, pro: 250 },  perDay: { free: 800, pro: 4000 } },
+  // live-token: token issuance only, no per-day cap (signing is cheap;
+  // the WebSocket itself is what burns Deepgram credit). Per-minute cap
+  // exists only to defeat scripted abuse.
+  'live-token': { perMinute: { free: 15, pro: 20 }, perDay: { free: Infinity, pro: Infinity } },
+};
+const DEFAULT_BUCKET = 'translate';
+
+// Touched 2026-04-27 night to force redeploy that resets in-memory state
+// after the bucket-based rewrite. New mem schema is incompatible with old.
 
 // Allowed origins — anything else gets a hard CORS reject
 const ALLOWED_ORIGINS = new Set([
@@ -64,27 +88,56 @@ function applyCors(req, res) {
 //   - On Function eviction, the last unflushed calls (<=10s window) may be
 //     lost. Acceptable: we'd rather slightly under-count than pay per-call
 //     Firestore latency for the 99% happy path.
-const memCounters = new Map(); // uid -> { calls: number[], lastFlush: number, hydrated: boolean }
+// uid -> { buckets: { [name]: number[] timestamps }, isPro, isAdmin, lastFlush, hydrated }
+const memCounters = new Map();
 
-async function hydrateIfNeeded(uid) {
-  const entry = memCounters.get(uid) || { calls: [], lastFlush: 0, hydrated: false };
+async function hydrateIfNeeded(uid, decodedToken) {
+  const entry = memCounters.get(uid) || {
+    buckets: {},
+    isPro: false,
+    isAdmin: false,
+    lastFlush: 0,
+    hydrated: false,
+  };
   if (entry.hydrated) return entry;
+  // Read admin custom claim from the token (cheap, no Firestore read).
+  // Pro flag lives in users/{uid}.isPro, fetched below.
+  entry.isAdmin = !!decodedToken?.admin;
   try {
     const db = firestoreDb();
-    const snap = await db.collection('_rate_limits').doc(uid).get();
-    if (snap.exists) {
-      const data = snap.data();
-      const fresh = (data.calls || [])
-        .map((t) => (typeof t?.toMillis === 'function' ? t.toMillis() : 0))
-        .filter((ms) => ms > Date.now() - 86_400_000);
-      entry.calls = fresh;
+    // Parallel: rate-limits doc + users doc (for isPro)
+    const [rlSnap, userSnap] = await Promise.all([
+      db.collection('_rate_limits').doc(uid).get(),
+      db.collection('users').doc(uid).get(),
+    ]);
+    if (rlSnap.exists) {
+      const data = rlSnap.data();
+      const dayAgoMs = Date.now() - 86_400_000;
+      const toMs = (t) => (typeof t?.toMillis === 'function' ? t.toMillis() : 0);
+      // New schema: data.buckets[name] = [ts...]
+      if (data.buckets && typeof data.buckets === 'object') {
+        for (const [name, ts] of Object.entries(data.buckets)) {
+          if (!Array.isArray(ts)) continue;
+          entry.buckets[name] = ts.map(toMs).filter((ms) => ms > dayAgoMs);
+        }
+      }
+      // Legacy schema: data.calls = [ts...] → migrate to translate bucket
+      if (Array.isArray(data.calls)) {
+        const legacy = data.calls.map(toMs).filter((ms) => ms > dayAgoMs);
+        entry.buckets[DEFAULT_BUCKET] = (entry.buckets[DEFAULT_BUCKET] || []).concat(legacy);
+      }
+    }
+    if (userSnap.exists) {
+      const ud = userSnap.data();
+      entry.isPro = !!ud?.isPro;
+      // role:'admin' is the documented admin-via-firestore path (CLAUDE.md).
+      // Both this and the token claim grant admin privileges.
+      if (ud?.role === 'admin') entry.isAdmin = true;
     }
     entry.hydrated = true;
     memCounters.set(uid, entry);
   } catch (e) {
-    // If Firestore is unhappy, proceed with empty in-memory state (fail-open
-    // per instance, but still capped by instance-level counts). Log to console;
-    // repeated failures show up in the Function logs.
+    // Firestore down? Fail open per instance (still capped by instance memory).
     console.warn('Rate limit hydrate failed for', uid, e.message);
     entry.hydrated = true;
     memCounters.set(uid, entry);
@@ -98,33 +151,83 @@ function flushIfStale(uid, entry) {
   const now = Date.now();
   if (now - entry.lastFlush < FLUSH_INTERVAL_MS) return;
   entry.lastFlush = now;
-  // Fire-and-forget. We intentionally do NOT await — the whole point is to
-  // not block the hot path. Firestore write failures are logged; the in-memory
-  // counter keeps working.
-  const snapshot = entry.calls.slice(-MAX_PER_DAY);
-  const ts = snapshot.map((ms) => admin.firestore.Timestamp.fromMillis(ms));
+  // Persist nested-bucket structure. Trim each bucket to the largest day-cap
+  // across tiers so we never write unbounded arrays.
+  const ts = admin.firestore.Timestamp.fromMillis;
+  const bucketsToWrite = {};
+  for (const [name, msList] of Object.entries(entry.buckets)) {
+    const cap = BUCKETS[name]?.perDay?.pro ?? 5000;
+    const finiteCap = Number.isFinite(cap) ? cap : 5000;
+    bucketsToWrite[name] = msList.slice(-finiteCap).map((ms) => ts(ms));
+  }
   firestoreDb()
     .collection('_rate_limits')
     .doc(uid)
-    .set({ calls: ts }, { merge: true })
+    .set({ buckets: bucketsToWrite }, { merge: true })
     .catch((e) => console.warn('Rate limit flush failed for', uid, e.message));
 }
 
-async function checkRateLimit(uid) {
-  const entry = await hydrateIfNeeded(uid);
+// Fire-and-forget hit log for observability. Writes a tiny doc per limit
+// hit so we can later query "which bucket gets exhausted most often".
+function logRateLimitHit(uid, bucket, reason, isPro) {
+  firestoreDb()
+    .collection('_rate_limit_hits')
+    .add({
+      uid,
+      bucket,
+      reason,
+      isPro,
+      ts: admin.firestore.FieldValue.serverTimestamp(),
+    })
+    .catch((e) => console.warn('rate_limit_hits write failed:', e.message));
+}
+
+// Resolve bucket name from req body/header. Falls back to translate so
+// older client builds (which don't send bucket) keep working.
+function resolveBucket(req) {
+  const fromBody = req.body?.bucket;
+  const fromHeader = req.headers?.['x-mf-bucket'];
+  const candidate = (fromBody || fromHeader || DEFAULT_BUCKET).toString();
+  return BUCKETS[candidate] ? candidate : DEFAULT_BUCKET;
+}
+
+// Returns { allowed, reason?, retryAfter?, bucket, isPro }.
+// retryAfter is seconds until the soonest currently-blocking entry expires.
+async function checkRateLimit(uid, bucketName, decodedToken) {
+  const entry = await hydrateIfNeeded(uid, decodedToken);
+  // Admins are exempt — record nothing, succeed immediately.
+  if (entry.isAdmin) return { allowed: true, bucket: bucketName, isPro: entry.isPro, admin: true };
+
+  const cfg = BUCKETS[bucketName] || BUCKETS[DEFAULT_BUCKET];
+  const tier = entry.isPro ? 'pro' : 'free';
+  const minuteCap = cfg.perMinute[tier];
+  const dayCap = cfg.perDay[tier];
+
   const now = Date.now();
   const minuteAgo = now - 60_000;
   const dayAgo = now - 86_400_000;
 
-  // Drop stale entries first
-  entry.calls = entry.calls.filter((ms) => ms > dayAgo);
-  const lastMinute = entry.calls.filter((ms) => ms > minuteAgo).length;
-  if (lastMinute >= MAX_PER_MINUTE) return { allowed: false, reason: 'minute' };
-  if (entry.calls.length >= MAX_PER_DAY) return { allowed: false, reason: 'day' };
-  entry.calls.push(now);
+  const calls = (entry.buckets[bucketName] || []).filter((ms) => ms > dayAgo);
+  entry.buckets[bucketName] = calls;
+  const inLastMinute = calls.filter((ms) => ms > minuteAgo);
+
+  if (inLastMinute.length >= minuteCap) {
+    const oldest = Math.min(...inLastMinute);
+    const retryAfter = Math.max(1, Math.ceil((oldest + 60_000 - now) / 1000));
+    logRateLimitHit(uid, bucketName, 'minute', entry.isPro);
+    return { allowed: false, reason: 'minute', retryAfter, bucket: bucketName, isPro: entry.isPro };
+  }
+  if (calls.length >= dayCap) {
+    const oldest = Math.min(...calls);
+    const retryAfter = Math.max(1, Math.ceil((oldest + 86_400_000 - now) / 1000));
+    logRateLimitHit(uid, bucketName, 'day', entry.isPro);
+    return { allowed: false, reason: 'day', retryAfter, bucket: bucketName, isPro: entry.isPro };
+  }
+
+  calls.push(now);
   memCounters.set(uid, entry);
   flushIfStale(uid, entry);
-  return { allowed: true };
+  return { allowed: true, bucket: bucketName, isPro: entry.isPro };
 }
 
 exports.apiGenerate = onRequest(
@@ -160,23 +263,26 @@ exports.apiGenerate = onRequest(
     }
     const uid = decoded.uid;
 
-    // Per-uid rate limit, in-memory with async Firestore flush. The first
-    // call from a cold instance pays the one-time Firestore read for
-    // hydration; subsequent calls are synchronous map lookups. See
-    // checkRateLimit comments for the consistency trade-off.
+    // Per-uid + per-bucket rate limit. Bucket comes from req.body.bucket
+    // (or x-mf-bucket header) — defaults to 'translate' if absent so old
+    // clients don't break. See BUCKETS table at top of file for limits.
+    const bucket = resolveBucket(req);
     try {
-      const rl = await checkRateLimit(uid);
+      const rl = await checkRateLimit(uid, bucket, decoded);
       if (!rl.allowed) {
         const msg = rl.reason === 'minute'
-          ? 'Rate limit exceeded — please wait a minute.'
-          : 'Daily limit reached — try again tomorrow.';
-        res.status(429).json({ error: msg });
+          ? '请求太频繁，请稍后再试'
+          : '今日额度已用完，明天再来';
+        res.status(429).json({
+          error: msg,
+          bucket: rl.bucket,
+          reason: rl.reason,
+          retryAfter: rl.retryAfter,
+          isPro: rl.isPro,
+        });
         return;
       }
     } catch (e) {
-      // Defensive: hydrate is already wrapped in try/catch, so this should
-      // not fire. Still, fail-CLOSED on unexpected state so we don't leak
-      // free API calls if something truly unexpected happens.
       console.error('Rate limit check failed:', e);
       res.status(503).json({ error: 'Rate limit service unavailable' });
       return;
@@ -336,13 +442,20 @@ exports.liveToken = onRequest(
       return;
     }
 
-    // Same rate-limit policy as apiGenerate — classroom usage counts
-    // against the same per-user budget so a misbehaving client can't
-    // spin up thousands of tokens and eat into the quota.
+    // Token issuance has its own bucket ('live-token') with a tight
+    // per-minute cap (15/free, 20/pro) and no per-day limit. Token
+    // signing is cheap; what burns Deepgram credit is the WebSocket
+    // itself, so bursting tokens beyond ~15/min is always abuse.
     try {
-      const rl = await checkRateLimit(decoded.uid);
+      const rl = await checkRateLimit(decoded.uid, 'live-token', decoded);
       if (!rl.allowed) {
-        res.status(429).json({ error: 'Rate limit — try again shortly' });
+        res.status(429).json({
+          error: '请求太频繁，请稍后再试',
+          bucket: rl.bucket,
+          reason: rl.reason,
+          retryAfter: rl.retryAfter,
+          isPro: rl.isPro,
+        });
         return;
       }
     } catch (e) {
