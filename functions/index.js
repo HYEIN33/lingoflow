@@ -17,6 +17,11 @@ function firestoreDb() {
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const MAX_PER_MINUTE = 30;
 const MAX_PER_DAY = 300;
+// Touched 2026-04-27 to force a redeploy that resets in-memory rate-limit
+// counters across all Cloud Run instances. After we cleared the user's
+// _rate_limits doc, the live instances still held cached call timestamps
+// in `memCounters` and would not re-hydrate (hydrated flag stays true for
+// the lifetime of the instance). A redeploy = full cold start = clean Map.
 
 // Allowed origins — anything else gets a hard CORS reject
 const ALLOWED_ORIGINS = new Set([
