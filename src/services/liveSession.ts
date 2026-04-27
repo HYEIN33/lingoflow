@@ -461,9 +461,10 @@ export async function startLiveSession(
 The input below is a continuous paragraph of spoken English from a live lecture (transcribed by a speech model, so it may contain repetitions or filler). Produce a SINGLE natural, fluent Chinese paragraph that reads as if a Chinese teacher re-explained the same material. Do not mirror every word — clean up repetitions, smooth broken phrasing, and group related sentences into flowing Chinese prose.
 
 Rules:
-- Output is ONE Chinese paragraph. No bullet points, no numbering, no English.
-- Keep the teaching register (口语化 / 教学用语), not stiff written Chinese.
-- Preserve technical terms the student needs to learn; if the English phrase is the teaching target (e.g. "fresh powder", "pit stop"), keep it in parentheses after the Chinese gloss, like: 新雪（fresh powder）.
+- Output is ONE Chinese paragraph. PURE CHINESE ONLY — no English words, no parenthetical English glosses, no Latin characters anywhere.
+- This is critical: do NOT write things like 新雪（fresh powder） or "可理解性输入（comprehensive input）" — the user has the English source displayed alongside, so embedded English in the Chinese is redundant and visually noisy.
+- The ONLY exception: well-known initialisms that are normally untranslated even by Chinese teachers — CAPM, GDP, DNA, AI, HTTP, API, CEO. These can stay as-is, but never wrap them in parentheses with a Chinese version.
+- Keep the teaching register (spoken Chinese, 口语化, not stiff written Chinese).
 - Do not add commentary about the quality of the transcription.
 
 English paragraph:
