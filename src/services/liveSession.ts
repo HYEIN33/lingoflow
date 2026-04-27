@@ -518,16 +518,39 @@ ${englishParagraph}`;
   let finalEventCount = 0;                   // total final events this session (for ratio)
   let emptyFinalCount = 0;                   // total empty finals this session
 
+  // Delayed-flush deadline: when speech_final fires we DON'T flush
+  // immediately. Instead we set a deadline (5s out) and wait — if a
+  // new speech_final lands before the deadline, we extend the buffer
+  // and reset the deadline; if the deadline fires first, we flush.
+  // This collapses 1-sentence "孤段" into the next paragraph naturally.
+  let flushDeadlineTimer: ReturnType<typeof setTimeout> | null = null;
+  const FLUSH_DELAY_AFTER_SPEECH_FINAL_MS = 5000;
+  const armDelayedFlush = () => {
+    if (flushDeadlineTimer) clearTimeout(flushDeadlineTimer);
+    flushDeadlineTimer = setTimeout(() => {
+      flushDeadlineTimer = null;
+      if (pendingBatch.length > 0) {
+        void flushBatch();
+      }
+    }, FLUSH_DELAY_AFTER_SPEECH_FINAL_MS);
+  };
+  const cancelDelayedFlush = () => {
+    if (flushDeadlineTimer) {
+      clearTimeout(flushDeadlineTimer);
+      flushDeadlineTimer = null;
+    }
+  };
+
   // commitFinalText: handle a "this is a real final" event from Deepgram.
-  // Three paths:
-  //   1. char-cap exceeded (320+) → flush regardless of speech_final
-  //   2. speech_final=true        → Deepgram VAD says speaker stopped at
-  //                                 a sentence boundary; if we have at
-  //                                 least MIN_CHARS, that's a paragraph.
-  //   3. speech_final=false       → just an in-progress final, keep
-  //                                 accumulating; no flush.
-  // No setTimeout — segmentation is event-driven from Deepgram alone.
-  // UtteranceEnd handler (separate code path below) is the safety net.
+  // Decision tree:
+  //   1. char-cap exceeded (320+) → flush immediately, cancel any pending
+  //      delayed-flush deadline.
+  //   2. speech_final=true        → ARM a 5s delayed flush instead of
+  //      flushing now. If another speech_final lands within 5s, extend
+  //      the buffer and reset the deadline (collapsing short follow-ups
+  //      into the same paragraph). If no follow-up arrives, deadline
+  //      fires and we flush whatever is buffered.
+  //   3. speech_final=false       → in-progress, no flush, no rearm.
   const commitFinalText = (text: string, source: 'final' | 'rescued-interim', speechFinal: boolean) => {
     if (!text) return;
     if (source === 'rescued-interim') {
@@ -548,25 +571,25 @@ ${englishParagraph}`;
 
     pendingBatch.push(text);
 
-    // Path 1: char-cap. Speaker on a roll, force a flush so the next
-    // paragraph isn't held hostage by an unending utterance.
+    // Path 1: char-cap. Speaker on a roll — cancel any pending delayed
+    // flush and ship now so the next paragraph isn't held hostage.
     const accumulatedChars = countChars(pendingBatch);
     if (accumulatedChars >= PARAGRAPH_CHAR_HARD_CAP) {
+      cancelDelayedFlush();
       void flushBatch();
       return;
     }
 
-    // Path 2: speech_final=true with enough material → real paragraph.
-    // (Below MIN_CHARS we keep accumulating — single-word "Yeah." finals
-    // shouldn't ship a Gemini call by themselves.)
-    if (speechFinal && accumulatedChars >= PARAGRAPH_MIN_CHARS) {
-      void flushBatch();
+    // Path 2: speech_final=true → arm/refresh the 5s delayed flush.
+    // The next speech_final (if it comes) will extend the buffer and
+    // re-arm. The deadline only fires after 5s of no new finals.
+    if (speechFinal) {
+      armDelayedFlush();
       return;
     }
 
-    // Path 3: in-progress final (speech_final=false) or below MIN_CHARS.
-    // Don't flush. UtteranceEnd handler is the safety net if Deepgram
-    // never sends a speech_final for this paragraph.
+    // Path 3: speech_final=false. Just an interim final fragment.
+    // Don't touch the delayed-flush deadline.
   };
 
   const attachHandlers = (conn: ListenLiveClient) => {
@@ -639,17 +662,15 @@ ${englishParagraph}`;
       // eslint-disable-next-line no-console
       console.info(`[live] UtteranceEnd (pendingSynthetic=${pendingSyntheticFinal}, lastInterim=${JSON.stringify(lastInterimText.slice(0, 40))})`);
       if (pendingSyntheticFinal && lastInterimText) {
-        // Synthetic final from rescued interim. We call this with
-        // speechFinal=true because UtteranceEnd's whole job is to mark
-        // the utterance as done — semantically equivalent.
         commitFinalText(lastInterimText, 'rescued-interim', true);
       } else {
         lastInterimText = '';
         pendingSyntheticFinal = false;
       }
-      // Belt-and-suspenders flush: if speech_final never fired for the
-      // currently pending batch but we have enough material, ship it.
+      // Belt-and-suspenders flush: speaker has clearly stopped (utterance
+      // gap exceeded). Don't wait for the delayed-flush deadline; ship now.
       if (pendingBatch.length > 0 && countChars(pendingBatch) >= PARAGRAPH_MIN_CHARS) {
+        cancelDelayedFlush();
         void flushBatch();
       }
     });
@@ -937,8 +958,14 @@ ${englishParagraph}`;
   // (code 1011 = "did not receive audio data or text in timeout window").
   // 8s was getting hit repeatedly in user testing on flaky networks —
   // tightened to 5s for ~2x safety margin. Cost: trivial extra traffic.
+  // Also: poke audioCtx.resume() if Chrome auto-suspended it (happens
+  // when the tab loses focus, DevTools steals focus, etc.) — without
+  // this the worklet stops emitting PCM and Deepgram closes us as idle.
   const keepAliveTimer = setInterval(() => {
     if (!connection) return;
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => { /* will retry next tick */ });
+    }
     try {
       (connection as any).keepAlive?.();
     } catch { /* ignore */ }
@@ -946,6 +973,19 @@ ${englishParagraph}`;
       (connection as any).send?.(JSON.stringify({ type: 'KeepAlive' }));
     } catch { /* ignore */ }
   }, 5000);
+
+  // Tab visibility hook — when user switches back to this tab after
+  // it was hidden, Chrome may have auto-suspended the AudioContext.
+  // Resume it immediately rather than waiting for the next 5s keepAlive.
+  const visibilityHandler = () => {
+    if (document.visibilityState === 'visible' && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch((e) => {
+        // eslint-disable-next-line no-console
+        console.warn('[live] audioCtx.resume() on visibility change failed:', e);
+      });
+    }
+  };
+  document.addEventListener('visibilitychange', visibilityHandler);
 
   return {
     pause() {
@@ -964,6 +1004,10 @@ ${englishParagraph}`;
       userStopped = true;
       clearInterval(keepAliveTimer);
       clearInterval(healthTimer);
+      document.removeEventListener('visibilitychange', visibilityHandler);
+      // Cancel any pending delayed-flush — user hit stop, we don't want
+      // to wait 5s for the deadline to fire.
+      cancelDelayedFlush();
       // If there's a partially-assembled sentence still sitting in the
       // buffer (user hit stop mid-utterance), commit it to the batch
       // before flushing. Otherwise the last spoken sentence is lost.
