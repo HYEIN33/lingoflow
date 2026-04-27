@@ -94,7 +94,22 @@ type Status =
 // Rendering them in the same stream means the user sees their questions
 // in the context where they asked them, not in a separate chat panel.
 type StreamItem =
-  | { kind: 'line'; id: number; translation: string; transcription: string; finalized: boolean; failed?: boolean }
+  | {
+      kind: 'line';
+      id: number;
+      translation: string;
+      transcription: string;
+      finalized: boolean;
+      failed?: boolean;
+      // sealedByBatch: stable batchId from liveSession.flushBatch when this
+      // line was claimed for translation. Set by handleBatchOpen, cleared
+      // when the batch's zh lands. The presence of this field is what
+      // tells the renderer "this card is closed, draw a divider after it
+      // and put new transcripts in a fresh card below" — fixes the bug
+      // where users saw their just-flushed paragraph still wearing the
+      // "正在攒句" label and visually merged with new sentences.
+      sealedByBatch?: string;
+    }
   | { kind: 'qa'; id: number; question: string; answer: string; pending: boolean };
 
 // Convert raw exceptions from startLiveSession (permissions, network, token,
@@ -271,17 +286,19 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
   // still work, but the UI no longer offers a toggle.
   const translationMode = 'paragraph' as const;
 
-  // Show original English alongside Chinese? Default false (Chinese-only)
-  // because most users want a clean reading experience and don't need to
-  // verify the source. Persisted in localStorage so the choice survives
-  // refreshes. Power users who do want to see the source for English
-  // study can toggle it on in the config card.
+  // Show original English alongside Chinese? Default TRUE (bilingual)
+  // because the new prompt strips parenthetical English from the zh
+  // (so the bilingual layout is no longer redundant — original gives
+  // English-learning users real value). Persisted in localStorage so
+  // the choice survives refreshes.
   const SHOW_ORIGINAL_KEY = 'memeflow_classroom_show_original';
   const [showOriginal, setShowOriginal] = useState<boolean>(() => {
     try {
-      return localStorage.getItem(SHOW_ORIGINAL_KEY) === 'true';
+      const v = localStorage.getItem(SHOW_ORIGINAL_KEY);
+      // Treat unset as default true; only explicit 'false' opts out.
+      return v === null ? true : v !== 'false';
     } catch {
-      return false;
+      return true;
     }
   });
   useEffect(() => {
@@ -419,24 +436,22 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
   const handleBatchOpen = (batchId: string, sentenceCount: number) => {
     setStream((prev) => {
       // Walk forward, claim the first `sentenceCount` line items that
-      // are finalized AND not yet claimed by another open batch AND
-      // not yet translated. Record their ids in the ref. State doesn't
-      // need to change — the claim lives in the ref, the stream is
-      // unchanged. We use the setter only to read fresh state without
-      // races against state-update batching.
+      // are finalized AND not yet sealed by another batch AND not yet
+      // translated. Mark them sealedByBatch so the renderer can split
+      // them off into a "正在翻译 / 整段翻译" card with a divider AFTER
+      // (so new transcripts appear below in a fresh card).
       const claimed: number[] = [];
-      const alreadyClaimed = new Set<number>();
-      batchToLineIdsRef.current.forEach((ids) => ids.forEach((id) => alreadyClaimed.add(id)));
-      for (const item of prev) {
-        if (claimed.length >= sentenceCount) break;
-        if (item.kind !== 'line') continue;
-        if (!item.finalized) continue;
-        if (item.translation) continue;
-        if (alreadyClaimed.has(item.id)) continue;
+      const next = prev.map((item) => {
+        if (item.kind !== 'line') return item;
+        if (claimed.length >= sentenceCount) return item;
+        if (!item.finalized) return item;
+        if (item.translation) return item;
+        if (item.sealedByBatch) return item;
         claimed.push(item.id);
-      }
+        return { ...item, sealedByBatch: batchId };
+      });
       batchToLineIdsRef.current.set(batchId, claimed);
-      return prev;
+      return next;
     });
   };
 
@@ -566,9 +581,10 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
 The input below is a continuous paragraph of spoken English from a live lecture (transcribed by a speech model, so it may contain repetitions or filler). Produce a SINGLE natural, fluent Chinese paragraph that reads as if a Chinese teacher re-explained the same material. Do not mirror every word — clean up repetitions, smooth broken phrasing, and group related sentences into flowing Chinese prose.
 
 Rules:
-- Output is ONE Chinese paragraph. No bullet points, no numbering, no English.
-- Keep the teaching register (口语化 / 教学用语), not stiff written Chinese.
-- Preserve technical terms the student needs to learn; if the English phrase is the teaching target (e.g. "fresh powder", "pit stop"), keep it in parentheses after the Chinese gloss, like: 新雪（fresh powder）.
+- Output is ONE Chinese paragraph. PURE CHINESE ONLY — no English words, no parenthetical English glosses, no Latin characters anywhere.
+- This is critical: do NOT write things like 新雪（fresh powder） or "可理解性输入（comprehensive input）" — the user has the English source displayed alongside, so embedded English in the Chinese is redundant and visually noisy.
+- The ONLY exception: well-known initialisms that are normally untranslated even by Chinese teachers — CAPM, GDP, DNA, AI, HTTP, API, CEO. These can stay as-is, but never wrap them in parentheses with a Chinese version.
+- Keep the teaching register (spoken Chinese, 口语化, not stiff written Chinese).
 - Do not add commentary about the quality of the transcription.
 
 English paragraph:
@@ -1096,11 +1112,17 @@ ${englishParagraph}`;
   // can glance at elapsed time without checking system clock. Only counts
   // while status === 'live'; resets to 0 on stop.
   const [sessionElapsed, setSessionElapsed] = useState(0);
+  // Session timer — counts elapsed seconds while live AND not paused.
+  // Reset to 0 when leaving the live state entirely (stop / error).
+  // Previously only checked isLive, so the seconds kept ticking even
+  // when the user hit pause and there was no audio flowing → felt like
+  // a bug because the user expected pause to mean "freeze everything".
   useEffect(() => {
     if (!isLive) { setSessionElapsed(0); return; }
+    if (paused) return; // live but paused → freeze the counter
     const timer = setInterval(() => setSessionElapsed(s => s + 1), 1000);
     return () => clearInterval(timer);
-  }, [isLive]);
+  }, [isLive, paused]);
   const formatSessionTimer = () => {
     const m = Math.floor(sessionElapsed / 60);
     const s = sessionElapsed % 60;
@@ -1868,7 +1890,8 @@ ${englishParagraph}`;
             type LineItem = Extract<typeof stream[number], { kind: 'line' }>;
             type QaItem = Extract<typeof stream[number], { kind: 'qa' }>;
             type Group =
-              | { kind: 'pending-group'; items: LineItem[] }
+              | { kind: 'pending-group'; items: LineItem[] }       // still accumulating, no batch yet
+              | { kind: 'sealed-group'; batchId: string; items: LineItem[] }  // batch flushed, awaiting zh
               | { kind: 'translated-line'; item: LineItem }
               | { kind: 'qa'; item: QaItem };
 
@@ -1882,7 +1905,22 @@ ${englishParagraph}`;
                 groups.push({ kind: 'translated-line', item });
                 continue;
               }
-              // un-translated line → extend the open pending-group, or start one
+              // Sealed (batchId set, awaiting zh) — group with siblings
+              // of the same batchId, but NEVER merge with a pending-group
+              // or another batch. This is what makes the divider land in
+              // the right place: the moment a batch flushes, the renderer
+              // sees its lines pop into a sealed-group, the next live
+              // transcript starts a fresh pending-group below.
+              if (item.sealedByBatch) {
+                const last = groups[groups.length - 1];
+                if (last && last.kind === 'sealed-group' && last.batchId === item.sealedByBatch) {
+                  last.items.push(item);
+                } else {
+                  groups.push({ kind: 'sealed-group', batchId: item.sealedByBatch, items: [item] });
+                }
+                continue;
+              }
+              // Plain pending (still accumulating, no batch yet)
               const last = groups[groups.length - 1];
               if (last && last.kind === 'pending-group') {
                 last.items.push(item);
@@ -1962,9 +2000,39 @@ ${englishParagraph}`;
                 );
               }
 
-              // pending-group: merged "still being typed / awaiting translation" card.
-              // Join all items' English into ONE block. No per-item divider — the
-              // whole group reads as one paragraph in flight.
+              if (group.kind === 'sealed-group') {
+                // Batch was flushed, awaiting Gemini's zh response. Render
+                // as a closed card: "整段翻译" label + joined English +
+                // "翻译中▍" cursor. The next group will start fresh below
+                // (with a divider thanks to idx > 0).
+                const joinedEnglish = group.items
+                  .map((it) => it.transcription)
+                  .filter(Boolean)
+                  .join(' ');
+                const groupKey = `sealed-${group.batchId}`;
+                return (
+                  <div key={groupKey} className={cn("py-[14px]", idx > 0 && "border-t border-dashed border-[rgba(10,14,26,0.07)]")}>
+                    <span className="inline-block font-mono-meta text-[9px] font-bold tracking-[0.15em] uppercase px-[7px] py-[2px] rounded-[5px] mb-2 bg-[rgba(91,127,232,0.1)] text-[var(--blue-accent)]">
+                      paragraph · 整段翻译
+                    </span>
+                    {showOriginal && joinedEnglish && (
+                      <p className="font-display italic text-[13px] leading-[1.5] text-[rgba(10,14,26,0.48)] m-0 mb-1.5">
+                        "{joinedEnglish}"
+                      </p>
+                    )}
+                    <p className="font-zh-serif text-[17px] leading-[1.8] m-0 text-[var(--blue-accent)] font-semibold italic">
+                      {uiLang === 'zh' ? '翻译中' : 'translating'}
+                      <span className="inline-block w-2 h-[18px] align-[-3px] ml-1.5 bg-[var(--blue-accent)] animate-pulse" />
+                    </p>
+                  </div>
+                );
+              }
+
+              // pending-group: still accumulating, no batch dispatched yet.
+              // Show "正在攒句" label + joined English; NO "翻译中" cursor
+              // (nothing's been translated yet — that label was
+              // misleading and made users think translation was already
+              // running while batch threshold hadn't fired).
               const joinedEnglish = group.items
                 .map((it) => it.transcription)
                 .filter(Boolean)
@@ -1972,18 +2040,23 @@ ${englishParagraph}`;
               const groupKey = `pg-${group.items[0]?.id ?? idx}`;
               return (
                 <div key={groupKey} className={cn("py-[14px]", idx > 0 && "border-t border-dashed border-[rgba(10,14,26,0.07)]")}>
-                  <span className="inline-block font-mono-meta text-[9px] font-bold tracking-[0.15em] uppercase px-[7px] py-[2px] rounded-[5px] mb-2 bg-[rgba(91,127,232,0.1)] text-[var(--blue-accent)]">
+                  <span className="inline-block font-mono-meta text-[9px] font-bold tracking-[0.15em] uppercase px-[7px] py-[2px] rounded-[5px] mb-2 bg-[rgba(232,180,60,0.18)] text-[#8A5D0E]">
                     paragraph · 正在攒句
                   </span>
-                  {showOriginal && joinedEnglish && (
-                    <p className="font-display italic text-[13px] leading-[1.5] text-[rgba(10,14,26,0.48)] m-0 mb-1.5">
+                  {showOriginal && joinedEnglish ? (
+                    <p className="font-display italic text-[13px] leading-[1.5] text-[rgba(10,14,26,0.6)] m-0">
                       "{joinedEnglish}"
+                      <span className="inline-block w-1.5 h-[14px] align-[-2px] ml-1 bg-[#8A5D0E] animate-pulse" />
+                    </p>
+                  ) : (
+                    // showOriginal=false: don't render anything but the
+                    // label so the user knows we're listening. Inline
+                    // pulse cursor so it doesn't feel frozen.
+                    <p className="font-zh-serif text-[14px] leading-[1.6] m-0 text-[var(--ink-muted)] italic">
+                      {uiLang === 'zh' ? '正在听…' : 'listening…'}
+                      <span className="inline-block w-1.5 h-[14px] align-[-2px] ml-1 bg-[#8A5D0E] animate-pulse" />
                     </p>
                   )}
-                  <p className="font-zh-serif text-[17px] leading-[1.8] m-0 text-[var(--blue-accent)] font-semibold italic">
-                    {uiLang === 'zh' ? '翻译中' : 'translating'}
-                    <span className="inline-block w-2 h-[18px] align-[-3px] ml-1.5 bg-[var(--blue-accent)] animate-pulse" />
-                  </p>
                 </div>
               );
             });
