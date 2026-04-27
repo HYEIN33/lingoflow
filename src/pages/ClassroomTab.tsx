@@ -293,6 +293,10 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
   };
 
   const sessionRef = useRef<LiveSessionHandle | null>(null);
+  // Set to true while we're tearing down after an error — tells the
+  // onStatusChange handler to ignore stop()'s tail 'stopped' event so
+  // the red error banner doesn't get overwritten with "Stopped".
+  const cleanupAfterErrorRef = useRef(false);
   const itemCounter = useRef(0);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
@@ -860,18 +864,39 @@ ${englishParagraph}`;
         { audioSource, mode, targetLang: 'zh-CN', course, keyterms, translationMode, isPro },
         {
           onStatusChange: (s, detail) => {
+            // If we're actively cleaning up after an error (sessionRef
+            // already nulled, stop() running), the inevitable 'stopped'
+            // event from stop()'s tail must NOT overwrite our 'error'
+            // banner. Drop it on the floor.
+            if (s === 'stopped' && cleanupAfterErrorRef.current) {
+              cleanupAfterErrorRef.current = false;
+              return;
+            }
             setStatus(s);
             setStatusDetail(detail || '');
             // If Deepgram drops the socket mid-session (network blip,
-            // firewall, token expiry on long class), let the user know
-            // they need to hit Start again rather than silently freezing.
+            // firewall, token expiry on long class), let the user know.
+            // Also actively tear down the underlying session — previously
+            // we just nulled the ref, but the audio worklet + mediaStream
+            // kept running, producing the "Error 但字幕还在出" bug
+            // (status='error' yet new finals trickling into the stream
+            // for a few seconds). Calling stop() releases the worklet,
+            // mic / tab capture, and the orphaned WebSocket cleanly.
             if (s === 'error' && detail) {
               toast.error(
                 uiLang === 'zh'
-                  ? `连接中断：${detail}。点「开始」重连。`
-                  : `Connection dropped: ${detail}. Hit Start to reconnect.`
+                  ? `连接中断：${detail}。点上方红色「重新连接」按钮。`
+                  : `Connection dropped: ${detail}. Tap the red "reconnect" button above.`
               );
+              const dyingSession = sessionRef.current;
               sessionRef.current = null;
+              if (dyingSession) {
+                cleanupAfterErrorRef.current = true;
+                // Fire-and-forget — stop() already swallows its own errors.
+                void dyingSession.stop().catch((stopErr) => {
+                  console.warn('[ClassroomTab] cleanup stop() after error failed:', stopErr);
+                });
+              }
             }
           },
           onTranslationBatch: applyTranslationBatch,
@@ -1211,6 +1236,23 @@ ${englishParagraph}`;
               {uiLang === 'zh' ? '结束并保存' : 'stop & save'}
             </button>
           </>
+        )}
+        {/* Reconnect button when the session errored out (PR — 2026-04-27).
+            We don't auto-expand the config card on error because most users
+            just want to reconnect with the same settings, not re-pick a
+            course. The button right here is the shortest path: one click,
+            same settings, new session. */}
+        {status === 'error' && (
+          <button
+            onClick={handleStart}
+            disabled={isBusy}
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-[12px] bg-[var(--red-warn)] text-white border-0 cursor-pointer font-bold text-[13px] shadow-[0_4px_12px_rgba(229,56,43,0.3)] hover:bg-[var(--red-deep)] disabled:opacity-50 shrink-0"
+          >
+            {isBusy
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Play className="w-3.5 h-3.5" />}
+            {uiLang === 'zh' ? '重新连接' : 'reconnect'}
+          </button>
         )}
       </div>
 
