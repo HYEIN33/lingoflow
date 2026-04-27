@@ -42,6 +42,8 @@ import {
   Send,
   Sparkles,
   X,
+  Zap,
+  Headphones,
 } from 'lucide-react';
 import { addDoc, collection, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
@@ -263,18 +265,11 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
   const [question, setQuestion] = useState('');
   const [isAsking, setIsAsking] = useState(false);
 
-  // Translation mode — paragraph (smooth, slight delay) vs realtime
-  // (per-sentence, low latency but jumpier). Persisted in localStorage.
-  const TRANSLATION_MODE_KEY = 'memeflow_classroom_translation_mode';
-  const [translationMode, setTranslationMode] = useState<'paragraph' | 'realtime'>(() => {
-    try {
-      const v = localStorage.getItem(TRANSLATION_MODE_KEY);
-      return v === 'realtime' ? 'realtime' : 'paragraph';
-    } catch { return 'paragraph'; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem(TRANSLATION_MODE_KEY, translationMode); } catch { /* quota */ }
-  }, [translationMode]);
+  // Translation mode is fixed at 'paragraph' since 2026-04-27 evening
+  // (realtime mode retired — produced disjointed Chinese without
+  // cross-sentence context). Kept as a const so callsites that read it
+  // still work, but the UI no longer offers a toggle.
+  const translationMode = 'paragraph' as const;
 
   // In-flight translation indicator — a Set of batch keys currently
   // translating. We render a "翻译中…" placeholder whenever the set is
@@ -299,6 +294,14 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
   const cleanupAfterErrorRef = useRef(false);
   const itemCounter = useRef(0);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  // Batch tracking for translation: maps batchId → the line item ids
+  // this batch claimed at flush time. When the zh translation later
+  // returns (possibly out of order vs other concurrent batches), we
+  // merge into THESE exact ids — never "the first N un-translated
+  // lines", which raced and deleted user-visible paragraphs in the
+  // PR2 concurrent path.
+  const batchToLineIdsRef = useRef<Map<string, number[]>>(new Map());
 
   // Manual-reconnect visibility: show a "卡住了？重连" button when the
   // auto-recovery watchdog hasn't fired yet but the signal pattern looks
@@ -387,84 +390,71 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
     });
   };
 
-  // Paragraph-mode translation handler. liveSession ships ONE pair per
-  // flush where `en` is the whole paragraph (N finalized sentences joined
-  // by ' '), and `zh` is a single coherent Chinese paragraph. We must
-  // collapse the flurry of per-sentence English bubbles into ONE bubble
-  // that shows the full English paragraph with its Chinese translation
-  // underneath — otherwise the UI renders 1 English line + 1 Chinese
-  // line alternating, which is the exact bug the paragraph refactor
-  // aimed to eliminate.
-  //
-  // Strategy: find the contiguous tail of `line` items that are (a)
-  // finalized and (b) still lack a translation. Merge them into the
-  // first one (its transcription becomes the joined paragraph, its
-  // translation becomes `zh`), drop the rest.
   // Sentinel zh string returned by liveSession.translateBatch when Gemini
-  // fails after retries. Identifying it here lets the UI surface a "重试"
-  // button (PR4 — 2026-04-27) instead of leaving the user with a frozen
-  // "翻译失败" string and no recourse.
+  // fails after retries.
   const TRANSLATION_FAILED_ZH = '（翻译失败，稍后重试）';
 
-  const applyTranslationBatch = (pairs: Array<{ en: string; zh: string; sentences: string[] }>) => {
+  // Called the moment liveSession flushes a paragraph batch (BEFORE the
+  // network call). We snapshot which line item ids are "claimed" by this
+  // batchId so when zh later returns we can merge into THOSE exact ids,
+  // not "the first N un-translated lines" (which raced under concurrent
+  // translates and deleted user-visible paragraphs).
+  const handleBatchOpen = (batchId: string, sentenceCount: number) => {
+    setStream((prev) => {
+      // Walk forward, claim the first `sentenceCount` line items that
+      // are finalized AND not yet claimed by another open batch AND
+      // not yet translated. Record their ids in the ref. State doesn't
+      // need to change — the claim lives in the ref, the stream is
+      // unchanged. We use the setter only to read fresh state without
+      // races against state-update batching.
+      const claimed: number[] = [];
+      const alreadyClaimed = new Set<number>();
+      batchToLineIdsRef.current.forEach((ids) => ids.forEach((id) => alreadyClaimed.add(id)));
+      for (const item of prev) {
+        if (claimed.length >= sentenceCount) break;
+        if (item.kind !== 'line') continue;
+        if (!item.finalized) continue;
+        if (item.translation) continue;
+        if (alreadyClaimed.has(item.id)) continue;
+        claimed.push(item.id);
+      }
+      batchToLineIdsRef.current.set(batchId, claimed);
+      return prev;
+    });
+  };
+
+  const applyTranslationBatch = (pairs: Array<{ en: string; zh: string; sentences: string[]; batchId: string }>) => {
     setStream((prev) => {
       let next = [...prev];
       for (const pair of pairs) {
         const isFailed = pair.zh === TRANSLATION_FAILED_ZH;
-        // Realtime mode: session emits one pair per finalized sentence.
-        // pair.en matches exactly one line; 1:1 match, no merge.
-        if (translationMode === 'realtime') {
-          let matched = false;
-          for (let i = next.length - 1; i >= 0; i--) {
-            const item = next[i];
-            if (item.kind !== 'line') continue;
-            if (!item.finalized) continue;
-            if (item.translation) continue;
-            if (item.transcription === pair.en) {
-              next[i] = { ...item, translation: pair.zh, failed: isFailed };
-              matched = true;
-              break;
-            }
-          }
-          if (!matched) {
-            for (let i = 0; i < next.length; i++) {
-              const item = next[i];
-              if (item.kind === 'line' && item.finalized && !item.translation) {
-                next[i] = { ...item, translation: pair.zh, failed: isFailed };
-                matched = true;
-                break;
-              }
-            }
-          }
-          if (!matched) {
-            next.push({
-              kind: 'line', id: itemCounter.current++,
-              translation: pair.zh, transcription: pair.en, finalized: true, failed: isFailed,
-            });
-          }
-          continue;
+        const claimedIds = batchToLineIdsRef.current.get(pair.batchId) || [];
+        // Free the claim now — the batch is settling, future batches
+        // won't bump into these ids (they'll be 'translation' set,
+        // which already excludes them in the claim walk above).
+        batchToLineIdsRef.current.delete(pair.batchId);
+
+        // Find the indices in the current stream that match the
+        // claimed ids (positions may have shifted since onBatchOpen
+        // due to other batches splicing). claimedIdsInOrder preserves
+        // the original claim order so we know which becomes the
+        // "first" (where merged content lands).
+        const idToIdx = new Map<number, number>();
+        for (let i = 0; i < next.length; i++) {
+          const item = next[i];
+          if (item.kind === 'line') idToIdx.set(item.id, i);
+        }
+        const liveIndices: number[] = [];
+        for (const id of claimedIds) {
+          const idx = idToIdx.get(id);
+          if (idx !== undefined) liveIndices.push(idx);
         }
 
-        // Paragraph mode: session flushed N sentences and Gemini returned
-        // ONE paragraph translation. We merge EXACTLY those N un-translated
-        // finalized lines into the first — not "all un-translated finalized
-        // lines", because between flushBatch() and Gemini's return, more
-        // sentences may have landed in the stream. Greedy merging used to
-        // swallow them (the "吞英文" bug: D arrived after flush, then got
-        // splice-deleted when A+B+C's translation returned).
-        //
-        // Precise merge: only the first `pair.sentences.length` un-translated
-        // finalized lines belong to THIS pair. Later ones stay untouched and
-        // will be picked up by the next flushBatch+translate cycle.
-        const N = Math.max(1, pair.sentences?.length ?? 1);
-        const indices: number[] = [];
-        for (let i = 0; i < next.length && indices.length < N; i++) {
-          const item = next[i];
-          if (item.kind === 'line' && item.finalized && !item.translation) {
-            indices.push(i);
-          }
-        }
-        if (indices.length === 0) {
+        if (liveIndices.length === 0) {
+          // Nothing left to merge into — either the batch's lines were
+          // never created (rare) or got deleted by some other code path.
+          // Fallback: append a fresh translated line so the user still
+          // sees the zh.
           next.push({
             kind: 'line',
             id: itemCounter.current++,
@@ -475,14 +465,19 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
           });
           continue;
         }
-        const firstIdx = indices[0];
+
+        // Merge: first claimed line gets the joined English + zh; the
+        // rest are removed. Walk in reverse so splice doesn't shift
+        // indices we haven't visited yet.
+        const sortedIndices = [...liveIndices].sort((a, b) => a - b);
+        const firstIdx = sortedIndices[0];
         const first = next[firstIdx] as {
           kind: 'line'; id: number; translation: string; transcription: string; finalized: boolean; failed?: boolean;
         };
-        const mergedTranscription = pair.en || indices.map((i) => (next[i] as any).transcription).join(' ');
+        const mergedTranscription = pair.en || sortedIndices.map((i) => (next[i] as any).transcription).join(' ');
         next[firstIdx] = { ...first, transcription: mergedTranscription, translation: pair.zh, failed: isFailed };
-        for (let k = indices.length - 1; k >= 1; k--) {
-          next.splice(indices[k], 1);
+        for (let k = sortedIndices.length - 1; k >= 1; k--) {
+          next.splice(sortedIndices[k], 1);
         }
       }
       return next;
@@ -900,6 +895,7 @@ ${englishParagraph}`;
             }
           },
           onTranslationBatch: applyTranslationBatch,
+          onBatchOpen: handleBatchOpen,
           onTranscriptionDelta: appendTranscriptionDelta,
           onTranslationPending: (pending, key) => {
             setPendingTranslations((prev) => {
@@ -1077,6 +1073,95 @@ ${englishParagraph}`;
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
+
+  // Pro gate (added 2026-04-27 evening): the classroom feature went Pro-only
+  // because (a) it's the most expensive call path — Deepgram WebSocket per
+  // session + Gemini paragraph translates — and (b) Pro deserves a real
+  // capability beyond cosmetic perks. Free users land on a paywall card
+  // instead of the full UI. We render this BEFORE useEffects that depend
+  // on session lifecycle so non-Pro users don't run any of that machinery.
+  if (!isPro) {
+    return (
+      <div
+        className="glass-thick rounded-[24px] p-[28px_32px] flex flex-col items-center text-center gap-4"
+      >
+        <div
+          className="w-14 h-14 rounded-2xl flex items-center justify-center text-white shrink-0"
+          style={{
+            background: 'linear-gradient(135deg, #F0D78A, #E88B7D)',
+            boxShadow: '0 6px 16px rgba(232,139,125,0.3)',
+          }}
+        >
+          <Headphones className="w-7 h-7" />
+        </div>
+        <h2
+          className="m-0"
+          style={{
+            fontFamily: '"Clash Display", system-ui, sans-serif',
+            fontWeight: 600,
+            fontSize: 22,
+            letterSpacing: '-0.015em',
+            color: 'var(--ink)',
+          }}
+        >
+          {uiLang === 'zh' ? (
+            <>课堂同传是 <em style={{ fontStyle: 'italic', color: 'var(--blue-accent)' }}>Pro 专享</em></>
+          ) : (
+            <>Classroom live is <em style={{ fontStyle: 'italic', color: 'var(--blue-accent)' }}>Pro only</em></>
+          )}
+        </h2>
+        <p
+          className="m-0 max-w-[440px]"
+          style={{
+            fontFamily: '"Noto Serif SC", serif',
+            fontSize: 14,
+            lineHeight: 1.85,
+            color: 'var(--ink-muted)',
+          }}
+        >
+          {uiLang === 'zh'
+            ? '上课时实时听英文录音，整段一段段地把中文翻译翻给你。配实时笔记 + 课堂问 AI，3 段并发翻译让长课不卡。'
+            : 'Live English transcription with paragraph-level Chinese translation, live notes, and classroom Q&A. 3 paragraphs translate in parallel so long lectures stay snappy.'}
+        </p>
+        <ul
+          className="m-0 p-0 list-none flex flex-col gap-2 max-w-[440px] w-full"
+          style={{ fontFamily: '"Noto Sans SC", system-ui, sans-serif', fontSize: 13, color: 'var(--ink-body)' }}
+        >
+          {(uiLang === 'zh'
+            ? ['长课不掉线 — 自动重连 + 卡住一键重启', '3 段同时翻译，跟得上快讲师', '实时笔记自动总结要点 + 待办', '课堂中可以随时问 AI 任何问题']
+            : ['Auto-reconnect + manual recover for long lectures', '3-paragraph parallel translate keeps up with fast speakers', 'Live notes auto-summarize key points + todos', 'Ask AI anything mid-class']
+          ).map((line, i) => (
+            <li key={i} className="flex items-start gap-2">
+              <span className="text-[var(--blue-accent)] shrink-0">·</span>
+              <span>{line}</span>
+            </li>
+          ))}
+        </ul>
+        <button
+          type="button"
+          onClick={() => {
+            // Toast a hint — the actual paywall is on the profile tab
+            // (this Tab is rendered in isolation; we don't have direct
+            // access to setActiveTab here without prop drilling).
+            toast.info(uiLang === 'zh' ? '前往「我的」→「升级 Pro」即可解锁。' : 'Open the profile tab and tap upgrade.');
+          }}
+          className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full text-white border-0 cursor-pointer mt-2"
+          style={{
+            background: 'linear-gradient(135deg, #F0D78A, #E88B7D)',
+            boxShadow: '0 4px 12px rgba(232,139,125,0.35)',
+            fontFamily: '"Clash Display", system-ui, sans-serif',
+            fontStyle: 'italic',
+            fontWeight: 700,
+            fontSize: 13,
+            letterSpacing: '0.02em',
+          }}
+        >
+          <Zap className="w-3.5 h-3.5" fill="currentColor" strokeWidth={0} />
+          {uiLang === 'zh' ? '升级 Pro 解锁' : 'Upgrade to Pro'}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -1286,10 +1371,6 @@ ${englishParagraph}`;
               ? (uiLang === 'zh' ? 'tab audio · 标签页' : 'tab audio')
               : (uiLang === 'zh' ? 'mic · 麦克风' : 'mic')}
             {' · '}
-            {translationMode === 'paragraph'
-              ? (uiLang === 'zh' ? '整段翻译' : 'paragraph')
-              : (uiLang === 'zh' ? '实时翻译' : 'realtime')}
-            {' · '}
             {(() => {
               if (selectedCourse === '__custom__') {
                 return customCourse.trim() || (uiLang === 'zh' ? '自定义课程' : 'custom');
@@ -1391,43 +1472,9 @@ ${englishParagraph}`;
           </div>
         </div>
 
-        {/* Row 2: mode */}
-        <div className="flex items-center gap-[14px] py-[10px] border-t border-[var(--ink-hairline)]">
-          <div className="shrink-0 w-[110px]">
-            <div className="font-mono-meta text-[10.5px] tracking-[0.2em] uppercase font-extrabold text-[var(--ink-soft)]">mode</div>
-            <div className="font-zh-sans font-semibold text-[12px] text-[var(--ink-body)] tracking-[0.02em] mt-1">
-              {uiLang === 'zh' ? '翻译模式' : 'translation mode'}
-            </div>
-          </div>
-          <div className="flex-1 flex flex-wrap items-center gap-1.5">
-            {(['paragraph', 'realtime'] as const).map((m) => {
-              const active = translationMode === m;
-              return (
-                <button
-                  key={m}
-                  onClick={() => setTranslationMode(m)}
-                  disabled={isLive || isBusy}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-zh-serif text-[13px] border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-                    active
-                      ? "bg-[var(--ink)] text-white border-[var(--ink)] shadow-[0_3px_8px_rgba(10,14,26,0.22)]"
-                      : "bg-white/55 border-white/75 text-[rgba(10,14,26,0.7)] hover:text-[var(--ink)]"
-                  )}
-                >
-                  {active && <span className="w-1 h-1 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />}
-                  {m === 'paragraph'
-                    ? (uiLang === 'zh' ? '整段翻译' : 'paragraph')
-                    : (uiLang === 'zh' ? '实时翻译' : 'realtime')}
-                </button>
-              );
-            })}
-            <span className="ml-auto font-zh-serif text-[11px] text-[var(--ink-muted)] self-center">
-              {translationMode === 'paragraph'
-                ? (uiLang === 'zh' ? '几句英文攒成一段再翻，中文更顺 · 延迟几秒' : 'smoother Chinese, a few seconds of lag')
-                : (uiLang === 'zh' ? '每句话讲完立刻翻译 · 延迟最低，但中文会碎一些' : 'immediate per-sentence, lowest lag')}
-            </span>
-          </div>
-        </div>
+        {/* Row 2 was the realtime/paragraph toggle — removed 2026-04-27
+            because realtime produced disjointed Chinese and we now always
+            run paragraph mode. */}
 
         {/* Row 3 (collapsed): course summary — reduces the "wall of options"
             feeling for first-time users. One click expands the real picker. */}
@@ -1781,13 +1828,11 @@ ${englishParagraph}`;
                       "inline-block font-mono-meta text-[9px] font-bold tracking-[0.15em] uppercase px-[7px] py-[2px] rounded-[5px] mb-2",
                       isFailed
                         ? "bg-[rgba(229,56,43,0.1)] text-[var(--red-warn)]"
-                        : translationMode === 'paragraph'
-                          ? "bg-[rgba(91,127,232,0.1)] text-[var(--blue-accent)]"
-                          : "bg-[rgba(232,180,60,0.18)] text-[#8A5D0E]"
+                        : "bg-[rgba(91,127,232,0.1)] text-[var(--blue-accent)]"
                     )}>
                       {isFailed
                         ? (uiLang === 'zh' ? '翻译失败' : 'translation failed')
-                        : translationMode === 'paragraph' ? 'paragraph · 整段翻译' : 'realtime · 实时'}
+                        : 'paragraph · 整段翻译'}
                     </span>
                     {item.transcription && (
                       <p className="font-display italic text-[13px] leading-[1.5] text-[rgba(10,14,26,0.48)] m-0 mb-1.5">
@@ -1826,13 +1871,8 @@ ${englishParagraph}`;
               const groupKey = `pg-${group.items[0]?.id ?? idx}`;
               return (
                 <div key={groupKey} className={cn("py-[14px]", idx > 0 && "border-t border-dashed border-[rgba(10,14,26,0.07)]")}>
-                  <span className={cn(
-                    "inline-block font-mono-meta text-[9px] font-bold tracking-[0.15em] uppercase px-[7px] py-[2px] rounded-[5px] mb-2",
-                    translationMode === 'paragraph'
-                      ? "bg-[rgba(91,127,232,0.1)] text-[var(--blue-accent)]"
-                      : "bg-[rgba(232,180,60,0.18)] text-[#8A5D0E]"
-                  )}>
-                    {translationMode === 'paragraph' ? 'paragraph · 正在攒句' : 'realtime · 正在翻'}
+                  <span className="inline-block font-mono-meta text-[9px] font-bold tracking-[0.15em] uppercase px-[7px] py-[2px] rounded-[5px] mb-2 bg-[rgba(91,127,232,0.1)] text-[var(--blue-accent)]">
+                    paragraph · 正在攒句
                   </span>
                   {joinedEnglish && (
                     <p className="font-display italic text-[13px] leading-[1.5] text-[rgba(10,14,26,0.48)] m-0 mb-1.5">
