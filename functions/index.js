@@ -15,8 +15,13 @@ function firestoreDb() {
 }
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const MAX_PER_MINUTE = 30;
-const MAX_PER_DAY = 300;
+// Bumped 2026-04-27 evening: 30/300 was too tight for power-user testing
+// (developer hit 300/day in one afternoon). 60/2000 buys ~6x more headroom
+// while still capping abuse at the same per-minute burst rate (60 covers
+// concurrent paragraph translates without choking on classroom long-form).
+// Long-term plan is per-bucket limits + Pro-tier multipliers (see todo).
+const MAX_PER_MINUTE = 60;
+const MAX_PER_DAY = 2000;
 // Touched 2026-04-27 to force a redeploy that resets in-memory rate-limit
 // counters across all Cloud Run instances. After we cleared the user's
 // _rate_limits doc, the live instances still held cached call timestamps
