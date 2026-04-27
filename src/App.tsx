@@ -867,7 +867,10 @@ export default function App() {
       <ChangelogToast currentVersion={APP_VERSION} />
 
       {/* Header */}
-      <header className="bg-white/50 backdrop-blur-xl border-b border-white/60 sticky top-0 z-10 shadow-[0_4px_20px_rgba(91,127,232,0.08)]">
+      {/* translate="no" + notranslate class: 防止沉浸式翻译 / Google Translate
+          等扩展把品牌/导航当翻译目标，注入 wrapper 节点把布局推乱（曾导致
+          tabs 横条与 logo 重叠）。 */}
+      <header translate="no" className="notranslate bg-white/50 backdrop-blur-xl border-b border-white/60 sticky top-0 z-10 shadow-[0_4px_20px_rgba(91,127,232,0.08)]">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3">
             {/* App icon removed — brand name alone carries identity. */}
@@ -942,7 +945,7 @@ export default function App() {
                 horizontally — without it users don't realise there are
                 tabs further right on narrow screens. pointer-events-none so
                 it never eats taps meant for the tabs underneath. */}
-            <div className="relative mb-6 sm:mb-8">
+            <div translate="no" className="notranslate relative mb-6 sm:mb-8">
               {/* Thick liquid-glass shell; active tab elevates on top of it
                   via .glass-pill-active (see src/index.css). The shell is
                   deliberately thinner/lighter than the active pill to push
