@@ -194,6 +194,7 @@ export default function TranslateTab({
   // confirms "reapplying…" so it doesn't feel silent.
   const formalityDrifted =
     !!translationResult
+    && !isTranslating  // 关键: in-flight 时永远不算 drifted, 防自动重翻死循环
     && userProfile?.isPro
     && lastTranslatedFormality !== null
     && formalityLevel !== lastTranslatedFormality;

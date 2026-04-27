@@ -94,6 +94,16 @@ export function useTranslation({
     setShowDetails(false);
     setSelectedUsageIndex(0);
     setSlangInsights([]);
+    // Set lastTranslatedFormality NOW (not just after the full result lands).
+    // Otherwise the preview-path setTranslationResult on line ~117 below
+    // creates a window where (translationResult != null) but
+    // (lastTranslatedFormality != current formalityLevel) — TranslateTab's
+    // formalityDrifted derives true and its 600ms auto-retranslate effect
+    // fires, kicking off another translate, looping forever. Setting it up
+    // front means "for the duration of this in-flight translate, the slider
+    // value is locked in" — drifted only goes true when the user later
+    // moves the slider AFTER the result has settled.
+    setLastTranslatedFormality(userProfile?.isPro ? formalityLevel : null);
     markOnboardingStep('translate_word');
 
     // Progressive rendering: fire translateSimple for a sub-second preview,

@@ -655,7 +655,7 @@ export default function App() {
   const {
     inputText, setInputText, isTranslating, translationResult, slangInsights, isFetchingSlang,
     selectedUsageIndex, setSelectedUsageIndex, showDetails, setShowDetails,
-    formalityLevel, setFormalityLevel, isSaving, isLoadingDetails,
+    formalityLevel, setFormalityLevel, lastTranslatedFormality, isSaving, isLoadingDetails,
     handleTranslate, handleSaveWord, ensureDetailsLoaded, clearTranslation,
   } = useTranslation({ user, userProfile, setUserProfile, savedWords, uiLang, onPaymentNeeded });
 
@@ -982,6 +982,7 @@ export default function App() {
               isLoadingDetails={isLoadingDetails}
               formalityLevel={formalityLevel}
               setFormalityLevel={setFormalityLevel}
+              lastTranslatedFormality={lastTranslatedFormality}
               isFetchingSlang={isFetchingSlang}
               slangInsights={slangInsights}
               isSaving={isSaving}
