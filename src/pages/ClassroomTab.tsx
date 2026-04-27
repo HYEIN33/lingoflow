@@ -179,7 +179,26 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
     () => typeof window !== 'undefined' && !localStorage.getItem(COMPLIANCE_ACK_KEY)
   );
   const [agreed, setAgreed] = useState(false);
-  const [audioSource, setAudioSource] = useState<'tab' | 'mic'>('tab');
+  // audioSource — persisted in localStorage so users who picked mic
+  // last time don't have to re-pick on every visit. First-ever visit
+  // defaults to 'mic' (Apr 2026 product call: most users record their
+  // own speech rather than dub a tab; the tab path is the niche case).
+  // Wrapped in try/catch because localStorage can throw in private mode
+  // or when the quota is exhausted.
+  const AUDIO_SOURCE_KEY = 'memeflow_classroom_audio_source';
+  const [audioSource, setAudioSource] = useState<'tab' | 'mic'>(() => {
+    try {
+      const saved = localStorage.getItem(AUDIO_SOURCE_KEY);
+      return saved === 'tab' || saved === 'mic' ? saved : 'mic';
+    } catch {
+      return 'mic';
+    }
+  });
+  // Persist on every change so the next session picks up the same value
+  // even if the user closes the tab without hitting Start.
+  useEffect(() => {
+    try { localStorage.setItem(AUDIO_SOURCE_KEY, audioSource); } catch { /* quota / private mode */ }
+  }, [audioSource]);
   const [mode] = useState<'tutorial' | 'lecture'>('tutorial'); // tutorial only in Spike
   const [status, setStatus] = useState<Status>('idle');
   const [statusDetail, setStatusDetail] = useState<string>('');
