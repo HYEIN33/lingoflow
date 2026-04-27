@@ -80,7 +80,7 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
     <>
       <button
         onClick={handleOpen}
-        className="relative p-2 text-gray-400 hover:text-[#5B7FE8] transition-colors rounded-xl hover:bg-[rgba(91,127,232,0.08)]"
+        className="relative p-2 text-[var(--ink-muted)] hover:text-[#5B7FE8] transition-colors rounded-xl hover:bg-[rgba(91,127,232,0.08)]"
         title={hasUnseen ? '有新内容！' : '更新日志'}
         aria-label="更新日志"
       >
@@ -117,14 +117,14 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--ink-hairline)]">
                 <div className="flex items-center gap-2">
                   <Bell className="w-5 h-5 text-[#5B7FE8]" />
-                  <h2 className="font-black text-lg text-gray-900">更新日志</h2>
+                  <h2 className="font-black text-lg text-[var(--ink)]">更新日志</h2>
                 </div>
                 <button
                   onClick={() => setIsOpen(false)}
-                  className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
+                  className="p-1.5 text-[var(--ink-muted)] hover:text-[var(--ink-body)] hover:bg-[rgba(10,14,26,0.05)] rounded-xl transition-colors"
                   aria-label="关闭"
                 >
                   <X className="w-5 h-5" />
@@ -151,21 +151,21 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
                         <span className="font-black text-[#5B7FE8] text-sm">
                           v{entry.version}
                         </span>
-                        <span className="text-xs text-gray-400">{entry.date}</span>
+                        <span className="text-xs text-[var(--ink-muted)]">{entry.date}</span>
                         {isUnseen && (
                           <span className="bg-red-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider">
                             New
                           </span>
                         )}
                       </div>
-                      <h3 className="font-bold text-gray-900 text-base mb-3 leading-snug">
+                      <h3 className="font-bold text-[var(--ink)] text-base mb-3 leading-snug">
                         {entry.title}
                       </h3>
                       <ul className="space-y-2">
                         {entry.changes.map((change, i) => (
                           <li
                             key={i}
-                            className="text-sm text-gray-600 leading-relaxed flex gap-2"
+                            className="text-sm text-[var(--ink-body)] leading-relaxed flex gap-2"
                           >
                             <span className="text-[rgba(91,127,232,0.6)] shrink-0">·</span>
                             <span>{change}</span>
@@ -178,8 +178,8 @@ export default function ChangelogBell({ currentVersion }: ChangelogBellProps) {
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-3 border-t border-gray-100 text-center">
-                <span className="text-xs text-gray-400">
+              <div className="px-6 py-3 border-t border-[var(--ink-hairline)] text-center">
+                <span className="text-xs text-[var(--ink-muted)]">
                   感谢你在用 MemeFlow 🙏
                 </span>
               </div>

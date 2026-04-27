@@ -23,6 +23,10 @@ interface UseTranslationParams {
   savedWords: SavedWord[];
   uiLang: string;
   onPaymentNeeded: (trigger: string) => void;
+  // Optional — when provided, the save-word toast shows a "去看看 / View"
+  // action button that jumps to the wordbook tab. Strengthens confirmation
+  // (the old toast was easy to miss).
+  onViewWordbook?: () => void;
 }
 
 export function useTranslation({
@@ -32,6 +36,7 @@ export function useTranslation({
   savedWords,
   uiLang,
   onPaymentNeeded,
+  onViewWordbook,
 }: UseTranslationParams) {
   const [inputText, setInputText] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
@@ -41,6 +46,11 @@ export function useTranslation({
   const [selectedUsageIndex, setSelectedUsageIndex] = useState(0);
   const [showDetails, setShowDetails] = useState(false);
   const [formalityLevel, setFormalityLevel] = useState<number>(50);
+  // Tracks the formality level that produced the current on-screen result.
+  // TranslateTab compares this to `formalityLevel` to detect slider drift and
+  // surface a "正式程度改了 · 点翻译重应用" chip — otherwise dragging the
+  // slider after a translation silently does nothing until the user notices.
+  const [lastTranslatedFormality, setLastTranslatedFormality] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   // Ref-based guard — survives async gap between parallel clicks, which setIsTranslating cannot
@@ -60,6 +70,7 @@ export function useTranslation({
     setShowDetails(false);
     setSelectedUsageIndex(0);
     setSlangInsights([]);
+    setLastTranslatedFormality(null);
   };
 
   const handleTranslate = async (e?: React.FormEvent, overrideText?: string) => {
@@ -116,6 +127,9 @@ export function useTranslation({
       const result = await fullPromise;
       setTranslationResult(result);
       setSelectedUsageIndex(0);
+      // Record the formality used for this result so the UI can tell when
+      // the user has since dragged the slider to a different value.
+      setLastTranslatedFormality(userProfile?.isPro ? formalityLevel : null);
 
       // Fetch slang insights if terms are found
       if (result.slangTerms && result.slangTerms.length > 0) {
@@ -241,7 +255,22 @@ export function useTranslation({
 
       await addDoc(collection(db, 'words'), wordData);
 
-      toast.success(uiLang === 'zh' ? '已保存到单词本 ✓' : 'Saved to wordbook ✓');
+      // Stronger confirmation — longer duration + an action button that jumps
+      // to the wordbook. The old 4s plain toast was easy to miss and users
+      // weren't sure the save actually landed.
+      toast.success(
+        uiLang === 'zh' ? '已存入单词本' : 'Saved to wordbook',
+        {
+          description: uiLang === 'zh' ? '可以在单词本里复习和管理' : 'You can review it anytime',
+          duration: 6000,
+          action: onViewWordbook
+            ? {
+                label: uiLang === 'zh' ? '去看看' : 'View',
+                onClick: () => onViewWordbook(),
+              }
+            : undefined,
+        },
+      );
       setTranslationResult(null);
       setInputText('');
       setShowDetails(false);
@@ -267,6 +296,7 @@ export function useTranslation({
     setShowDetails,
     formalityLevel,
     setFormalityLevel,
+    lastTranslatedFormality,
     isSaving,
     isLoadingDetails,
     handleTranslate,

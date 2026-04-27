@@ -2,243 +2,453 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Trophy, Crown, ChevronUp, ChevronDown, Clock, Star, Flame, Loader2 } from 'lucide-react';
+import { Trophy, Crown, Loader2 } from 'lucide-react';
 
-export default function Leaderboard({ defaultTab = 'group', currentUserId, uiLang = 'zh', onUserClick }: { defaultTab?: 'group' | 'global' | 'monthly', currentUserId: string, uiLang?: 'en' | 'zh', groupId?: string, onUserClick?: (uid: string) => void }) {
-  const [activeTab, setActiveTab] = useState(defaultTab);
-  const [groupData, setGroupData] = useState<any[]>([]);
-  const [globalData, setGlobalData] = useState<any[]>([]);
-  const [monthlyData, setMonthlyData] = useState<any[]>([]);
-  const [timeLeft, setTimeLeft] = useState('');
+/**
+ * Leaderboard — redesigned 2026-04-21.
+ *
+ * Layout changes (driven by user feedback: "good looking but blurry"):
+ *   - Hero is ONE glass-thick card. Podium (top 3) lives inside it with a
+ *     blue-accented #1 slot, smaller #2/#3 slots beside it, and a big
+ *     italic rank-number ghost-watermark behind each avatar.
+ *   - Reward strip: solid white pill with a 3px blue left bar, mono label,
+ *     body copy in Noto Sans SC 500 for legibility.
+ *   - Table below: solid white surface + hairline rules + mono header.
+ *     No glass, no tiny grey text. The user "ME" row gets a blue wash and
+ *     3px blue left stroke — unmistakable.
+ *
+ * Data model unchanged. Same props: defaultTab / currentUserId / uiLang /
+ * onUserClick. Still snapshots `users` collection ordered by
+ * approvedSlangCount desc, renders group/global/monthly tabs.
+ */
+
+type TabId = 'group' | 'global' | 'monthly';
+
+// Badge id → 身份 title 映射（和 UserProfile 的 ACHIEVEMENTS 保持一致）。
+// 从 userProfile.equippedBadge 派生 displayTitle，不需要新 Firestore 字段、
+// 不改 security rules — 原型里"梗百科编辑 / 多模态先锋"这种身份文案就是靠
+// 装备的成就名显示的。没装备就 fallback 到"梗新人"。
+const BADGE_TITLE: Record<string, { zh: string; en: string }> = {
+  apprentice: { zh: '梗学徒', en: 'Apprentice' },
+  observer: { zh: '文化观察员', en: 'Observer' },
+  streak7: { zh: '周打卡达人', en: 'Streak master' },
+  multimedia: { zh: '多模态先锋', en: 'Media pioneer' },
+  expert: { zh: '梗百科编辑', en: 'Slang editor' },
+  legend: { zh: '梗神', en: 'Legend' },
+};
+
+interface LbUser {
+  id: string;
+  username: string;
+  displayTitle: string;  // 从 equippedBadge 派生，显示在 podium / table 里
+  weeklyScore: number;
+  weeklyCount: number;
+  totalScore: number;
+  totalCount: number;
+  avgQuality: number;
+  monthlyCount: number;
+  trend: number;
+}
+
+export default function Leaderboard({
+  defaultTab = 'group',
+  currentUserId,
+  uiLang = 'zh',
+  onUserClick,
+}: {
+  defaultTab?: TabId;
+  currentUserId: string;
+  uiLang?: 'en' | 'zh';
+  groupId?: string;
+  onUserClick?: (uid: string) => void;
+}) {
+  const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
+  const [groupData, setGroupData] = useState<LbUser[]>([]);
+  const [globalData, setGlobalData] = useState<LbUser[]>([]);
+  const [monthlyData, setMonthlyData] = useState<LbUser[]>([]);
+  const [timeLeft, setTimeLeft] = useState({ d: 0, h: 0, m: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const timer = setInterval(() => {
+    const tick = () => {
       const now = new Date();
       const nextSunday = new Date();
       nextSunday.setDate(now.getDate() + (7 - now.getDay()));
       nextSunday.setHours(23, 59, 59, 999);
       const diff = nextSunday.getTime() - now.getTime();
-      const d = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
-      const m = Math.floor((diff / 1000 / 60) % 60);
-      const s = Math.floor((diff / 1000) % 60);
-      setTimeLeft(`${d}${uiLang === 'zh' ? '天' : 'd'} ${h}${uiLang === 'zh' ? '时' : 'h'} ${m}${uiLang === 'zh' ? '分' : 'm'} ${s}${uiLang === 'zh' ? '秒' : 's'}`);
-    }, 1000);
+      setTimeLeft({
+        d: Math.floor(diff / (1000 * 60 * 60 * 24)),
+        h: Math.floor((diff / (1000 * 60 * 60)) % 24),
+        m: Math.floor((diff / 1000 / 60) % 60),
+      });
+    };
+    tick();
+    const timer = setInterval(tick, 60000);
     return () => clearInterval(timer);
   }, [uiLang]);
 
-  // Fetch real leaderboard data from Firestore users collection
   useEffect(() => {
     setIsLoading(true);
     const q = query(collection(db, 'users'), orderBy('approvedSlangCount', 'desc'), limit(20));
-    const unsub = onSnapshot(q, (snap) => {
-      const users = snap.docs
-        .filter(d => {
-          const data = d.data();
-          // Only show real users: must have a display name or be current user
-          const isReal = data.displayName && data.displayName !== 'Anonymous';
-          return (isReal || d.id === currentUserId) && (data.approvedSlangCount || 0) > 0;
-        })
-        .map((d) => {
-          const data = d.data();
-          return {
-            id: d.id,
-            username: data.displayName || (d.id === currentUserId ? (uiLang === 'zh' ? '你' : 'You') : `${uiLang === 'zh' ? '用户' : 'User'} ${d.id.slice(0, 4)}`),
-            weeklyScore: (data.approvedSlangCount || 0) * 10 + (data.currentStreak || 0) * 5,
-            weeklyCount: data.approvedSlangCount || 0,
-            totalScore: (data.approvedSlangCount || 0) * 10 + (data.reputationScore || 100),
-            totalCount: data.approvedSlangCount || 0,
-            avgQuality: data.reputationScore || 100,
-            monthlyCount: data.approvedSlangCount || 0,
-            likes: 0,
-            topEntries: [],
-            trend: data.currentStreak > 0 ? data.currentStreak : 0,
-          };
-        });
-      setGroupData(users.slice(0, 10));
-      setGlobalData(users);
-      setMonthlyData(users.slice(0, 5));
-      setIsLoading(false);
-    }, () => setIsLoading(false));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const users: LbUser[] = snap.docs
+          .filter((d) => {
+            const data = d.data();
+            const isReal = data.displayName && data.displayName !== 'Anonymous';
+            return (isReal || d.id === currentUserId) && (data.approvedSlangCount || 0) > 0;
+          })
+          .map((d) => {
+            const data = d.data();
+            const badgeInfo = data.equippedBadge ? BADGE_TITLE[data.equippedBadge] : null;
+            const displayTitle = badgeInfo
+              ? (uiLang === 'zh' ? badgeInfo.zh : badgeInfo.en)
+              : (uiLang === 'zh' ? '梗新人' : 'Newcomer');
+            return {
+              id: d.id,
+              username:
+                data.displayName ||
+                (d.id === currentUserId
+                  ? uiLang === 'zh'
+                    ? '你'
+                    : 'You'
+                  : `${uiLang === 'zh' ? '用户' : 'User'} ${d.id.slice(0, 4)}`),
+              displayTitle,
+              weeklyScore: (data.approvedSlangCount || 0) * 10 + (data.currentStreak || 0) * 5,
+              weeklyCount: data.approvedSlangCount || 0,
+              totalScore: (data.approvedSlangCount || 0) * 10 + (data.reputationScore || 100),
+              totalCount: data.approvedSlangCount || 0,
+              avgQuality: data.reputationScore || 100,
+              monthlyCount: data.approvedSlangCount || 0,
+              trend: data.currentStreak > 0 ? data.currentStreak : 0,
+            };
+          });
+        setGroupData(users.slice(0, 10));
+        setGlobalData(users);
+        setMonthlyData(users.slice(0, 5));
+        setIsLoading(false);
+      },
+      () => setIsLoading(false),
+    );
     return () => unsub();
   }, [currentUserId, uiLang]);
 
-  const getRankBadge = (index: number) => {
-    if (index === 0) return <div className="w-8 h-8 bg-gradient-to-br from-amber-300 to-amber-500 rounded-full flex items-center justify-center shadow-md"><Crown className="w-4 h-4 text-white" /></div>;
-    if (index === 1) return <div className="w-8 h-8 bg-gradient-to-br from-gray-300 to-gray-400 rounded-full flex items-center justify-center shadow-md"><span className="text-white font-bold text-xs">2</span></div>;
-    if (index === 2) return <div className="w-8 h-8 bg-gradient-to-br from-amber-600 to-amber-700 rounded-full flex items-center justify-center shadow-md"><span className="text-white font-bold text-xs">3</span></div>;
-    return <div className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 font-bold text-sm">{index + 1}</div>;
-  };
-
-  const renderGroupTab = () => (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-      {/* Timer */}
-      <div className="bg-[rgba(91,127,232,0.08)] border border-[rgba(91,127,232,0.3)] rounded-2xl p-4 flex items-center justify-between">
-        <div>
-          <p className="text-[#5B7FE8] text-xs font-medium mb-1">{uiLang === 'zh' ? '本周结算倒计时' : 'Weekly reset'}</p>
-          <p className="text-gray-900 font-mono font-bold text-lg flex items-center gap-2">
-            <Clock className="w-4 h-4 text-[#5B7FE8]" /> {timeLeft}
-          </p>
-        </div>
-        <div className="text-right">
-          <p className="text-amber-500 text-xs font-bold">{uiLang === 'zh' ? 'Top 1 奖励' : 'Top 1 Reward'}</p>
-          <p className="text-gray-500 text-[10px] mt-0.5">{uiLang === 'zh' ? '本周梗王称号 + 100次翻译额度' : 'Weekly Champion title + 100 translations'}</p>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        {groupData.map((user, index) => (
-          <div
-            key={user.id}
-            onClick={() => onUserClick?.(user.id)}
-            className={`flex items-center gap-3 p-4 rounded-2xl cursor-pointer transition-all ${
-              user.id === currentUserId
-                ? 'bg-[rgba(91,127,232,0.08)] border-2 border-[rgba(91,127,232,0.4)] shadow-sm'
-                : 'bg-white/60 border border-white/60 hover:bg-white/80'
-            }`}
-          >
-            {getRankBadge(index)}
-            <div className="w-10 h-10 rounded-xl bg-[rgba(91,127,232,0.1)] overflow-hidden shrink-0 flex items-center justify-center text-[#5B7FE8] font-bold">
-              {user.username.charAt(0)}
-            </div>
-            <div className="flex-1 min-w-0">
-              <h4 className="text-gray-900 font-bold truncate flex items-center gap-2">
-                {user.username}
-                {user.id === currentUserId && <span className="text-[10px] bg-[rgba(91,127,232,0.1)] text-[#5B7FE8] px-2 py-0.5 rounded-full font-bold">YOU</span>}
-              </h4>
-              <div className="flex items-center gap-3 text-xs text-gray-400 mt-0.5">
-                <span className="flex items-center gap-1"><Flame className="w-3 h-3 text-orange-400" /> {user.weeklyCount} {uiLang === 'zh' ? '词条' : 'entries'}</span>
-                {user.trend !== 0 && (
-                  <span className={`flex items-center ${user.trend > 0 ? 'text-emerald-500' : 'text-red-400'}`}>
-                    {user.trend > 0 ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                    {Math.abs(user.trend)}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="text-right shrink-0">
-              <p className="text-gray-900 font-bold font-mono">{user.weeklyScore}</p>
-              <p className="text-[10px] text-gray-400">{uiLang === 'zh' ? '积分' : 'pts'}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </motion.div>
-  );
-
-  const renderGlobalTab = () => (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-2">
-      {globalData.map((user, index) => (
-        <div
-          key={user.id}
-          onClick={() => onUserClick?.(user.id)}
-          className={`flex items-center gap-3 p-4 rounded-2xl cursor-pointer transition-all ${
-            index === 0 ? 'bg-amber-50 border border-amber-200' :
-            user.id === currentUserId ? 'bg-[rgba(91,127,232,0.08)] border-2 border-[rgba(91,127,232,0.4)]' :
-            'bg-white/60 border border-white/60 hover:bg-white/80'
-          }`}
-        >
-          {getRankBadge(user.rank ? user.rank - 1 : index)}
-          <div className={`w-10 h-10 rounded-xl overflow-hidden shrink-0 flex items-center justify-center font-bold ${index === 0 ? 'bg-amber-200 text-amber-700' : 'bg-[rgba(91,127,232,0.1)] text-[#5B7FE8]'}`}>
-            {user.username.charAt(0)}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h4 className={`font-bold truncate flex items-center gap-2 ${index === 0 ? 'text-amber-700' : 'text-gray-900'}`}>
-              {user.username}
-              {index === 0 && <span className="text-[10px] bg-amber-200 text-amber-700 px-2 py-0.5 rounded-full font-black">{uiLang === 'zh' ? '梗神' : 'Legend'} ⚡</span>}
-            </h4>
-            <p className="text-xs text-gray-400 mt-0.5">{uiLang === 'zh' ? '累计' : 'Total'} {user.totalCount} {uiLang === 'zh' ? '词条' : 'entries'}</p>
-          </div>
-          <div className="text-right shrink-0">
-            <p className="text-gray-900 font-bold font-mono">{user.totalScore.toLocaleString()}</p>
-            <p className="text-[10px] text-gray-400">{uiLang === 'zh' ? '总积分' : 'total'}</p>
-          </div>
-        </div>
-      ))}
-    </motion.div>
-  );
-
-  const renderMonthlyTab = () => (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
-      {monthlyData.map((user, index) => (
-        <div key={user.id} className="bg-white/60 border border-white/60 rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#5B7FE8] to-[#0A0E1A] flex items-center justify-center text-white font-bold text-lg shadow-md">
-                {user.username.charAt(0)}
-              </div>
-              <div>
-                <h4 className="text-gray-900 font-bold text-lg flex items-center gap-2">
-                  {user.username}
-                  {index === 0 && <Star className="w-4 h-4 text-amber-400 fill-amber-400" />}
-                </h4>
-                <p className="text-sm text-gray-500">{uiLang === 'zh' ? '本月贡献' : 'This month'} {user.monthlyCount} {uiLang === 'zh' ? '词条' : 'entries'}</p>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-600 px-2 py-1 rounded-lg text-sm font-bold border border-emerald-200">
-                <span>{uiLang === 'zh' ? '质量' : 'Quality'}</span>
-                <span>{user.avgQuality}</span>
-              </div>
-              <p className="text-xs text-gray-400 mt-1">{user.likes} 👍</p>
-            </div>
-          </div>
-          <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
-            <p className="text-[10px] text-gray-400 mb-2 uppercase tracking-wider font-bold">{uiLang === 'zh' ? '代表作' : 'Top Entries'}</p>
-            <div className="flex flex-wrap gap-2">
-              {user.topEntries.map((entry: string) => (
-                <span key={entry} className="px-3 py-1 bg-white text-gray-700 rounded-lg text-sm border border-gray-200">{entry}</span>
-              ))}
-            </div>
-          </div>
-        </div>
-      ))}
-    </motion.div>
-  );
+  const data = activeTab === 'group' ? groupData : activeTab === 'global' ? globalData : monthlyData;
+  const scoreKey =
+    activeTab === 'group' ? 'weeklyScore' : activeTab === 'global' ? 'totalScore' : 'monthlyCount';
+  const top3 = data.slice(0, 3);
+  const rest = data.slice(3);
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-        <Trophy className="w-6 h-6 text-amber-500" />
-        {uiLang === 'zh' ? '排行榜' : 'Leaderboard'}
-      </h2>
+    <div className="space-y-4">
+      {/* HERO — glass card with title + tabs + countdown + podium */}
+      <section className="glass-thick rounded-[20px] px-5 py-3.5">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 pb-3 border-b border-[var(--ink-hairline)]">
+          <div className="min-w-0 flex-1">
+            <h1 className="t-h1 !text-[22px] sm:!text-[24px] !mb-1">
+              {uiLang === 'zh' ? '贡献者排行榜' : 'Contributors'}
+            </h1>
+            {/* Scoring rules — collapsed by default to save vertical space.
+                Users who care can expand; first-time scanners aren't forced
+                to read a math formula before seeing the leaderboard itself. */}
+            <details className="group mt-0.5">
+              <summary className="list-none cursor-pointer inline-flex items-center gap-1 text-[12px] font-zh-sans text-[var(--ink-muted)] hover:text-[var(--ink-body)] transition-colors">
+                <span>{uiLang === 'zh' ? '积分规则' : 'Scoring rules'}</span>
+                <svg className="w-3 h-3 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </summary>
+              <p className="mt-1.5 text-[12.5px] font-zh-sans text-[var(--ink-body)] leading-relaxed">
+                {uiLang === 'zh'
+                  ? '分数 = 批准词条数 × 10 + 连击天数 × 5 · 每 5 分钟刷新 · 周日 23:59 结算'
+                  : 'Score = approved × 10 + streak × 5 · refreshed every 5 min · resets Sun 23:59'}
+              </p>
+            </details>
+            <div className="mt-2 inline-flex p-[3px] gap-[2px] bg-[rgba(10,14,26,0.06)] rounded-[11px]">
+              {(['group', 'global', 'monthly'] as const).map((id) => {
+                const on = activeTab === id;
+                const label =
+                  id === 'group'
+                    ? uiLang === 'zh'
+                      ? '小组'
+                      : 'Weekly'
+                    : id === 'global'
+                      ? uiLang === 'zh'
+                        ? '全球'
+                        : 'Global'
+                      : uiLang === 'zh'
+                        ? '月榜'
+                        : 'Monthly';
+                return (
+                  <button
+                    key={id}
+                    onClick={() => setActiveTab(id)}
+                    className={`px-3 py-1.5 rounded-[9px] text-[12.5px] font-zh-sans font-semibold transition-colors ${
+                      on
+                        ? 'bg-white text-[var(--ink)] font-bold shadow-[0_1.5px_4px_rgba(10,14,26,0.08)]'
+                        : 'text-[var(--ink-muted)] hover:text-[var(--ink-body)]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-      {/* Tabs */}
-      <div className="flex bg-white/30 backdrop-blur-sm border border-white/50 p-1 rounded-2xl shadow-inner">
-        {[
-          { id: 'group', label: uiLang === 'zh' ? '本周小组' : 'Weekly' },
-          { id: 'global', label: uiLang === 'zh' ? '全球总榜' : 'Global' },
-          { id: 'monthly', label: uiLang === 'zh' ? '月度明星' : 'Monthly' }
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-              activeTab === tab.id
-                ? 'bg-white/70 text-[#5B7FE8] shadow-sm backdrop-blur-md border border-white/60'
-                : 'text-gray-500 hover:text-gray-700 hover:bg-white/20'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+          <div className="sm:text-right shrink-0">
+            <div className="font-mono-meta text-[10px] uppercase tracking-[0.18em] text-[var(--ink-subtle)] mb-1">
+              {uiLang === 'zh' ? '本周结算倒计时' : 'Resets in'}
+            </div>
+            <div className="font-mono-meta text-[18px] font-semibold text-[var(--ink)] tracking-[0.04em] leading-none">
+              {String(timeLeft.d).padStart(2, '0')}
+              <span className="text-[var(--ink-muted)] font-normal">d</span> {String(timeLeft.h).padStart(2, '0')}
+              <span className="text-[var(--ink-muted)] font-normal">h</span> {String(timeLeft.m).padStart(2, '0')}
+              <span className="text-[var(--ink-muted)] font-normal">m</span>
+            </div>
+            <div className="font-zh-sans text-[10.5px] text-[var(--ink-muted)] mt-1">
+              {uiLang === 'zh' ? '周日 23:59 自动发奖' : 'Sun 23:59 auto'}
+            </div>
+          </div>
+        </div>
 
+        {/* PODIUM — only on the group (weekly) view; other tabs start with the table directly */}
+        {activeTab === 'group' && top3.length > 0 && (
+          <div className="pt-4 grid grid-cols-1 sm:grid-cols-[1fr_1.15fr_1fr] gap-3 items-end">
+            {/* #2 — smaller, translateY */}
+            {top3[1] && (
+              <PodiumSlot
+                user={top3[1]}
+                rank={2}
+                score={top3[1][scoreKey as keyof LbUser] as number}
+                uiLang={uiLang}
+                onClick={() => onUserClick?.(top3[1].id)}
+              />
+            )}
+            {/* #1 — hero slot */}
+            {top3[0] && (
+              <PodiumSlot
+                user={top3[0]}
+                rank={1}
+                score={top3[0][scoreKey as keyof LbUser] as number}
+                uiLang={uiLang}
+                onClick={() => onUserClick?.(top3[0].id)}
+              />
+            )}
+            {/* #3 — smaller */}
+            {top3[2] && (
+              <PodiumSlot
+                user={top3[2]}
+                rank={3}
+                score={top3[2][scoreKey as keyof LbUser] as number}
+                uiLang={uiLang}
+                onClick={() => onUserClick?.(top3[2].id)}
+              />
+            )}
+          </div>
+        )}
+      </section>
+
+      {/* REWARD strip — only for the weekly tab */}
+      {activeTab === 'group' && (
+        <div className="surface flex items-center gap-4 px-5 py-4 !rounded-[14px] border-l-[3px] border-l-[var(--blue-accent)]">
+          <span className="font-mono-meta text-[10.5px] font-bold tracking-[0.2em] uppercase text-[var(--blue-accent)] shrink-0">
+            {uiLang === 'zh' ? 'Top 1 奖励' : 'Top 1 Reward'}
+          </span>
+          <span className="w-px h-5 bg-[var(--ink-hairline)] shrink-0" />
+          <span className="t-info">
+            {uiLang === 'zh' ? (
+              <>
+                <strong>本周梗王</strong> 称号 · <strong>100 次</strong> 翻译额度 · 个人资料金边框 <strong>7 天</strong>
+              </>
+            ) : (
+              <>
+                <strong>Weekly Champion</strong> title · <strong>100</strong> translations · <strong>7-day</strong> profile glow
+              </>
+            )}
+          </span>
+        </div>
+      )}
+
+      {/* RANK TABLE */}
       {isLoading ? (
-        <div className="flex justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-[rgba(91,127,232,0.6)]" /></div>
-      ) : groupData.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
+        <div className="flex justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-[rgba(91,127,232,0.6)]" />
+        </div>
+      ) : data.length === 0 ? (
+        <div className="surface text-center py-12 px-6">
           <Trophy className="w-10 h-10 mx-auto mb-3 text-gray-300" />
-          <p>{uiLang === 'zh' ? '还没有排行数据，去梗百科贡献吧！' : 'No leaderboard data yet. Start contributing!'}</p>
+          <p className="t-body">
+            {uiLang === 'zh' ? '还没有排行数据，去梗百科贡献吧！' : 'No leaderboard data yet. Start contributing!'}
+          </p>
         </div>
       ) : (
         <AnimatePresence mode="wait">
-          {activeTab === 'group' && renderGroupTab()}
-          {activeTab === 'global' && renderGlobalTab()}
-          {activeTab === 'monthly' && renderMonthlyTab()}
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="surface overflow-hidden"
+          >
+            <div className="grid grid-cols-[56px_1fr_140px_80px] sm:grid-cols-[64px_1fr_160px_90px] gap-3 px-5 py-3.5 bg-[rgba(10,14,26,0.04)] border-b border-[var(--ink-rule)]">
+              <span className="t-mono-strong text-center">{uiLang === 'zh' ? '排名' : 'Rank'}</span>
+              <span className="t-mono-strong">{uiLang === 'zh' ? '贡献者' : 'Contributor'}</span>
+              <span className="t-mono-strong text-right">{uiLang === 'zh' ? '分数' : 'Score'}</span>
+              <span className="t-mono-strong text-right">Δ</span>
+            </div>
+
+            {(activeTab === 'group' ? rest : data).map((user, i) => {
+              const absoluteRank = activeTab === 'group' ? i + 4 : i + 1;
+              const isMe = user.id === currentUserId;
+              const scoreVal = user[scoreKey as keyof LbUser] as number;
+              const countLabel =
+                activeTab === 'group'
+                  ? `${user.weeklyCount} ${uiLang === 'zh' ? '词条' : 'entries'}`
+                  : activeTab === 'global'
+                    ? `${user.totalCount} ${uiLang === 'zh' ? '累计' : 'total'}`
+                    : `${user.monthlyCount} ${uiLang === 'zh' ? '本月' : 'this mo'}`;
+              return (
+                <button
+                  key={user.id}
+                  onClick={() => onUserClick?.(user.id)}
+                  className={`w-full text-left grid grid-cols-[56px_1fr_140px_80px] sm:grid-cols-[64px_1fr_160px_90px] gap-3 px-5 py-3.5 items-center border-b border-[var(--ink-hairline)] last:border-b-0 transition-colors ${
+                    isMe
+                      ? 'bg-[rgba(91,127,232,0.08)] border-l-[3px] border-l-[var(--blue-accent)] pl-[17px] hover:bg-[rgba(91,127,232,0.12)]'
+                      : 'hover:bg-[rgba(91,127,232,0.04)]'
+                  }`}
+                >
+                  <span
+                    className={`text-center font-display italic font-bold text-[22px] leading-none tracking-[-0.03em] ${
+                      isMe ? 'text-[var(--blue-accent)]' : 'text-[var(--ink-soft)]'
+                    }`}
+                  >
+                    {String(absoluteRank).padStart(2, '0')}
+                  </span>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="w-9 h-9 rounded-full bg-gradient-to-br from-[#89A3F0] to-[#5B7FE8] text-white font-display font-bold text-[13px] inline-flex items-center justify-center shrink-0">
+                      {user.username.charAt(0).toUpperCase()}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="font-zh-serif font-bold text-[14.5px] text-[var(--ink)] truncate">
+                        {user.username}
+                        {isMe && (
+                          <span className="ml-2 align-middle font-mono-meta font-extrabold text-[9px] tracking-[0.15em] text-[var(--blue-accent)] bg-[rgba(91,127,232,0.15)] px-1.5 py-[2px] rounded-[4px]">
+                            ME
+                          </span>
+                        )}
+                      </div>
+                      <div className="font-zh-sans font-medium text-[12px] text-[var(--ink-body)] mt-0.5 truncate">
+                        {user.displayTitle}
+                        {user.trend > 0 && (
+                          <span className="ml-1.5 text-[var(--ink-muted)]">· {user.trend} {uiLang === 'zh' ? '天连击' : 'day streak'}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-display font-bold text-[18px] leading-none tracking-[-0.02em] text-[var(--ink)]">
+                      {scoreVal.toLocaleString()}
+                    </div>
+                    <div className="font-mono-meta text-[11px] font-semibold text-[var(--ink-soft)] mt-1">
+                      {user.totalCount} {uiLang === 'zh' ? '贡献' : 'contribs'}
+                    </div>
+                  </div>
+                  <div
+                    className={`text-right font-mono-meta text-[13px] font-bold ${
+                      user.trend > 0
+                        ? 'text-[var(--green-ok)]'
+                        : user.trend < 0
+                          ? 'text-[var(--red-warn)]'
+                          : 'text-[var(--ink-subtle)]'
+                    }`}
+                  >
+                    {user.trend > 0 ? `+${user.trend}` : user.trend < 0 ? user.trend : '—'}
+                  </div>
+                </button>
+              );
+            })}
+
+            <div className="px-5 py-3.5 bg-[rgba(10,14,26,0.025)] border-t border-[var(--ink-rule)] flex justify-between items-center flex-wrap gap-2">
+              <span className="font-zh-sans font-medium text-[12.5px] text-[var(--ink-body)]">
+                {uiLang === 'zh' ? '榜单每 5 分钟刷新一次' : 'Refreshed every 5 minutes'}
+              </span>
+            </div>
+          </motion.div>
         </AnimatePresence>
       )}
     </div>
+  );
+}
+
+/** Top-3 podium slot. #1 is elevated & blue-accented; #2/#3 are smaller */
+function PodiumSlot({
+  user,
+  rank,
+  score,
+  uiLang,
+  onClick,
+}: {
+  user: LbUser;
+  rank: 1 | 2 | 3;
+  score: number;
+  uiLang: 'en' | 'zh';
+  onClick: () => void;
+}) {
+  const isHero = rank === 1;
+  return (
+    <button
+      onClick={onClick}
+      className={`relative text-center rounded-[16px] transition-transform hover:-translate-y-0.5 ${
+        isHero
+          ? 'bg-gradient-to-b from-[rgba(91,127,232,0.08)] to-white border-[2px] border-[var(--blue-accent)] shadow-[0_14px_32px_rgba(91,127,232,0.22)] px-4 py-5'
+          : 'bg-white border border-[var(--border-solid)] px-4 py-4'
+      } ${rank === 2 ? 'translate-y-2.5' : rank === 3 ? 'translate-y-[18px]' : ''}`}
+    >
+      {/* Ghost rank number watermark */}
+      <span
+        className={`absolute top-3 right-3.5 font-display italic font-bold leading-none tracking-[-0.05em] pointer-events-none select-none ${
+          isHero ? 'text-[58px] text-[rgba(91,127,232,0.18)]' : 'text-[46px] text-[rgba(10,14,26,0.16)]'
+        }`}
+      >
+        {String(rank).padStart(2, '0')}
+      </span>
+
+      {/* Crown only on #1 */}
+      {isHero && (
+        <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-[var(--blue-accent)] text-white inline-flex items-center justify-center shadow-[0_4px_10px_rgba(91,127,232,0.4)]">
+          <Crown className="w-4 h-4" />
+        </span>
+      )}
+
+      <div
+        className={`mx-auto rounded-full bg-gradient-to-br from-[#89A3F0] to-[#5B7FE8] text-white font-display font-bold inline-flex items-center justify-center mb-2.5 ${
+          isHero ? 'w-[62px] h-[62px] text-[22px]' : 'w-[50px] h-[50px] text-[18px]'
+        }`}
+      >
+        {user.username.charAt(0).toUpperCase()}
+      </div>
+      <div className={`font-zh-serif font-bold text-[var(--ink)] ${isHero ? 'text-[17px]' : 'text-[15px]'}`}>
+        {user.username}
+      </div>
+      <div
+        className={`font-zh-sans font-medium text-[12.5px] tracking-[0.02em] mt-0.5 mb-2.5 ${
+          isHero ? 'text-[var(--blue-accent)] font-semibold' : 'text-[var(--ink-body)]'
+        }`}
+      >
+        {user.displayTitle}
+      </div>
+      <div
+        className={`font-display font-bold leading-none tracking-[-0.02em] ${
+          isHero ? 'text-[32px] text-[var(--blue-accent)]' : 'text-[24px] text-[var(--ink)]'
+        }`}
+      >
+        {score.toLocaleString()}
+      </div>
+      <div className="font-mono-meta text-[10.5px] font-bold tracking-[0.2em] uppercase text-[var(--ink-soft)] mt-1.5">
+        {uiLang === 'zh' ? '分数' : 'score'}
+      </div>
+    </button>
   );
 }

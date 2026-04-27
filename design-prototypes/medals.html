@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Medals · MemeFlow Prototype</title>
+<link rel="preconnect" href="https://api.fontshare.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&f[]=satoshi@400,500,600,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Serif+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .bench {
+    padding: 38px 36px 48px;
+  }
+  .bench h2 {
+    margin: 0 0 6px;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 600; font-size: 22px;
+    letter-spacing: -0.03em;
+  }
+  .bench h2 em { font-style: italic; color: var(--blue-accent); }
+  .bench .desc {
+    font-family: "Noto Serif SC", serif;
+    font-size: 13.5px; color: rgba(10,14,26,0.65);
+    line-height: 1.85;
+    margin: 0 0 32px;
+    max-width: 640px;
+  }
+
+  /* ============ HEXAGON GLASS MEDAL ============ */
+  .medal-row {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 22px 14px;
+  }
+  @media (max-width: 900px) { .medal-row { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 560px) { .medal-row { grid-template-columns: repeat(2, 1fr); } }
+
+  .medal {
+    text-align: center;
+    cursor: pointer;
+  }
+  .medal .shield {
+    position: relative;
+    width: 86px; height: 98px;
+    margin: 0 auto 14px;
+    filter: drop-shadow(0 8px 20px rgba(91,127,232,0.22));
+    transition: transform .4s cubic-bezier(.2,.8,.2,1);
+  }
+  .medal:hover .shield { transform: translateY(-4px) scale(1.04); }
+
+  /* Hexagon shape via clip-path */
+  .shield-face {
+    position: absolute; inset: 0;
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  }
+
+  /* Back layer — the glass material */
+  .shield-glass {
+    background:
+      linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.5) 100%),
+      radial-gradient(ellipse at 30% 25%, rgba(137,163,240,0.4) 0%, transparent 60%);
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+  }
+
+  /* Tier-specific background tint */
+  .medal.tier-1 .shield-glass {
+    background:
+      linear-gradient(135deg, rgba(255,251,244,0.92) 0%, rgba(248,238,223,0.68) 100%),
+      radial-gradient(ellipse at 30% 25%, rgba(224,192,148,0.45) 0%, transparent 60%);
+  }
+  .medal.tier-2 .shield-glass {
+    background:
+      linear-gradient(135deg, rgba(236,242,255,0.92) 0%, rgba(210,220,245,0.68) 100%),
+      radial-gradient(ellipse at 30% 25%, rgba(91,127,232,0.45) 0%, transparent 60%);
+  }
+  .medal.tier-3 .shield-glass {
+    /* Gold tier — not yellow, but deep blue with gold filament */
+    background:
+      linear-gradient(135deg, rgba(30,40,80,0.92) 0%, rgba(10,14,26,0.85) 100%),
+      radial-gradient(ellipse at 30% 25%, rgba(255,215,130,0.35) 0%, transparent 55%),
+      radial-gradient(ellipse at 70% 80%, rgba(91,127,232,0.5) 0%, transparent 55%);
+  }
+
+  /* Outer edge — a thin metallic ring following the hex */
+  .shield-edge {
+    background:
+      linear-gradient(135deg,
+        rgba(255,255,255,0.95) 0%,
+        rgba(255,255,255,0.4) 50%,
+        rgba(255,255,255,0.85) 100%);
+    padding: 1.5px;
+  }
+  .shield-edge .shield-inner {
+    position: absolute; inset: 1.5px;
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  }
+  .medal.tier-1 .shield-edge {
+    background: linear-gradient(135deg, #E8C088 0%, #FFF5E4 40%, #C49A5C 100%);
+  }
+  .medal.tier-2 .shield-edge {
+    background: linear-gradient(135deg, #89A3F0 0%, #FFFFFF 45%, #5B7FE8 100%);
+  }
+  .medal.tier-3 .shield-edge {
+    background:
+      conic-gradient(from 135deg,
+        #FFE293 0deg,
+        #FFFFFF 60deg,
+        #FFCA5A 120deg,
+        #FFE293 220deg,
+        #FFFFFF 320deg,
+        #FFE293 360deg);
+  }
+
+  /* Specular highlight — top-left gloss, sits on top */
+  .shield-gloss {
+    pointer-events: none;
+    position: absolute; inset: 0;
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    background: linear-gradient(155deg, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0) 45%);
+    mix-blend-mode: screen;
+  }
+
+  /* Icon container in the middle */
+  .shield-icon {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;
+  }
+  .medal.tier-1 .shield-icon { color: #7A5418; }
+  .medal.tier-2 .shield-icon { color: var(--blue-accent); }
+  .medal.tier-3 .shield-icon { color: #FFE293; }
+
+  /* Gold tier — shimmer ring */
+  .medal.tier-3 .shield {
+    animation: gold-float 4s ease-in-out infinite;
+  }
+  @keyframes gold-float {
+    0%,100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+  .medal.tier-3 .shield::before {
+    content: "";
+    position: absolute; inset: -8px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,215,130,0.25) 0%, transparent 60%);
+    animation: gold-glow 4s ease-in-out infinite;
+    z-index: -1;
+  }
+  @keyframes gold-glow {
+    0%,100% { opacity: 0.5; transform: scale(0.95); }
+    50% { opacity: 1; transform: scale(1.1); }
+  }
+
+  /* Locked state — glass is semi-transparent, icon shows a lock */
+  .medal.locked .shield {
+    filter: drop-shadow(0 4px 10px rgba(10,14,26,0.08));
+  }
+  .medal.locked .shield-glass {
+    background:
+      linear-gradient(135deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.3) 100%);
+  }
+  .medal.locked .shield-edge {
+    background: linear-gradient(135deg, rgba(10,14,26,0.15), rgba(255,255,255,0.6), rgba(10,14,26,0.15));
+  }
+  .medal.locked .shield-icon {
+    color: rgba(10,14,26,0.35);
+  }
+  .medal.locked .shield-gloss {
+    background: linear-gradient(155deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 45%);
+  }
+
+  /* Progress rim for in-progress medals (locked but close) */
+  .medal .progress-rim {
+    position: absolute;
+    bottom: -4px; left: 50%;
+    transform: translateX(-50%);
+    width: 64px; height: 4px;
+    background: rgba(10,14,26,0.08);
+    border-radius: 9999px;
+    overflow: hidden;
+  }
+  .medal .progress-rim span {
+    display: block;
+    height: 100%;
+    background: var(--blue-accent);
+    border-radius: 9999px;
+  }
+
+  .medal .m-name {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+    margin: 0 0 3px;
+  }
+  .medal.locked .m-name { color: rgba(10,14,26,0.5); font-weight: 500; }
+  .medal .m-req {
+    font-family: "Noto Serif SC", serif;
+    font-size: 11px;
+    color: rgba(10,14,26,0.55);
+    line-height: 1.5;
+  }
+  .medal .tier-tag {
+    display: inline-block;
+    margin-top: 6px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 8.5px; font-weight: 800; letter-spacing: 0.18em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 4px;
+  }
+  .medal.tier-1 .tier-tag { background: rgba(224,192,148,0.25); color: #7A5418; }
+  .medal.tier-2 .tier-tag { background: rgba(91,127,232,0.15); color: var(--blue-accent); }
+  .medal.tier-3 .tier-tag { background: rgba(10,14,26,0.92); color: #FFE293; }
+  .medal.locked .tier-tag { background: rgba(10,14,26,0.06); color: rgba(10,14,26,0.4); }
+
+  .equipped-tag {
+    display: inline-block;
+    margin-left: 4px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 8px; font-weight: 800; letter-spacing: 0.12em;
+    color: #4C8F3B;
+    background: rgba(76,143,59,0.1);
+    padding: 2px 6px; border-radius: 4px;
+    vertical-align: middle;
+  }
+
+  .group-head {
+    display: flex; align-items: baseline; gap: 12px;
+    margin: 40px 0 18px;
+    padding: 0 6px;
+  }
+  .group-head::before {
+    content: ""; width: 18px; height: 1px;
+    background: rgba(10,14,26,0.35);
+    transform: translateY(-4px);
+  }
+  .group-head .en {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 14px;
+    color: rgba(10,14,26,0.62);
+  }
+  .group-head .zh {
+    font-family: "Noto Sans SC", sans-serif;
+    font-weight: 300; font-size: 11px; letter-spacing: 0.15em;
+    color: rgba(10,14,26,0.42);
+  }
+
+  .comparison-note {
+    padding: 18px 22px;
+    margin-top: 40px;
+    border: 1px dashed rgba(10,14,26,0.18);
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px; line-height: 1.9;
+    color: rgba(10,14,26,0.7);
+    border-radius: 18px;
+    background: rgba(255,255,255,0.35);
+  }
+  .comparison-note strong { color: var(--ink); }
+  .comparison-note .accent { color: var(--blue-accent); font-weight: 700; }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" style="text-decoration:none;color:inherit"><span class="brand">MemeFlow</span><span class="version">PROTOTYPE</span></a>
+      <nav class="tab-rail">
+        <a href="index.html">· overview</a>
+        <a href="user.html">user</a>
+        <a href="medals.html" class="active"><span class="tab-dot"></span>medals · 奖牌</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <div class="eyebrow"><span class="en">redesigned medals</span><span class="zh">奖牌 · 重新设计</span></div>
+
+    <div class="glass-thick bench">
+      <h2>告别<em>金属贴图</em>，换成液态玻璃盾牌</h2>
+      <p class="desc">
+        不再用"铜球/银球/金球+汉字"的廉价游戏成就贴图。改用<strong>六边形玻璃盾牌</strong>，和全站的液态玻璃材质同源——外环是渐变光边（暖米 / 冷蓝 / 金丝环），内里是玻璃折射，图标用细线几何符号。
+        三档视觉差异不靠色差硬分，而是靠<strong>光感层级</strong>：青铜是暖白透明、白银是冷蓝带强光、黄金是深蓝为底透出金丝发光（整套里最稀有的才"发光"，不是人人都发光）。
+      </p>
+
+      <!-- UNLOCKED MEDALS — TIER SHOWCASE -->
+      <div class="group-head">
+        <span class="en">unlocked · tier 1 (bronze → apprentice)</span>
+        <span class="zh">青铜档 · 入门徽章</span>
+      </div>
+      <div class="medal-row">
+        <div class="medal tier-1">
+          <div class="shield">
+            <div class="shield-face shield-edge">
+              <div class="shield-inner shield-face shield-glass"></div>
+            </div>
+            <div class="shield-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2l2.5 6.5L21 10l-5 4.5L17 22l-5-3-5 3 1-7.5L3 10l6.5-1.5z"/>
+              </svg>
+            </div>
+            <div class="shield-gloss"></div>
+          </div>
+          <div class="m-name">梗学徒</div>
+          <div class="m-req">提交首个词条</div>
+          <span class="tier-tag">apprentice</span>
+        </div>
+
+        <div class="medal tier-1">
+          <div class="shield">
+            <div class="shield-face shield-edge">
+              <div class="shield-inner shield-face shield-glass"></div>
+            </div>
+            <div class="shield-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </div>
+            <div class="shield-gloss"></div>
+          </div>
+          <div class="m-name">文化观察员</div>
+          <div class="m-req">累计 5 个词条</div>
+          <span class="tier-tag">observer</span>
+        </div>
+      </div>
+
+      <!-- TIER 2 -->
+      <div class="group-head">
+        <span class="en">unlocked · tier 2 (silver → intermediate)</span>
+        <span class="zh">白银档 · 进阶徽章</span>
+      </div>
+      <div class="medal-row">
+        <div class="medal tier-2">
+          <div class="shield">
+            <div class="shield-face shield-edge">
+              <div class="shield-inner shield-face shield-glass"></div>
+            </div>
+            <div class="shield-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+              </svg>
+            </div>
+            <div class="shield-gloss"></div>
+          </div>
+          <div class="m-name">周打卡达人</div>
+          <div class="m-req">连续贡献 7 天</div>
+          <span class="tier-tag">streak</span>
+        </div>
+
+        <div class="medal tier-2">
+          <div class="shield">
+            <div class="shield-face shield-edge">
+              <div class="shield-inner shield-face shield-glass"></div>
+            </div>
+            <div class="shield-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <circle cx="9" cy="9" r="2"/>
+                <path d="m21 15-5-5L5 21"/>
+              </svg>
+            </div>
+            <div class="shield-gloss"></div>
+          </div>
+          <div class="m-name">多模态先锋</div>
+          <div class="m-req">上传图/视频/录音</div>
+          <span class="tier-tag">pioneer</span>
+        </div>
+      </div>
+
+      <!-- TIER 3 — RAREST, SHIMMERS -->
+      <div class="group-head">
+        <span class="en">unlocked · tier 3 (gold → elite, rare)</span>
+        <span class="zh">黄金档 · 精英徽章 · 全系唯一有光晕的一档</span>
+      </div>
+      <div class="medal-row">
+        <div class="medal tier-3">
+          <div class="shield">
+            <div class="shield-face shield-edge">
+              <div class="shield-inner shield-face shield-glass"></div>
+            </div>
+            <div class="shield-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/>
+              </svg>
+            </div>
+            <div class="shield-gloss"></div>
+          </div>
+          <div class="m-name">梗百科编辑<span class="equipped-tag">已装备</span></div>
+          <div class="m-req">累计 20 个词条</div>
+          <span class="tier-tag">editor</span>
+        </div>
+
+        <div class="medal tier-3">
+          <div class="shield">
+            <div class="shield-face shield-edge">
+              <div class="shield-inner shield-face shield-glass"></div>
+            </div>
+            <div class="shield-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m6 3 1.5 3L11 7 8 9l1 4-3-2-3 2 1-4-3-2 3.5-1L6 3z"/>
+                <path d="m18 3 1.5 3L23 7l-3 2 1 4-3-2-3 2 1-4-3-2 3.5-1L18 3z"/>
+                <path d="M12 14v8"/>
+                <path d="m9 20 3-2 3 2"/>
+              </svg>
+            </div>
+            <div class="shield-gloss"></div>
+          </div>
+          <div class="m-name">梗神</div>
+          <div class="m-req">累计 100 个词条</div>
+          <span class="tier-tag">legend</span>
+        </div>
+      </div>
+
+      <!-- LOCKED STATES -->
+      <div class="group-head">
+        <span class="en">locked states</span>
+        <span class="zh">未解锁 · 半透明毛玻璃 + 锁图标 + 进度条</span>
+      </div>
+      <div class="medal-row">
+        <div class="medal locked">
+          <div class="shield">
+            <div class="shield-face shield-edge">
+              <div class="shield-inner shield-face shield-glass"></div>
+            </div>
+            <div class="shield-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+            </div>
+            <div class="shield-gloss"></div>
+            <div class="progress-rim"><span style="width:23%"></span></div>
+          </div>
+          <div class="m-name">梗神</div>
+          <div class="m-req">累计 100 个（还差 77）</div>
+          <span class="tier-tag">legend</span>
+        </div>
+
+        <div class="medal locked">
+          <div class="shield">
+            <div class="shield-face shield-edge">
+              <div class="shield-inner shield-face shield-glass"></div>
+            </div>
+            <div class="shield-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+            </div>
+            <div class="shield-gloss"></div>
+            <div class="progress-rim"><span style="width:72%"></span></div>
+          </div>
+          <div class="m-name">月度守望者</div>
+          <div class="m-req">连续 30 天贡献（22/30）</div>
+          <span class="tier-tag">watcher</span>
+        </div>
+
+        <div class="medal locked">
+          <div class="shield">
+            <div class="shield-face shield-edge">
+              <div class="shield-inner shield-face shield-glass"></div>
+            </div>
+            <div class="shield-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2"/>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+              </svg>
+            </div>
+            <div class="shield-gloss"></div>
+          </div>
+          <div class="m-name">全球前 100</div>
+          <div class="m-req">排行榜进前 100 名</div>
+          <span class="tier-tag">top100</span>
+        </div>
+      </div>
+
+      <!-- FULL SHELF — mixed state for context -->
+      <div class="group-head">
+        <span class="en">my shelf — full view</span>
+        <span class="zh">我的徽章陈列架 · 解锁 + 未解锁混合</span>
+      </div>
+      <div class="medal-row">
+        <div class="medal tier-1">
+          <div class="shield">
+            <div class="shield-face shield-edge"><div class="shield-inner shield-face shield-glass"></div></div>
+            <div class="shield-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.5 6.5L21 10l-5 4.5L17 22l-5-3-5 3 1-7.5L3 10l6.5-1.5z"/></svg>
+            </div>
+            <div class="shield-gloss"></div>
+          </div>
+          <div class="m-name">梗学徒</div>
+          <div class="m-req">首个词条</div>
+        </div>
+        <div class="medal tier-1">
+          <div class="shield">
+            <div class="shield-face shield-edge"><div class="shield-inner shield-face shield-glass"></div></div>
+            <div class="shield-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </div>
+            <div class="shield-gloss"></div>
+          </div>
+          <div class="m-name">文化观察员</div>
+          <div class="m-req">5 个词条</div>
+        </div>
+        <div class="medal tier-2">
+          <div class="shield">
+            <div class="shield-face shield-edge"><div class="shield-inner shield-face shield-glass"></div></div>
+            <div class="shield-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            </div>
+            <div class="shield-gloss"></div>
+          </div>
+          <div class="m-name">周打卡达人</div>
+          <div class="m-req">连续 7 天</div>
+        </div>
+        <div class="medal tier-2">
+          <div class="shield">
+            <div class="shield-face shield-edge"><div class="shield-inner shield-face shield-glass"></div></div>
+            <div class="shield-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>
+            </div>
+            <div class="shield-gloss"></div>
+          </div>
+          <div class="m-name">多模态先锋</div>
+          <div class="m-req">上传媒体</div>
+        </div>
+        <div class="medal tier-3">
+          <div class="shield">
+            <div class="shield-face shield-edge"><div class="shield-inner shield-face shield-glass"></div></div>
+            <div class="shield-icon">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
+            </div>
+            <div class="shield-gloss"></div>
+          </div>
+          <div class="m-name">梗百科编辑</div>
+          <div class="m-req">20 个词条</div>
+        </div>
+        <div class="medal locked">
+          <div class="shield">
+            <div class="shield-face shield-edge"><div class="shield-inner shield-face shield-glass"></div></div>
+            <div class="shield-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <div class="shield-gloss"></div>
+            <div class="progress-rim"><span style="width:23%"></span></div>
+          </div>
+          <div class="m-name">梗神</div>
+          <div class="m-req">100 个 · 23%</div>
+        </div>
+      </div>
+
+      <div class="comparison-note">
+        <strong>为什么这么画：</strong>
+        <span class="accent">① 材质和全站同源</span>——六边形切面玻璃就是 glass-thick 卡片的迷你版，folding 到奖牌上是最自然的延伸；
+        <span class="accent">② 不靠色吼吼</span>——金属贴图看起来廉价是因为它试图"看起来像金子"；真玻璃材质反而显贵气；
+        <span class="accent">③ 稀缺性用光晕分级</span>——只有 tier 3 金档有悬浮和呼吸光晕，其他档都安静，保证金档真的像金档；
+        <span class="accent">④ 未解锁不是灰</span>——是更透明的毛玻璃 + 细锁图标 + 可选进度条，视觉上在同一个系列里，不像"缺失的另一半"。
+      </div>
+    </div>
+  </main>
+</body>
+</html>

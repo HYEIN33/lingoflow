@@ -8,5 +8,8 @@ coverage/
 !.env.example
 .gstack/
 .firebase/
+.claude/
+test-results/
+playwright-report/
 scripts/*-service-account.json
 scripts/service-account*.json

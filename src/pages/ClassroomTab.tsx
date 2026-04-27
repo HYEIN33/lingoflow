@@ -50,6 +50,7 @@ import ClassNotesModal from '../components/ClassNotesModal';
 import LiveNotesPanel from '../components/LiveNotesPanel';
 import { generateLiveNotes, type LiveNotes } from '../services/ai';
 import { aiChat } from '../services/ai';
+import { cn } from '../lib/utils';
 
 const COMPLIANCE_ACK_KEY = 'memeflow_classroom_compliance_ack';
 
@@ -201,6 +202,26 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
   });
   const [courseExpanded, setCourseExpanded] = useState(false);
 
+  // UI state for startup friction + live focus:
+  //   - `isConfigExpanded`: full config card vs. one-line summary. Starts
+  //     true (idle) so new users see the options; auto-collapses when the
+  //     session goes live, so the subtitle stream gets the screen.
+  //   - `showCourseDetail`: whether the COURSE + CUSTOM rows are visible.
+  //     Collapsed by default so first-time users aren't confronted with
+  //     a wall of options — they can tap "修改" to expand.
+  const [isConfigExpanded, setIsConfigExpanded] = useState(true);
+  const [showCourseDetail, setShowCourseDetail] = useState(false);
+
+  // Auto-collapse the config card the moment we leave `idle` — i.e. as
+  // soon as the user hits Start. They can still tap "展开配置" to peek.
+  useEffect(() => {
+    if (status !== 'idle' && status !== 'stopped' && status !== 'error') {
+      setIsConfigExpanded(false);
+    } else if (status === 'idle') {
+      setIsConfigExpanded(true);
+    }
+  }, [status]);
+
   // Live Notes — structured study notes refreshed during the session.
   // Regenerated at most every LIVE_NOTES_MIN_INTERVAL_MS and only when
   // enough new transcript has accumulated, so we don't hammer gemini-
@@ -210,6 +231,11 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
   const LIVE_NOTES_MIN_NEW_CHARS = 200;
   const [liveNotes, setLiveNotes] = useState<LiveNotes | null>(null);
   const [liveNotesLoading, setLiveNotesLoading] = useState(false);
+  // `notesLastUpdatedAt` is the wall-clock ms at which the panel last
+  // received a fresh Gemini summary. Drives the "updated Xs ago" chip.
+  // `isSavingLiveNotes` gates the save button while we write to Firestore.
+  const [notesLastUpdatedAt, setNotesLastUpdatedAt] = useState<number>(0);
+  const [isSavingLiveNotes, setIsSavingLiveNotes] = useState(false);
   const liveNotesLastRunRef = useRef<number>(0);
   const liveNotesLastLenRef = useRef<number>(0);
   const liveNotesInFlightRef = useRef<boolean>(false);
@@ -504,7 +530,10 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           : undefined;
 
     generateLiveNotes(englishSoFar, { course: courseName })
-      .then((notes) => setLiveNotes(notes))
+      .then((notes) => {
+        setLiveNotes(notes);
+        setNotesLastUpdatedAt(Date.now());
+      })
       .catch((err) => {
         console.warn('[classroom] live notes generation failed:', err);
         Sentry.captureException(err, { tags: { component: 'ClassroomTab', op: 'generateLiveNotes' } });
@@ -521,6 +550,140 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
     setShowCompliance(false);
   };
 
+  /**
+   * Save the current Live Notes snapshot to the `classNotes` collection
+   * so the user can find it from the notes page later. This is an
+   * explicit, in-the-moment save — unlike the classSessions write on
+   * stop, which persists the raw transcript. Here we persist the
+   * distilled, Gemini-generated study object.
+   *
+   * Write failures surface as a toast AND a Sentry event — silent fails
+   * would make the button look broken.
+   */
+  const handleSaveLiveNotesToClassNotes = async () => {
+    const zh = uiLang === 'zh';
+    if (!liveNotes) {
+      toast.error(zh ? '还没有可保存的笔记' : 'No notes to save yet');
+      return;
+    }
+    const user = auth.currentUser;
+    if (!user) {
+      toast.error(zh ? '请先登录再保存笔记' : 'Sign in to save notes');
+      return;
+    }
+    // Resolve the course display name the same way the live-notes
+    // refresh job does, so saved notes carry the course label the user
+    // was actually seeing on screen.
+    let courseLabel: string | undefined;
+    if (selectedCourse === '__custom__') {
+      const t = customCourse.trim();
+      if (t) courseLabel = t;
+    } else if (selectedCourse) {
+      const preset = COURSE_PRESETS.find((p) => p.zh === selectedCourse || p.en === selectedCourse);
+      if (preset) courseLabel = uiLang === 'zh' ? preset.zh : preset.en;
+      else courseLabel = selectedCourse;
+    }
+    setIsSavingLiveNotes(true);
+    try {
+      await addDoc(collection(db, 'classNotes'), {
+        uid: user.uid,
+        title: liveNotes.title ?? '',
+        overview: liveNotes.overview ?? [],
+        keyPoints: liveNotes.keyPoints ?? [],
+        course: courseLabel ?? null,
+        mode: translationMode,
+        savedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      });
+      toast.success(zh ? '已保存到笔记' : 'Saved to notes');
+    } catch (e) {
+      console.error('[classroom] save live notes failed:', e);
+      Sentry.captureException(e, { tags: { component: 'ClassroomTab', op: 'saveLiveNotes' } });
+      toast.error(zh ? '保存失败，请稍后重试' : 'Save failed, please try again');
+    } finally {
+      setIsSavingLiveNotes(false);
+    }
+  };
+
+  /**
+   * "Export PDF" without pulling in a PDF library. We rely on the
+   * browser's built-in print → "Save as PDF" flow: temporarily swap
+   * document.title to the notes title (so the default filename is
+   * meaningful) then trigger window.print. The toast tells the user
+   * what to do in the print dialog.
+   */
+  const handleExportLiveNotesPdf = async () => {
+    const zh = uiLang === 'zh';
+    if (!liveNotes) {
+      toast.error(zh ? '还没有可导出的笔记' : 'No notes to export yet');
+      return;
+    }
+    try {
+      // Lazy-load jspdf — keeps initial bundle lean for users who never export.
+      const { jsPDF } = await import('jspdf');
+      const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+      const pageW = doc.internal.pageSize.getWidth();
+      const margin = 48;
+      let y = margin;
+
+      // Title
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(18);
+      const title = liveNotes.title || (zh ? 'MemeFlow 实时笔记' : 'MemeFlow Live Notes');
+      doc.text(title, margin, y);
+      y += 28;
+
+      // Subtitle: date
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(120);
+      doc.text(new Date().toISOString().slice(0, 10), margin, y);
+      y += 24;
+      doc.setTextColor(0);
+
+      const writeSection = (heading: string, lines: string[]) => {
+        if (!lines || lines.length === 0) return;
+        if (y > 760) { doc.addPage(); y = margin; }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.text(heading, margin, y);
+        y += 18;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(11);
+        for (const line of lines) {
+          // Strip ** markers (LiveNotes uses **bold** in text) — jsPDF core fonts don't handle mixed bold inline.
+          const clean = (line || '').replace(/\*\*/g, '');
+          const wrapped = doc.splitTextToSize('· ' + clean, pageW - margin * 2);
+          for (const w of wrapped) {
+            if (y > 780) { doc.addPage(); y = margin; }
+            doc.text(w, margin, y);
+            y += 15;
+          }
+          y += 4;
+        }
+        y += 10;
+      };
+
+      writeSection(zh ? '概述 Overview' : 'Overview', liveNotes.overview || []);
+      writeSection(zh ? '重点 Key Points' : 'Key Points', liveNotes.keyPoints || []);
+
+      // Footer
+      doc.setFontSize(9);
+      doc.setTextColor(150);
+      doc.text('Generated by MemeFlow · memeflow-16ecf.web.app', margin, 820);
+
+      const safeTitle = (liveNotes.title || 'memeflow-notes')
+        .replace(/[^a-z0-9\u4e00-\u9fa5\s-]/gi, '')
+        .slice(0, 48)
+        .trim();
+      doc.save(`${safeTitle || 'memeflow-notes'}-${new Date().toISOString().slice(0, 10)}.pdf`);
+      toast.success(zh ? '笔记已导出 PDF' : 'Notes exported as PDF');
+    } catch (err) {
+      console.error('export PDF failed', err);
+      toast.error(zh ? '导出 PDF 失败' : 'PDF export failed');
+    }
+  };
+
   const handleStart = async () => {
     if (status === 'connecting' || status === 'live' || status === 'requesting-token') return;
     setStream([]);
@@ -529,6 +692,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
     // class's summary while the new class is warming up.
     setLiveNotes(null);
     setLiveNotesLoading(false);
+    setNotesLastUpdatedAt(0);
     liveNotesLastRunRef.current = 0;
     liveNotesLastLenRef.current = 0;
     liveNotesInFlightRef.current = false;
@@ -713,6 +877,21 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
   const isLive = status === 'live';
   const isBusy = status === 'connecting' || status === 'requesting-token';
 
+  // Session timer (seconds) — shown mono-spaced in the live bar so users
+  // can glance at elapsed time without checking system clock. Only counts
+  // while status === 'live'; resets to 0 on stop.
+  const [sessionElapsed, setSessionElapsed] = useState(0);
+  useEffect(() => {
+    if (!isLive) { setSessionElapsed(0); return; }
+    const timer = setInterval(() => setSessionElapsed(s => s + 1), 1000);
+    return () => clearInterval(timer);
+  }, [isLive]);
+  const formatSessionTimer = () => {
+    const m = Math.floor(sessionElapsed / 60);
+    const s = sessionElapsed % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
   // Safety cap: auto-stop after 60 minutes of uninterrupted live time.
   // Background: Deepgram bills by the minute, and a user who forgets to
   // hit Stop (left the tab open overnight) could silently burn hours of
@@ -739,7 +918,7 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
   }, [status]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Compliance gate — force-read + consent before any audio capture. */}
       <AnimatePresence>
         {showCompliance && (
@@ -753,241 +932,478 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
               initial={{ opacity: 0, y: 20, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.98 }}
-              className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-4"
+              className="surface !rounded-[16px] border-l-[3px] border-l-[var(--red-warn)] p-[28px_32px] max-w-lg w-full shadow-2xl"
             >
-              <div className="flex items-start gap-3">
-                <div className="bg-amber-100 p-2 rounded-xl shrink-0">
-                  <AlertTriangle className="w-6 h-6 text-amber-600" />
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-9 h-9 rounded-[11px] bg-[rgba(229,56,43,0.12)] text-[var(--red-warn)] inline-flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-[18px] h-[18px]" />
                 </div>
                 <div>
-                  <h2 className="font-black text-xl text-gray-900 mb-1">
-                    课堂同传：使用前必读
+                  <h2 className="font-display font-semibold text-[20px] tracking-[-0.02em] text-[var(--ink)] m-0">
+                    Before you start · 首次使用须知
                   </h2>
-                  <p className="text-sm text-gray-500">Read before using · 英文版见下</p>
+                  <p className="font-zh-serif text-[13px] font-medium text-[var(--ink-muted)] m-0 mt-0.5">
+                    {uiLang === 'zh' ? '开启同传前必须读完并同意' : 'Read before starting'}
+                  </p>
                 </div>
               </div>
 
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900 space-y-2">
-                <p className="font-bold">此功能会把课堂音频流式上传到 Google Gemini 进行实时翻译。</p>
-                <p>
-                  请你在使用前：
-                </p>
-                <ul className="space-y-1 list-disc pl-5">
-                  <li>确认你所在的大学/学院<strong>允许</strong>在课堂上使用此类工具（查学生手册或问教务）</li>
-                  <li>必要时事先征得<strong>授课老师的同意</strong></li>
-                  <li>不要在涉密/隐私敏感的讨论（医学、法律案例）中使用</li>
-                </ul>
-                <p className="text-xs text-amber-700 pt-2">
-                  memeflow 不存储原始音频，转录完即丢弃。但"把课堂音频发给第三方"本身在部分学校政策里可能构成违规，后果由用户自担。
-                </p>
-              </div>
+              <ul className="font-zh-serif text-[13.5px] leading-[1.9] text-[var(--ink-body)] pl-[18px] m-0 mb-5 space-y-1 list-disc">
+                <li>
+                  <strong className="text-[var(--red-warn)]">音频会上传到 Google 服务器</strong>处理。语音识别（Deepgram）和翻译（Gemini）都需要联网，不是本地运行。
+                </li>
+                <li>
+                  memeflow <strong className="text-[var(--red-warn)]">不会长期保存</strong>你的原始音频。字幕文本会保存在你的账号下方便你复习。
+                </li>
+                <li>
+                  请确认你<strong className="text-[var(--red-warn)]">有权</strong>把这节课/这个视频的音频送到外部服务器做处理——课程录制、版权内容、机密会议请谨慎使用。
+                </li>
+                <li>每个会话的字幕都会写到 <code className="font-mono-meta text-[12px] bg-[rgba(10,14,26,0.04)] px-1 py-0.5 rounded">classSessions/{'{sessionId}'}</code> 集合下，只有你自己能看。</li>
+              </ul>
 
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs text-gray-500">
-                <strong>EN:</strong> This feature streams classroom audio to Google Gemini for real-time translation.
-                Before using, confirm your institution permits such tools, obtain instructor consent
-                where required, and avoid using in confidential/privileged sessions (medical, legal).
-                memeflow does not persist raw audio. You assume responsibility for policy compliance.
-              </div>
-
-              <label className="flex items-start gap-2 cursor-pointer select-none">
+              <label className="flex items-start gap-2 cursor-pointer select-none mb-4">
                 <input
                   type="checkbox"
                   checked={agreed}
                   onChange={(e) => setAgreed(e.target.checked)}
-                  className="mt-1 accent-[#5B7FE8]"
+                  className="mt-1 accent-[var(--blue-accent)]"
                 />
-                <span className="text-sm text-gray-700">
+                <span className="font-zh-serif text-[13px] text-[var(--ink-body)]">
                   我已阅读并理解上述内容，确认使用本功能所产生的责任由我自己承担。
                 </span>
               </label>
 
-              <button
-                onClick={acknowledgeCompliance}
-                disabled={!agreed}
-                className="w-full bg-[#0A0E1A] text-white py-3 rounded-xl font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#1a2440] transition-colors"
-              >
-                我理解并同意，进入课堂同传
-              </button>
+              <div className="flex gap-2.5 pt-4 border-t border-[rgba(229,56,43,0.15)]">
+                <button
+                  onClick={() => setShowCompliance(false)}
+                  className="px-[18px] py-3 rounded-[12px] bg-transparent border border-[rgba(10,14,26,0.15)] text-[var(--ink-muted)] font-zh-serif text-[13px] font-semibold cursor-pointer"
+                >
+                  {uiLang === 'zh' ? '先不用，返回' : 'Not now'}
+                </button>
+                <button
+                  onClick={acknowledgeCompliance}
+                  disabled={!agreed}
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 py-3 rounded-[12px] bg-[var(--ink)] text-white border-0 font-bold text-[14px] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-[0_4px_12px_rgba(10,14,26,0.22)]"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  {uiLang === 'zh' ? '我已阅读并同意，开始使用' : 'I agree, start'}
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Header + controls */}
-      <div className="bg-white/60 backdrop-blur-md border border-white/60 rounded-3xl p-5 shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-black text-gray-900 text-lg">课堂同传</h2>
-            <p className="text-xs text-gray-500 mt-0.5">
-              实时把英文课堂翻译成中文 · 内测功能
-            </p>
-          </div>
-          <div className="flex items-center gap-1">
-            {auth.currentUser && (
-              <ClassNotesModal uiLang={uiLang} userId={auth.currentUser.uid} />
+      {/* Eyebrow */}
+      <div className="flex items-baseline gap-[10px] mb-[14px] pl-[4px]">
+        <span style={{ width: '18px', height: '1px', background: 'var(--ink-rule)', transform: 'translateY(-4px)' }} />
+        <span className="font-display italic text-[13px] text-[var(--ink-muted)]">classroom live</span>
+        <span className="font-zh-sans text-[11.5px] tracking-[0.12em] text-[var(--ink-subtle)]">
+          {uiLang === 'zh' ? '课堂同传' : 'live interpretation'}
+        </span>
+      </div>
+
+      {/* LIVE STATUS BAR — single row, always on top */}
+      <div className="glass-thick rounded-[22px] p-[14px_18px_14px_20px] flex items-center gap-[14px]">
+        <div className="inline-flex items-center gap-2.5 flex-1 min-w-0">
+          <span className={cn(
+            "w-2.5 h-2.5 rounded-full shrink-0",
+            status === 'live' ? "animate-pulse" : "",
+            status === 'live' ? "bg-[#4C8F3B] shadow-[0_0_10px_rgba(76,143,59,0.75)]" :
+            status === 'error' ? "bg-[var(--red-warn)]" :
+            (status === 'connecting' || status === 'requesting-token') ? "bg-[#E8C375] animate-pulse" :
+            "bg-[rgba(10,14,26,0.2)]"
+          )} />
+          <span className={cn(
+            "font-display italic font-bold text-[16px] tracking-[-0.01em]",
+            status === 'live' ? "text-[var(--green-ok)]" :
+            status === 'error' ? "text-[var(--red-warn)]" :
+            (status === 'connecting' || status === 'requesting-token') ? "text-[#8A5D0E]" :
+            "text-[rgba(10,14,26,0.55)]"
+          )}>
+            {status === 'live' ? 'Listening' :
+             status === 'connecting' ? 'Connecting…' :
+             status === 'requesting-token' ? 'Preparing…' :
+             status === 'stopped' ? 'Stopped' :
+             status === 'error' ? 'Error' :
+             'Not started'}
+          </span>
+          <span className="font-zh-sans font-medium text-[13px] text-[var(--ink-body)] tracking-[0.01em] truncate">
+            {uiLang === 'zh' ? (
+              <>
+                · {status === 'live' && '正在监听'}
+                {status === 'connecting' && '连接中'}
+                {status === 'requesting-token' && '准备中'}
+                {status === 'stopped' && '已结束'}
+                {status === 'error' && (statusDetail || '启动失败')}
+                {status === 'idle' && '未开始'}
+              </>
+            ) : (
+              <>· {statusDetail || (status === 'idle' ? 'tap start' : '')}</>
             )}
-            <span className="text-[10px] font-black uppercase tracking-widest bg-amber-100 text-amber-700 px-2 py-1 rounded-md">
-              Beta
-            </span>
-          </div>
+          </span>
         </div>
-
-        {/* Audio source toggle */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setAudioSource('tab')}
-            disabled={isLive || isBusy}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
-              audioSource === 'tab'
-                ? 'bg-[#0A0E1A] text-white shadow-sm'
-                : 'bg-white/70 text-gray-600 border border-gray-200 hover:bg-[rgba(91,127,232,0.08)]'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
-          >
-            <Monitor className="w-4 h-4" />
-            {uiLang === 'zh' ? '网课' : 'Online class'}
-          </button>
-          <button
-            onClick={() => setAudioSource('mic')}
-            disabled={isLive || isBusy}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
-              audioSource === 'mic'
-                ? 'bg-[#0A0E1A] text-white shadow-sm'
-                : 'bg-white/70 text-gray-600 border border-gray-200 hover:bg-[rgba(91,127,232,0.08)]'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
-          >
-            <Mic className="w-4 h-4" />
-            {uiLang === 'zh' ? '线下课' : 'In-person class'}
-          </button>
-        </div>
-
-        {/* Course picker: tap a subject and AI focuses on that domain.
-            Collapsible so the header stays uncluttered for returning
-            users who've already got their course pinned. */}
-        <div className="rounded-xl border border-gray-200 bg-white/60">
-          <button
-            type="button"
-            onClick={() => setCourseExpanded((v) => !v)}
-            disabled={isLive || isBusy}
-            className="w-full flex items-center justify-between px-3 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 rounded-xl transition-colors disabled:opacity-50"
-          >
-            <span className="flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-[#5B7FE8]" />
-              {uiLang === 'zh' ? '这节课是什么课？（可选，让翻译更准）' : 'What class is this? (optional, better translation)'}
+        {isLive && (
+          <>
+            <span
+              style={{
+                fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                fontSize: 15,
+                fontWeight: 700,
+                color: 'var(--ink)',
+                padding: '0 14px',
+                borderLeft: '1px solid var(--ink-rule)',
+                borderRight: '1px solid var(--ink-rule)',
+                letterSpacing: '0.04em',
+              }}
+            >
+              {formatSessionTimer()}
             </span>
-            <span className="text-[#5B7FE8] font-bold">
-              {(() => {
-                if (!selectedCourse) return uiLang === 'zh' ? '未选' : 'none';
-                if (selectedCourse === '__custom__') {
-                  const t = customCourse.trim();
-                  if (t) return t;
-                  return uiLang === 'zh' ? '其他（未填写）' : 'Other (empty)';
-                }
+            <button
+              onClick={togglePause}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-[11px] border border-[var(--border-solid-strong)] bg-white/85 font-zh-sans font-bold text-[13px] text-[var(--ink)] tracking-[0.02em] cursor-pointer hover:bg-white"
+              title={paused ? (uiLang === 'zh' ? '继续' : 'Resume') : (uiLang === 'zh' ? '暂停' : 'Pause')}
+            >
+              {paused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+              <span>{paused ? (uiLang === 'zh' ? '继续' : 'resume') : (uiLang === 'zh' ? '暂停' : 'pause')}</span>
+            </button>
+            <button
+              onClick={handleStop}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-[12px] bg-[var(--ink)] text-white border-0 cursor-pointer font-bold text-[13px] shadow-[0_4px_12px_rgba(10,14,26,0.25)] hover:bg-[#1a2440]"
+            >
+              <Square className="w-3 h-3" />
+              {uiLang === 'zh' ? '结束并保存' : 'stop & save'}
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Class notes modal — inline entry without the old Beta row
+          (aligned with classroom.html prototype which doesn't render that row) */}
+      {auth.currentUser && (
+        <div className="flex justify-end -mt-2">
+          <ClassNotesModal uiLang={uiLang} userId={auth.currentUser.uid} />
+        </div>
+      )}
+
+      {/* CONFIG CARD — full form when idle, one-line summary while live.
+          Wrapped in AnimatePresence + motion.div so the collapse/expand
+          has a smooth height + fade crossfade instead of a brutal snap. */}
+      <AnimatePresence mode="wait" initial={false}>
+      {!isConfigExpanded && (
+        <motion.div
+          key="config-collapsed"
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          exit={{ opacity: 0, height: 0 }}
+          transition={{ duration: 0.28, ease: [0.2, 0.8, 0.2, 1] }}
+          style={{ overflow: 'hidden' }}
+        >
+        <div className="surface !rounded-[14px] p-[10px_16px] flex items-center gap-3 flex-wrap">
+          <span className="font-mono-meta text-[10px] tracking-[0.2em] uppercase font-extrabold text-[var(--ink-soft)] shrink-0">
+            config
+          </span>
+          <span className="font-zh-sans text-[12.5px] text-[var(--ink-body)] flex-1 min-w-0 truncate">
+            {audioSource === 'tab'
+              ? (uiLang === 'zh' ? 'tab audio · 标签页' : 'tab audio')
+              : (uiLang === 'zh' ? 'mic · 麦克风' : 'mic')}
+            {' · '}
+            {translationMode === 'paragraph'
+              ? (uiLang === 'zh' ? '整段翻译' : 'paragraph')
+              : (uiLang === 'zh' ? '实时翻译' : 'realtime')}
+            {' · '}
+            {(() => {
+              if (selectedCourse === '__custom__') {
+                return customCourse.trim() || (uiLang === 'zh' ? '自定义课程' : 'custom');
+              }
+              if (selectedCourse) {
                 const preset = COURSE_PRESETS.find((p) => p.zh === selectedCourse || p.en === selectedCourse);
                 if (preset) return uiLang === 'zh' ? preset.zh : preset.en;
                 return selectedCourse;
-              })()}
-            </span>
+              }
+              return uiLang === 'zh' ? '未选课程' : 'no course';
+            })()}
+          </span>
+          <button
+            type="button"
+            onClick={() => setIsConfigExpanded(true)}
+            className="font-display italic text-[12px] text-[var(--blue-accent)] bg-transparent border-0 cursor-pointer shrink-0 hover:underline"
+          >
+            {uiLang === 'zh' ? '展开配置 →' : 'show config →'}
           </button>
-          {courseExpanded && (
-            <div className="px-3 pb-3">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {COURSE_PRESETS.map((p) => {
-                  const active = selectedCourse === p.zh || selectedCourse === p.en;
-                  return (
-                    <button
-                      key={p.en}
-                      type="button"
-                      disabled={isLive || isBusy}
-                      onClick={() => setSelectedCourse(active ? null : p.zh)}
-                      className={
-                        'text-xs px-2.5 py-1 rounded-full border transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed ' +
-                        (active
-                          ? 'bg-[#0A0E1A] text-white border-[#0A0E1A]'
-                          : 'bg-white text-gray-600 border-gray-200 hover:bg-[rgba(91,127,232,0.08)] hover:border-[rgba(91,127,232,0.4)]')
-                      }
-                    >
-                      {uiLang === 'zh' ? p.zh : p.en}
-                    </button>
-                  );
-                })}
-                <button
-                  type="button"
-                  disabled={isLive || isBusy}
-                  onClick={() => setSelectedCourse(selectedCourse === '__custom__' ? null : '__custom__')}
-                  className={
-                    'text-xs px-2.5 py-1 rounded-full border transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed ' +
-                    (selectedCourse === '__custom__'
-                      ? 'bg-[#0A0E1A] text-white border-[#0A0E1A]'
-                      : 'bg-white text-gray-600 border-gray-200 hover:bg-[rgba(91,127,232,0.08)] hover:border-[rgba(91,127,232,0.4)]')
-                  }
-                >
-                  {uiLang === 'zh' ? '其他…' : 'Other…'}
-                </button>
-              </div>
-
-              {selectedCourse === '__custom__' && (
-                <input
-                  type="text"
-                  value={customCourse}
-                  onChange={(e) => setCustomCourse(e.target.value)}
-                  disabled={isLive || isBusy}
-                  placeholder={uiLang === 'zh' ? '比如：营销学、海洋生物、古典音乐史' : 'e.g. Marketing, Marine Biology'}
-                  className="mt-2 w-full text-xs bg-white border border-gray-200 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-[rgba(91,127,232,0.5)] focus:border-transparent"
-                />
-              )}
-
-              <p className="text-[10px] text-gray-400 mt-2 leading-relaxed">
-                {uiLang === 'zh'
-                  ? 'AI 会按这门课的场景翻译专业术语。会记住你上次选的。'
-                  : 'AI translates with that subject\'s register. Your last pick is remembered.'}
-              </p>
-            </div>
-          )}
         </div>
+        </motion.div>
+      )}
 
-        {/* Translation mode — paragraph (default, smooth) vs realtime
-            (per-sentence, low latency but jumpier). Disabled while live
-            so mid-session flips don't leave orphaned in-flight batches. */}
-        <div className="flex items-center gap-2 bg-white/60 border border-gray-100 rounded-2xl p-1">
-          {(['paragraph', 'realtime'] as const).map((m) => {
-            const active = translationMode === m;
-            return (
-              <button
-                key={m}
-                type="button"
-                disabled={isLive || isBusy}
-                onClick={() => setTranslationMode(m)}
-                className={
-                  'flex-1 py-2 rounded-xl text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ' +
-                  (active
-                    ? 'bg-[#0A0E1A] text-white shadow-sm'
-                    : 'text-gray-600 hover:bg-gray-50')
-                }
-              >
-                {m === 'paragraph'
-                  ? (uiLang === 'zh' ? '整段翻译（推荐）' : 'Paragraph (recommended)')
-                  : (uiLang === 'zh' ? '实时翻译' : 'Realtime')}
-              </button>
-            );
-          })}
-        </div>
-        <p className="text-[10px] text-gray-400 -mt-1 px-1 leading-relaxed">
-          {translationMode === 'paragraph'
-            ? (uiLang === 'zh'
-                ? '几句英文攒成一段再翻，中文更顺，延迟几秒'
-                : 'Accumulates a few sentences for smoother Chinese; a few seconds of lag')
-            : (uiLang === 'zh'
-                ? '每句话讲完立刻翻译，延迟最低，但中文会碎一些'
-                : 'Translates each sentence immediately; lowest lag but jumpier')}
-        </p>
-
-        {audioSource === 'tab' && !isLive && (
-          <div className="text-xs text-gray-500 bg-gray-50 rounded-lg p-3 border border-gray-100">
+      {isConfigExpanded && (
+      <motion.div
+        key="config-expanded"
+        initial={{ opacity: 0, height: 0 }}
+        animate={{ opacity: 1, height: 'auto' }}
+        exit={{ opacity: 0, height: 0 }}
+        transition={{ duration: 0.32, ease: [0.2, 0.8, 0.2, 1] }}
+        style={{ overflow: 'hidden' }}
+      >
+      <div className="surface !rounded-[14px] p-[18px_22px_20px]">
+        {/* First-time hint: lowers startup friction by telling users they can
+            just tap Start and adjust later, instead of tweaking every field. */}
+        {status === 'idle' && stream.length === 0 && (
+          <div className="font-zh-serif text-[12px] text-[var(--ink-muted)] bg-[rgba(91,127,232,0.08)] rounded-[10px] p-[10px_14px] mb-3 leading-relaxed border border-[rgba(91,127,232,0.15)]">
             {uiLang === 'zh' ? (
               <>
-                <strong>提示：</strong>
+                <strong className="text-[var(--blue-accent)]">第一次用？</strong>
+                 直接点「开始」试试 —— 默认 tab audio + 整段翻译 + 金融课程，稍后再改都行。
+              </>
+            ) : (
+              <>
+                <strong className="text-[var(--blue-accent)]">First time?</strong>
+                {' '}Just tap Start — defaults are tab audio + paragraph + finance. You can tweak later.
+              </>
+            )}
+          </div>
+        )}
+        {/* Collapse control while live (only visible when we were forced
+            open by the user after session started) */}
+        {status !== 'idle' && (
+          <div className="flex justify-end -mt-1 mb-2">
+            <button
+              type="button"
+              onClick={() => setIsConfigExpanded(false)}
+              className="font-display italic text-[11.5px] text-[var(--ink-muted)] bg-transparent border-0 cursor-pointer hover:text-[var(--ink-body)]"
+            >
+              {uiLang === 'zh' ? '← 收起配置' : '← hide config'}
+            </button>
+          </div>
+        )}
+        {/* Row 1: audio source */}
+        <div className="flex items-center gap-[14px] py-[10px]">
+          <div className="shrink-0 w-[110px]">
+            <div className="font-mono-meta text-[10.5px] tracking-[0.2em] uppercase font-extrabold text-[var(--ink-soft)]">audio</div>
+            <div className="font-zh-sans font-semibold text-[12px] text-[var(--ink-body)] tracking-[0.02em] mt-1">
+              {uiLang === 'zh' ? '声音来源' : 'source'}
+            </div>
+          </div>
+          <div className="flex-1 flex flex-wrap gap-1.5">
+            <button
+              onClick={() => setAudioSource('mic')}
+              disabled={isLive || isBusy}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-display italic text-[13px] tracking-[-0.01em] border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                audioSource === 'mic'
+                  ? "bg-[var(--ink)] text-white border-[var(--ink)] shadow-[0_3px_8px_rgba(10,14,26,0.22)]"
+                  : "bg-white/55 border-white/75 text-[rgba(10,14,26,0.7)] hover:text-[var(--ink)]"
+              )}
+            >
+              {audioSource === 'mic' && <span className="w-1 h-1 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />}
+              <Mic className="w-3 h-3" /> mic · {uiLang === 'zh' ? '麦克风' : 'mic'}
+            </button>
+            <button
+              onClick={() => setAudioSource('tab')}
+              disabled={isLive || isBusy}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-display italic text-[13px] tracking-[-0.01em] border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                audioSource === 'tab'
+                  ? "bg-[var(--ink)] text-white border-[var(--ink)] shadow-[0_3px_8px_rgba(10,14,26,0.22)]"
+                  : "bg-white/55 border-white/75 text-[rgba(10,14,26,0.7)] hover:text-[var(--ink)]"
+              )}
+            >
+              {audioSource === 'tab' && <span className="w-1 h-1 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />}
+              <Monitor className="w-3 h-3" /> tab audio · {uiLang === 'zh' ? '浏览器标签' : 'browser tab'}
+            </button>
+          </div>
+        </div>
+
+        {/* Row 2: mode */}
+        <div className="flex items-center gap-[14px] py-[10px] border-t border-[var(--ink-hairline)]">
+          <div className="shrink-0 w-[110px]">
+            <div className="font-mono-meta text-[10.5px] tracking-[0.2em] uppercase font-extrabold text-[var(--ink-soft)]">mode</div>
+            <div className="font-zh-sans font-semibold text-[12px] text-[var(--ink-body)] tracking-[0.02em] mt-1">
+              {uiLang === 'zh' ? '翻译模式' : 'translation mode'}
+            </div>
+          </div>
+          <div className="flex-1 flex flex-wrap items-center gap-1.5">
+            {(['paragraph', 'realtime'] as const).map((m) => {
+              const active = translationMode === m;
+              return (
+                <button
+                  key={m}
+                  onClick={() => setTranslationMode(m)}
+                  disabled={isLive || isBusy}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-zh-serif text-[13px] border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                    active
+                      ? "bg-[var(--ink)] text-white border-[var(--ink)] shadow-[0_3px_8px_rgba(10,14,26,0.22)]"
+                      : "bg-white/55 border-white/75 text-[rgba(10,14,26,0.7)] hover:text-[var(--ink)]"
+                  )}
+                >
+                  {active && <span className="w-1 h-1 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />}
+                  {m === 'paragraph'
+                    ? (uiLang === 'zh' ? '整段翻译' : 'paragraph')
+                    : (uiLang === 'zh' ? '实时翻译' : 'realtime')}
+                </button>
+              );
+            })}
+            <span className="ml-auto font-zh-serif text-[11px] text-[var(--ink-muted)] self-center">
+              {translationMode === 'paragraph'
+                ? (uiLang === 'zh' ? '几句英文攒成一段再翻，中文更顺 · 延迟几秒' : 'smoother Chinese, a few seconds of lag')
+                : (uiLang === 'zh' ? '每句话讲完立刻翻译 · 延迟最低，但中文会碎一些' : 'immediate per-sentence, lowest lag')}
+            </span>
+          </div>
+        </div>
+
+        {/* Row 3 (collapsed): course summary — reduces the "wall of options"
+            feeling for first-time users. One click expands the real picker. */}
+        {!showCourseDetail && (
+          <div className="flex items-center gap-[14px] py-[10px] border-t border-[var(--ink-hairline)]">
+            <div className="shrink-0 w-[110px]">
+              <div className="font-mono-meta text-[10.5px] tracking-[0.2em] uppercase font-extrabold text-[var(--ink-soft)]">course</div>
+              <div className="font-zh-sans font-semibold text-[12px] text-[var(--ink-body)] tracking-[0.02em] mt-1">
+                {uiLang === 'zh' ? '课程' : 'subject'}
+              </div>
+            </div>
+            <div className="flex-1 flex items-center gap-2 flex-wrap">
+              <span className="font-zh-serif text-[13px] text-[var(--ink-body)]">
+                {(() => {
+                  if (selectedCourse === '__custom__') {
+                    const t = customCourse.trim();
+                    return t ? t : (uiLang === 'zh' ? '自定义（未填）' : 'custom (empty)');
+                  }
+                  if (selectedCourse) {
+                    const preset = COURSE_PRESETS.find((p) => p.zh === selectedCourse || p.en === selectedCourse);
+                    if (preset) return uiLang === 'zh' ? preset.zh : preset.en;
+                    return selectedCourse;
+                  }
+                  return uiLang === 'zh' ? '金融（默认建议）' : 'Finance (default)';
+                })()}
+              </span>
+              <span className="font-zh-serif text-[11px] text-[var(--ink-muted)]">
+                {uiLang === 'zh' ? '· 帮 AI 用对术语' : '· helps AI match terminology'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowCourseDetail(true)}
+                disabled={isLive || isBusy}
+                className="ml-auto font-display italic text-[12px] text-[var(--blue-accent)] bg-transparent border-0 cursor-pointer hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {uiLang === 'zh' ? '修改 →' : 'change →'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Row 3 (expanded): course picker */}
+        {showCourseDetail && (
+        <div className="flex items-center gap-[14px] py-[10px] border-t border-[var(--ink-hairline)]">
+          <div className="shrink-0 w-[110px]">
+            <div className="font-mono-meta text-[10.5px] tracking-[0.2em] uppercase font-extrabold text-[var(--ink-soft)]">course</div>
+            <div className="font-zh-sans font-semibold text-[12px] text-[var(--ink-body)] tracking-[0.02em] mt-1">
+              {uiLang === 'zh' ? '课程' : 'subject'}
+            </div>
+          </div>
+          <div className="flex-1 flex flex-wrap gap-1.5">
+            {(courseExpanded ? COURSE_PRESETS : COURSE_PRESETS.slice(0, 5)).map((p) => {
+              const active = selectedCourse === p.zh || selectedCourse === p.en;
+              return (
+                <button
+                  key={p.en}
+                  onClick={() => setSelectedCourse(active ? null : p.zh)}
+                  disabled={isLive || isBusy}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-zh-serif text-[13px] border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
+                    active
+                      ? "bg-[var(--ink)] text-white border-[var(--ink)] shadow-[0_3px_8px_rgba(10,14,26,0.22)]"
+                      : "bg-white/55 border-white/75 text-[rgba(10,14,26,0.7)] hover:text-[var(--ink)]"
+                  )}
+                >
+                  {active && <span className="w-1 h-1 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />}
+                  {uiLang === 'zh' ? p.zh : p.en}
+                </button>
+              );
+            })}
+            {COURSE_PRESETS.length > 5 && (
+              <button
+                onClick={() => setCourseExpanded((v) => !v)}
+                className="font-display italic text-[12px] text-[var(--blue-accent)] px-2 py-1.5 bg-transparent border-0 cursor-pointer"
+              >
+                {courseExpanded
+                  ? (uiLang === 'zh' ? '收起 ←' : 'collapse ←')
+                  : `+ ${COURSE_PRESETS.length - 5} more →`}
+              </button>
+            )}
+            <button
+              onClick={() => setSelectedCourse(selectedCourse === '__custom__' ? null : '__custom__')}
+              disabled={isLive || isBusy}
+              className="font-display italic text-[12px] text-[rgba(10,14,26,0.5)] px-2 py-1.5 bg-transparent border-0 cursor-pointer"
+            >
+              {uiLang === 'zh' ? '其他…' : 'other…'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCourseDetail(false)}
+              className="ml-auto font-display italic text-[11.5px] text-[var(--ink-muted)] px-2 py-1.5 bg-transparent border-0 cursor-pointer hover:text-[var(--ink-body)]"
+            >
+              {uiLang === 'zh' ? '收起 ↑' : 'collapse ↑'}
+            </button>
+          </div>
+        </div>
+        )}
+
+        {/* Row 4: custom course input — only when "其他…" is active AND the
+            course detail panel is expanded (otherwise the row is hidden). */}
+        {showCourseDetail && selectedCourse === '__custom__' && (
+          <div className="flex items-start gap-[14px] py-[10px] border-t border-[var(--ink-hairline)]">
+            <div className="shrink-0 w-[110px]">
+              <div className="font-mono-meta text-[10.5px] tracking-[0.2em] uppercase font-extrabold text-[var(--ink-soft)]">custom</div>
+              <div className="font-zh-sans font-semibold text-[12px] text-[var(--ink-body)] tracking-[0.02em] mt-1">
+                {uiLang === 'zh' ? '自定义' : 'custom'}
+              </div>
+            </div>
+            <div className="flex-1 flex flex-col items-stretch gap-1.5">
+              <input
+                type="text"
+                value={customCourse}
+                onChange={(e) => setCustomCourse(e.target.value)}
+                disabled={isLive || isBusy}
+                placeholder={uiLang === 'zh' ? '比如：营销学、海洋生物、古典音乐史' : 'e.g. Marketing, Marine Biology'}
+                className="w-full p-[10px_14px] border border-white/70 bg-white/60 rounded-[12px] outline-none font-zh-serif text-[14px] text-[var(--ink)] focus:border-[var(--blue-accent)]"
+              />
+              <p className="font-zh-serif text-[11px] text-[var(--ink-muted)] m-0 mt-1 px-0.5">
+                {uiLang === 'zh'
+                  ? 'AI 会按这门课的场景翻译专业术语。会记住你上次选的。'
+                  : "AI translates with that subject's register. Your last pick is remembered."}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Action buttons row — Start / Stop */}
+        {!isLive && (
+          <div className="flex items-center gap-2 pt-[14px] mt-2 border-t border-[var(--ink-hairline)]">
+            <button
+              onClick={handleStart}
+              disabled={isBusy}
+              className="flex-1 inline-flex items-center justify-center gap-2 bg-[var(--ink)] text-white py-3 rounded-[12px] font-bold text-[14px] hover:bg-[#1a2440] transition-colors disabled:opacity-50 shadow-[0_4px_12px_rgba(10,14,26,0.22)]"
+            >
+              {isBusy
+                ? <Loader2 className="w-5 h-5 animate-spin" />
+                : <Play className="w-5 h-5" />}
+              {isBusy
+                ? (uiLang === 'zh'
+                    ? (status === 'requesting-token' ? '准备中…' : '连接中…')
+                    : (status === 'requesting-token' ? 'Preparing…' : 'Connecting…'))
+                : (uiLang === 'zh' ? '开始同传' : 'Start')}
+            </button>
+          </div>
+        )}
+
+        {/* Tip */}
+        {audioSource === 'tab' && !isLive && (
+          <div className="font-zh-serif text-[12px] text-[var(--ink-muted)] bg-[rgba(10,14,26,0.04)] rounded-[10px] p-3 mt-3 leading-relaxed">
+            {uiLang === 'zh' ? (
+              <>
+                <strong className="text-[var(--ink-body)]">提示：</strong>
                 点"开始"后浏览器会让你选上课用的那个标签页，
-                <strong>记得勾上"共享标签页音频"</strong>。
+                <strong className="text-[var(--ink-body)]">记得勾上"共享标签页音频"</strong>。
               </>
             ) : (
               <>
@@ -999,220 +1415,236 @@ export default function ClassroomTab({ uiLang }: { uiLang: 'en' | 'zh' }) {
           </div>
         )}
 
-        <div className="flex items-center gap-2">
-          {!isLive ? (
-            <button
-              onClick={handleStart}
-              disabled={isBusy}
-              className="flex-1 flex items-center justify-center gap-2 bg-[#0A0E1A] text-white py-3 rounded-xl font-bold hover:bg-[#1a2440] transition-colors disabled:opacity-50"
-            >
-              {isBusy
-                ? <Loader2 className="w-5 h-5 animate-spin" />
-                : <Play className="w-5 h-5" />}
-              {isBusy
-                ? (uiLang === 'zh'
-                    ? (status === 'requesting-token' ? '准备中…' : '连接中…')
-                    : (status === 'requesting-token' ? 'Preparing…' : 'Connecting…'))
-                : (uiLang === 'zh' ? '开始' : 'Start')}
-            </button>
-          ) : (
-            <>
-              {/* Pause keeps the Deepgram connection warm (keepAlive still
-                  fires) so resume is instant. When paused, no audio is
-                  sent — useful for stepping away or between lectures. */}
-              <button
-                onClick={togglePause}
-                className="flex items-center justify-center gap-2 bg-white text-gray-800 border border-gray-200 px-4 py-3 rounded-xl font-bold hover:bg-gray-50 transition-colors"
-                title={paused ? (uiLang === 'zh' ? '继续' : 'Resume') : (uiLang === 'zh' ? '暂停' : 'Pause')}
-              >
-                {paused ? <Play className="w-5 h-5" /> : <Pause className="w-5 h-5" />}
-                <span className="hidden sm:inline">
-                  {paused ? (uiLang === 'zh' ? '继续' : 'Resume') : (uiLang === 'zh' ? '暂停' : 'Pause')}
-                </span>
-              </button>
-              <button
-                onClick={handleStop}
-                className="flex-1 flex items-center justify-center gap-2 bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-gray-800 transition-colors"
-              >
-                <Square className="w-5 h-5" />
-                {uiLang === 'zh' ? '结束并保存笔记' : 'Stop & save notes'}
-              </button>
-            </>
-          )}
-        </div>
-
-        {/* Hint: explain what the AI chat bar at the bottom does. First-run
-            users see it; anyone who taps × never sees it again on this
-            device. Persistence on purpose — re-teaching the same thing
-            each session would be noise. */}
+        {/* Ask-hint */}
         {showAskHint && (
-        <div className="relative pr-7 text-xs text-gray-500 leading-relaxed">
-          <p>
-            {uiLang === 'zh' ? (
-              <>
-                上课没听懂？直接在下方<span className="text-[#5B7FE8] font-semibold">「问 AI」</span>输入你的问题 —
-                比如「老师刚才说的 CAPM 是啥？」AI 会根据已经讲过的内容用中文回答。
-              </>
-            ) : (
-              <>
-                Missed something? Just type your question in the{' '}
-                <span className="text-[#5B7FE8] font-semibold">Ask AI</span>{' '}
-                bar below — e.g. "what did the prof mean by CAPM?" AI replies in Chinese using what's been said so far.
-              </>
-            )}
-          </p>
-          <button
-            onClick={dismissAskHint}
-            aria-label={uiLang === 'zh' ? '收起提示' : 'Dismiss hint'}
-            title={uiLang === 'zh' ? '我知道了，不再显示' : 'Got it, hide'}
-            className="absolute top-0 right-0 p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
+          <div className="relative pr-7 font-zh-serif text-[12px] text-[var(--ink-muted)] leading-relaxed mt-3">
+            <p className="m-0">
+              {uiLang === 'zh' ? (
+                <>
+                  上课没听懂？直接在下方<span className="text-[var(--blue-accent)] font-semibold">「问 AI」</span>输入你的问题 —
+                  比如「老师刚才说的 CAPM 是啥？」AI 会根据已经讲过的内容用中文回答。
+                </>
+              ) : (
+                <>
+                  Missed something? Just type your question in the{' '}
+                  <span className="text-[var(--blue-accent)] font-semibold">Ask AI</span>{' '}
+                  bar below — e.g. "what did the prof mean by CAPM?" AI replies in Chinese using what's been said so far.
+                </>
+              )}
+            </p>
+            <button
+              onClick={dismissAskHint}
+              aria-label={uiLang === 'zh' ? '收起提示' : 'Dismiss hint'}
+              title={uiLang === 'zh' ? '我知道了，不再显示' : 'Got it, hide'}
+              className="absolute top-0 right-0 p-1 text-[var(--ink-muted)] hover:text-[var(--ink-body)] hover:bg-[rgba(10,14,26,0.05)] rounded-md transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         )}
 
-        {/* Status pill */}
-        <div className="flex items-center gap-2 text-xs">
-          <span className={`inline-block w-2 h-2 rounded-full ${
-            status === 'live' ? 'bg-green-500 animate-pulse' :
-            status === 'error' ? 'bg-red-500' :
-            status === 'connecting' || status === 'requesting-token' ? 'bg-amber-500 animate-pulse' :
-            'bg-gray-300'
-          }`} />
-          <span className="text-gray-500">
-            {uiLang === 'zh' ? (
-              <>
-                {status === 'live' && '正在监听…'}
-                {status === 'connecting' && '连接中…'}
-                {status === 'requesting-token' && '准备中…'}
-                {status === 'stopped' && '已结束'}
-                {status === 'error' && (statusDetail || '启动失败，请重试')}
-                {status === 'idle' && '未开始'}
-              </>
-            ) : (
-              <>
-                {status === 'live' && 'Listening…'}
-                {status === 'connecting' && 'Connecting…'}
-                {status === 'requesting-token' && 'Preparing…'}
-                {status === 'stopped' && 'Stopped'}
-                {status === 'error' && (statusDetail || 'Start failed, try again')}
-                {status === 'idle' && 'Not started'}
-              </>
-            )}
-          </span>
-        </div>
-
-        {/* Manual reconnect — only when the watchdog has NOT yet kicked
-            in but the user's side looks stuck (speaking but no transcripts).
-            User-facing escape hatch from a hung ASR. */}
+        {/* Manual reconnect */}
         {showManualReconnect && status === 'live' && (
           <button
             type="button"
             onClick={handleManualReconnect}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#C84A3D] text-white text-xs font-semibold shadow-[0_4px_12px_rgba(200,74,61,0.3)] hover:bg-[#a93a2f] transition-colors"
+            className="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-[12px] bg-[var(--red-warn)] text-white font-zh-sans text-[13px] font-bold shadow-[0_4px_12px_rgba(229,56,43,0.3)] hover:bg-[var(--red-deep)] transition-colors"
           >
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
             {uiLang === 'zh' ? '线路卡住？点这里重连' : 'Stuck? Reconnect'}
           </button>
         )}
       </div>
+      </motion.div>
+      )}
+      </AnimatePresence>
 
-      {/* Unified stream: subtitle lines + AI Q&A exchanges interleaved in
-          chronological order so users see their questions sitting next to
-          the bit of class that triggered them. */}
-      <div
-        ref={scrollerRef}
-        className="bg-white/60 backdrop-blur-md border border-white/60 rounded-3xl p-5 min-h-[320px] max-h-[50vh] overflow-y-auto space-y-3 shadow-sm"
-      >
-        {stream.length === 0 && status !== 'live' && (
-          <div className="text-center text-gray-400 py-16 text-sm">
-            {uiLang === 'zh'
-              ? '点"开始"后字幕会出现在这里。上课中可以随时问 AI 任何问题。'
-              : 'Tap Start and subtitles will appear here. Ask AI anything while the class is live.'}
-          </div>
-        )}
-        {stream.map((item) => {
-          if (item.kind === 'line') {
+      {/* Manual reconnect — also available when the config card is
+          collapsed during live sessions, since the button used to live
+          inside the card and would be hidden in summary mode. */}
+      {!isConfigExpanded && showManualReconnect && status === 'live' && (
+        <button
+          type="button"
+          onClick={handleManualReconnect}
+          className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-[12px] bg-[var(--red-warn)] text-white font-zh-sans text-[13px] font-bold shadow-[0_4px_12px_rgba(229,56,43,0.3)] hover:bg-[var(--red-deep)] transition-colors"
+        >
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+          {uiLang === 'zh' ? '线路卡住？点这里重连' : 'Stuck? Reconnect'}
+        </button>
+      )}
+
+      {/* TRANSCRIPT STREAM — widened visual focus. min-height bumped so
+          subtitles occupy the visual center of the classroom page; bottom
+          radius flattens to 0 so the Ask-AI dock reads as one continuous
+          surface with the stream (see task D "合流"). */}
+      <div className="relative">
+        {/* stream-fade — 底部白色渐隐层，让焊接下来的 ask-bar 有"从字幕里浮出来"的视觉。
+            对齐 classroom.html 原型 .stream-fade；绝对定位盖在 scroller 底部，
+            pointer-events-none 避免拦截滚动或点击。 */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute left-0 right-0 bottom-0 h-20 z-[1] rounded-b-none"
+          style={{
+            background: 'linear-gradient(to bottom, rgba(244,247,255,0) 0%, #F4F7FF 100%)',
+          }}
+        />
+        <div
+          ref={scrollerRef}
+          className="glass-thick rounded-t-[28px] rounded-b-none p-[26px_28px_120px_40px] min-h-[440px] max-h-[62vh] overflow-y-auto relative"
+        >
+          {/* Floating notes-chip — scrolls the LiveNotesPanel into view. */}
+          <button
+            type="button"
+            onClick={() => {
+              const panel = document.getElementById('classroom-live-notes-panel');
+              if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+            className="absolute top-4 right-4 z-10 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/70 border border-white/85 backdrop-blur-md font-display italic text-[12px] text-[rgba(10,14,26,0.6)] shadow-sm hover:text-[var(--blue-accent)]"
+          >
+            live notes
+            <span className="font-mono-meta text-[10px] text-[var(--blue-accent)] bg-[rgba(91,127,232,0.1)] px-1.5 py-0.5 rounded">
+              {liveNotes?.keyPoints?.length || 0}
+            </span>
+          </button>
+          {/* Vertical rule on the left */}
+          <div
+            className="absolute top-8 bottom-8 left-5 w-[2px] rounded-[2px]"
+            style={{ background: 'linear-gradient(180deg, rgba(91,127,232,0.45), rgba(91,127,232,0.05))' }}
+          />
+
+          {stream.length === 0 && status !== 'live' && (
+            <div className="text-center font-zh-serif text-[13px] leading-[1.85] text-[var(--ink-muted)] py-5">
+              {uiLang === 'zh' ? (
+                <>
+                  点 <em className="font-display italic not-italic text-[var(--blue-accent)] font-semibold italic">开始</em> 后字幕会出现在这里。<br />
+                  上课中可以随时在底部<em className="font-display italic not-italic text-[var(--blue-accent)] font-semibold italic">问 AI</em>任何问题。
+                </>
+              ) : (
+                <>Tap <em className="font-display italic text-[var(--blue-accent)] font-semibold">Start</em> to see subtitles. Ask AI anything during class.</>
+              )}
+            </div>
+          )}
+
+          {stream.map((item) => {
+            if (item.kind === 'line') {
+              const live = !item.finalized;
+              return (
+                <div key={`l-${item.id}`} className={cn("py-[14px]", "border-t border-dashed border-[rgba(10,14,26,0.07)] first:border-t-0")}>
+                  <span className={cn(
+                    "inline-block font-mono-meta text-[9px] font-bold tracking-[0.15em] uppercase px-[7px] py-[2px] rounded-[5px] mb-2",
+                    translationMode === 'paragraph'
+                      ? "bg-[rgba(91,127,232,0.1)] text-[var(--blue-accent)]"
+                      : "bg-[rgba(232,180,60,0.18)] text-[#8A5D0E]"
+                  )}>
+                    {translationMode === 'paragraph'
+                      ? (live ? 'paragraph · 正在攒句' : 'paragraph · 整段翻译')
+                      : (live ? 'realtime · 正在翻' : 'realtime · 实时')}
+                  </span>
+                  {item.transcription && (
+                    <p className="font-display italic text-[13px] leading-[1.5] text-[rgba(10,14,26,0.48)] m-0 mb-1.5">
+                      "{item.transcription}"
+                    </p>
+                  )}
+                  <p className={cn(
+                    "font-zh-serif text-[17px] leading-[1.8] m-0",
+                    live
+                      ? "text-[var(--blue-accent)] font-semibold italic"
+                      : "text-[rgba(10,14,26,0.78)]"
+                  )}>
+                    {item.translation || (live && !item.translation ? (uiLang === 'zh' ? '翻译中' : 'translating') : '')}
+                    {live && (
+                      <span
+                        className="inline-block w-2 h-[18px] align-[-3px] ml-1.5 bg-[var(--blue-accent)] animate-pulse"
+                      />
+                    )}
+                  </p>
+                </div>
+              );
+            }
+            // QA bubble
             return (
-              <div key={`l-${item.id}`} className={`space-y-1 ${item.finalized ? 'opacity-80' : ''}`}>
-                {item.transcription && (
-                  <p className="text-xs text-gray-400 leading-relaxed">{item.transcription}</p>
-                )}
-                <p className={`leading-relaxed ${
-                  item.finalized
-                    ? 'text-gray-800 text-base'
-                    : 'text-gray-900 text-base font-medium'
-                }`}>{item.translation}</p>
+              <div key={`q-${item.id}`} className="my-[18px] -mx-1.5 p-[16px_18px] border border-[rgba(91,127,232,0.2)] rounded-[18px]"
+                style={{ background: 'linear-gradient(135deg, rgba(91,127,232,0.12), rgba(137,163,240,0.06))' }}
+              >
+                <div className="flex gap-3 items-start">
+                  <span className="shrink-0 px-[9px] py-[3px] rounded-[7px] font-mono-meta text-[10px] font-bold tracking-[0.08em] bg-[var(--ink)] text-white mt-0.5">
+                    YOU
+                  </span>
+                  <p className="flex-1 min-w-0 font-zh-serif text-[14.5px] leading-[1.85] text-[var(--ink)] m-0">
+                    {item.question}
+                  </p>
+                </div>
+                <div className="flex gap-3 items-start mt-2.5 pt-3 border-t border-dashed border-[rgba(91,127,232,0.22)]">
+                  <span className="shrink-0 px-[9px] py-[3px] rounded-[7px] font-mono-meta text-[10px] font-bold tracking-[0.08em] bg-white text-[var(--blue-accent)] border border-[rgba(91,127,232,0.3)] inline-flex items-center gap-1 mt-0.5">
+                    <Sparkles className="w-2.5 h-2.5" /> AI
+                  </span>
+                  <p className="flex-1 min-w-0 font-zh-serif text-[14.5px] leading-[1.85] text-[var(--ink)] m-0 whitespace-pre-wrap [&_strong]:text-[var(--blue-accent)] [&_strong]:font-semibold">
+                    {item.pending
+                      ? <Loader2 className="w-4 h-4 animate-spin text-[rgba(91,127,232,0.6)] inline" />
+                      : item.answer}
+                  </p>
+                </div>
               </div>
             );
-          }
-          // QA bubble: rendered inside the subtitle stream. Blue-tinted
-          // card so it stands out from plain subtitles without feeling
-          // like a different app mode.
-          return (
-            <div key={`q-${item.id}`} className="bg-[rgba(91,127,232,0.08)] border border-[rgba(91,127,232,0.2)] rounded-xl p-3 my-2">
-              <div className="flex items-start gap-2 mb-2">
-                <div className="bg-[#0A0E1A] text-white text-[10px] font-black px-2 py-0.5 rounded-md shrink-0 mt-0.5">
-                  {uiLang === 'zh' ? '你' : 'You'}
-                </div>
-                <p className="text-sm text-gray-800 leading-relaxed">{item.question}</p>
-              </div>
-              <div className="flex items-start gap-2">
-                <div className="bg-white border border-[rgba(91,127,232,0.3)] text-[#5B7FE8] text-[10px] font-black px-2 py-0.5 rounded-md shrink-0 mt-0.5 flex items-center gap-1">
-                  <Sparkles className="w-2.5 h-2.5" />
-                  AI
-                </div>
-                <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap flex-1">
-                  {item.pending
-                    ? <Loader2 className="w-4 h-4 animate-spin text-[rgba(91,127,232,0.6)] inline" />
-                    : item.answer}
-                </p>
-              </div>
+          })}
+
+          {pendingTranslations.size > 0 && (
+            <div className="flex items-center gap-2 font-mono-meta text-[11px] text-[var(--blue-accent)] px-1 py-1 mt-2">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>{uiLang === 'zh' ? '翻译中…' : 'Translating…'}</span>
             </div>
-          );
-        })}
-        {pendingTranslations.size > 0 && (
-          <div className="flex items-center gap-2 text-xs text-[#5B7FE8] px-1 py-1">
-            <Loader2 className="w-3 h-3 animate-spin" />
-            <span>{uiLang === 'zh' ? '翻译中…' : 'Translating…'}</span>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Live structured notes — refreshes in the background every 45s
-          when new material has accumulated. Collapsible; only renders
-          once there's something to show. */}
-      <LiveNotesPanel notes={liveNotes} loading={liveNotesLoading} uiLang={uiLang} />
-
-      {/* Ask-AI chat bar — always visible, works before/during/after
-          live session. Uses aiChat() with the current transcript as
-          system context so the user can ask "what did they mean by X?"
-          without copy-pasting anything. */}
-      <div className="bg-white/60 backdrop-blur-md border border-white/60 rounded-2xl p-3 shadow-sm flex items-center gap-2">
-        <Sparkles className="w-4 h-4 text-[#5B7FE8] shrink-0 ml-1" />
+      {/* Ask-AI dock — visually welded to the subtitle stream above.
+          `rounded-t-none -mt-px` makes the two surfaces read as one
+          continuous "classroom" block (task D 合流), rather than three
+          disconnected islands. No longer sticky — it rides with the
+          content so users don't lose the physical link to the subtitles. */}
+      <div className="glass-thick rounded-b-[28px] rounded-t-none -mt-px p-[10px_12px_10px_16px] flex items-center gap-2.5 border-t border-[rgba(91,127,232,0.18)]">
+        <Sparkles className="w-[18px] h-[18px] text-[var(--blue-accent)] shrink-0" />
         <input
           type="text"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAsk(); } }}
-          placeholder={uiLang === 'zh' ? '问 AI 任何问题…（如：刚才讲的 CAPM 是啥？）' : 'Ask AI anything… (e.g. what did they mean by CAPM?)'}
+          placeholder={uiLang === 'zh' ? '问 AI 任何问题…（如：CAPM 为啥实务里经常不准？）' : 'Ask AI anything…'}
           disabled={isAsking}
-          className="flex-1 bg-transparent border-none outline-none text-sm text-gray-800 placeholder:text-gray-400 disabled:opacity-50"
+          className="flex-1 bg-transparent border-0 outline-none font-zh-serif text-[14px] text-[var(--ink)] placeholder:font-display placeholder:italic placeholder:text-[rgba(10,14,26,0.45)] py-1.5 disabled:opacity-50"
         />
         <button
           onClick={handleAsk}
           disabled={isAsking || question.trim().length === 0}
-          className="bg-[#0A0E1A] text-white p-2 rounded-xl disabled:opacity-40 hover:bg-[#1a2440] transition-colors"
+          className="bg-[var(--ink)] text-white border-0 px-[18px] py-2.5 rounded-[14px] font-bold text-[13px] tracking-[-0.005em] cursor-pointer inline-flex gap-1.5 items-center shadow-[0_4px_12px_rgba(10,14,26,0.25)] disabled:opacity-40 hover:bg-[#1a2440]"
           aria-label={uiLang === 'zh' ? '发送' : 'Send'}
         >
-          {isAsking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+          {isAsking ? <Loader2 className="w-4 h-4 animate-spin" /> : (
+            <>
+              ask AI
+              <Send className="w-3 h-3" />
+            </>
+          )}
         </button>
       </div>
 
-      {/* Save indicator — toast also announces success, this is the inline confirmation */}
+      {/* Live structured notes — moved BELOW the ask-AI dock so the
+          subtitle stream + Q&A form one tight "classroom" group, with
+          notes as an attached sidenote. */}
+      <LiveNotesPanel
+        notes={liveNotes}
+        loading={liveNotesLoading}
+        uiLang={uiLang}
+        lastUpdatedAt={notesLastUpdatedAt || undefined}
+        onSaveToNotes={handleSaveLiveNotesToClassNotes}
+        onExportPdf={handleExportLiveNotesPdf}
+        isSaving={isSavingLiveNotes}
+        isLive={isLive}
+      />
+
+      {/* Save indicator */}
       {status === 'stopped' && stream.length > 0 && (
-        <div className="flex items-center justify-center text-xs text-gray-400 gap-1.5">
+        <div className="flex items-center justify-center font-mono-meta text-[11px] text-[var(--ink-muted)] gap-1.5">
           <Save className="w-3.5 h-3.5" />
           {uiLang === 'zh' ? '笔记已自动保存到云端' : 'Notes saved to the cloud'}
         </div>

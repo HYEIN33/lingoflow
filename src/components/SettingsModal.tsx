@@ -12,7 +12,7 @@
  * `backdrop-blur-md` that traps `position: fixed` descendants — same bug
  * we fixed for ChangelogBell).
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
@@ -52,6 +52,14 @@ export default function SettingsModal({
   const [showWechat, setShowWechat] = useState(false);
 
   const zh = uiLang === 'zh';
+
+  // 允许其他组件（例如 UserProfile 的齿轮按钮）通过全局事件打开本 modal，
+  // 避免两份 Settings UI 并存。事件名 `memeflow:open-settings`。
+  useEffect(() => {
+    const handler = () => setIsOpen(true);
+    window.addEventListener('memeflow:open-settings', handler);
+    return () => window.removeEventListener('memeflow:open-settings', handler);
+  }, []);
 
   // Double-confirm clear history: toast with undo-style action, same feel
   // as logout. If they hit the action button they really meant it.
@@ -93,7 +101,7 @@ export default function SettingsModal({
     <>
       <button
         onClick={() => setIsOpen(true)}
-        className="p-1.5 sm:p-2 hover:bg-gray-50 rounded-full transition-colors text-gray-400 hover:text-[#5B7FE8]"
+        className="p-1.5 sm:p-2 hover:bg-gray-50 rounded-full transition-colors text-[var(--ink-muted)] hover:text-[#5B7FE8]"
         title={zh ? '设置' : 'Settings'}
         aria-label={zh ? '设置' : 'Settings'}
       >
@@ -107,7 +115,7 @@ export default function SettingsModal({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/60 backdrop-blur-md z-[100] flex items-center justify-center p-4"
+              className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
               onClick={() => setIsOpen(false)}
             >
               <motion.div
@@ -115,35 +123,37 @@ export default function SettingsModal({
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 20, scale: 0.98 }}
                 transition={{ duration: 0.2 }}
-                className="bg-white rounded-3xl shadow-2xl max-w-md w-full max-h-[85vh] overflow-hidden flex flex-col"
+                className="glass-thick rounded-[22px] max-w-[440px] w-full max-h-[85vh] overflow-hidden flex flex-col"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-                  <div className="flex items-center gap-2">
-                    <SettingsIcon className="w-5 h-5 text-[#5B7FE8]" />
-                    <h2 className="font-black text-lg text-gray-900">{zh ? '设置' : 'Settings'}</h2>
-                  </div>
+                <div className="flex items-center justify-between px-[22px] py-[18px] border-b border-[var(--ink-hairline)]">
+                  <h2 className="flex items-center gap-2 m-0 font-display font-bold text-[18px] tracking-[-0.02em] text-[var(--ink)]">
+                    <SettingsIcon className="w-[18px] h-[18px] text-[var(--blue-accent)]" strokeWidth={1.8} />
+                    {zh ? '设置 · Settings' : 'Settings · 设置'}
+                  </h2>
                   <button
                     onClick={() => setIsOpen(false)}
-                    className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
+                    className="w-8 h-8 inline-flex items-center justify-center bg-transparent border-0 cursor-pointer text-[var(--ink-subtle)] hover:text-[var(--ink)] hover:bg-[rgba(10,14,26,0.04)] rounded-[9px] transition-colors"
                     aria-label={zh ? '关闭' : 'Close'}
                   >
-                    <X className="w-5 h-5" />
+                    <X className="w-4 h-4" strokeWidth={2} />
                   </button>
                 </div>
 
-                <div className="overflow-y-auto px-4 py-3 space-y-1">
+                <div className="overflow-y-auto px-3 py-2.5">
                   {/* Language */}
                   <SettingRow
-                    icon={<Globe className="w-5 h-5" />}
-                    title={zh ? '界面语言' : 'Language'}
+                    icon={<Globe className="w-[18px] h-[18px]" strokeWidth={1.8} />}
+                    title={zh ? '界面语言 · Language' : 'Language · 界面语言'}
                     trailing={
-                      <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                      <div className="inline-flex gap-[2px] p-[3px] bg-[rgba(10,14,26,0.06)] rounded-[9px]">
                         <button
                           onClick={() => setUiLang('zh')}
                           className={
-                            'px-3 py-1 text-xs font-bold rounded-md transition-colors ' +
-                            (uiLang === 'zh' ? 'bg-white text-[#5B7FE8] shadow-sm' : 'text-gray-500')
+                            'px-3 py-[5px] border-0 cursor-pointer font-zh-serif text-[11.5px] font-bold rounded-[7px] transition-colors ' +
+                            (uiLang === 'zh'
+                              ? 'bg-white text-[var(--blue-accent)] shadow-[0_1px_3px_rgba(10,14,26,0.08)]'
+                              : 'bg-transparent text-[var(--ink-subtle)]')
                           }
                         >
                           中文
@@ -151,8 +161,10 @@ export default function SettingsModal({
                         <button
                           onClick={() => setUiLang('en')}
                           className={
-                            'px-3 py-1 text-xs font-bold rounded-md transition-colors ' +
-                            (uiLang === 'en' ? 'bg-white text-[#5B7FE8] shadow-sm' : 'text-gray-500')
+                            'px-3 py-[5px] border-0 cursor-pointer font-zh-serif text-[11.5px] font-bold rounded-[7px] transition-colors ' +
+                            (uiLang === 'en'
+                              ? 'bg-white text-[var(--blue-accent)] shadow-[0_1px_3px_rgba(10,14,26,0.08)]'
+                              : 'bg-transparent text-[var(--ink-subtle)]')
                           }
                         >
                           EN
@@ -161,50 +173,50 @@ export default function SettingsModal({
                     }
                   />
 
-                  <div className="h-px bg-gray-100 my-2" />
+                  <div className="h-px bg-[var(--ink-hairline)] mx-[10px] my-1.5" />
 
                   {/* Feedback via email */}
                   <SettingButton
-                    icon={<Mail className="w-5 h-5" />}
-                    title={zh ? '邮件反馈' : 'Email feedback'}
+                    icon={<Mail className="w-[18px] h-[18px]" strokeWidth={1.8} />}
+                    title={zh ? '邮件反馈 · Email feedback' : 'Email feedback · 邮件反馈'}
                     subtitle={feedbackEmail}
                     onClick={openFeedbackEmail}
+                    chevron
                   />
 
                   {/* Feedback via wechat — only if QR exists */}
                   {wechatQrSrc && (
                     <SettingButton
-                      icon={<MessageSquare className="w-5 h-5" />}
-                      title={zh ? '微信联系开发者' : 'WeChat contact'}
+                      icon={<MessageSquare className="w-[18px] h-[18px]" strokeWidth={1.8} />}
+                      title={zh ? '微信联系开发者 · WeChat' : 'WeChat · 微信联系开发者'}
                       subtitle={zh ? '扫码加好友' : 'Scan QR to add'}
                       onClick={() => setShowWechat(true)}
+                      chevron
                     />
                   )}
 
-                  <div className="h-px bg-gray-100 my-2" />
+                  <div className="h-px bg-[var(--ink-hairline)] mx-[10px] my-1.5" />
 
                   {/* About */}
                   <SettingRow
-                    icon={<Info className="w-5 h-5" />}
-                    title={zh ? '关于' : 'About'}
+                    icon={<Info className="w-[18px] h-[18px]" strokeWidth={1.8} />}
+                    title={zh ? '关于 · About' : 'About · 关于'}
                     trailing={
-                      <span className="text-xs text-gray-400 font-mono tabular-nums">
+                      <span className="font-mono-meta text-[11px] text-[var(--ink-subtle)] tabular-nums">
                         v{currentVersion}
                       </span>
                     }
                   />
 
-                  <div className="h-px bg-gray-100 my-2" />
-
                   {/* Danger zone */}
-                  <div className="px-2 pt-1 pb-0.5">
-                    <span className="text-[10px] font-black tracking-wider text-red-400 uppercase">
-                      {zh ? '谨慎操作' : 'Danger zone'}
+                  <div className="px-[14px] pt-2 pb-1">
+                    <span className="font-mono-meta text-[9px] font-extrabold tracking-[0.2em] uppercase text-[rgba(229,56,43,0.65)]">
+                      {zh ? 'danger zone · 谨慎操作' : 'danger zone'}
                     </span>
                   </div>
 
                   <SettingButton
-                    icon={<Trash2 className="w-5 h-5" />}
+                    icon={<Trash2 className="w-[18px] h-[18px]" strokeWidth={1.8} />}
                     title={zh ? '清除搜索历史' : 'Clear search history'}
                     subtitle={zh ? '清空本机上保存的翻译记录' : 'Removes local search history'}
                     onClick={handleClearHistory}
@@ -212,17 +224,17 @@ export default function SettingsModal({
                   />
 
                   <SettingButton
-                    icon={<LogOut className="w-5 h-5" />}
-                    title={zh ? '退出登录' : 'Sign out'}
+                    icon={<LogOut className="w-[18px] h-[18px]" strokeWidth={1.8} />}
+                    title={zh ? '退出登录 · Sign out' : 'Sign out · 退出登录'}
                     subtitle={zh ? '回到登录界面' : 'Return to sign-in'}
                     onClick={handleLogoutClick}
                     danger
                   />
                 </div>
 
-                <div className="px-6 py-3 border-t border-gray-100 text-center">
-                  <span className="text-xs text-gray-400">
-                    {zh ? '感谢你在用 MemeFlow 🙏' : 'Thanks for using MemeFlow 🙏'}
+                <div className="px-6 py-3 border-t border-[var(--ink-hairline)] text-center">
+                  <span className="font-zh-serif text-[11px] text-[var(--ink-subtle)]">
+                    {zh ? '感谢你在用 MemeFlow · Thanks for using MemeFlow' : 'Thanks for using MemeFlow · 感谢你在用 MemeFlow'}
                   </span>
                 </div>
               </motion.div>
@@ -234,30 +246,30 @@ export default function SettingsModal({
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="fixed inset-0 bg-black/70 z-[110] flex items-center justify-center p-4"
+                    className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[110] flex items-center justify-center p-4"
                     onClick={() => setShowWechat(false)}
                   >
                     <motion.div
                       initial={{ scale: 0.9 }}
                       animate={{ scale: 1 }}
                       exit={{ scale: 0.9 }}
-                      className="bg-white rounded-3xl p-6 shadow-2xl text-center max-w-xs w-full"
+                      className="glass-thick rounded-[22px] p-6 text-center max-w-[300px] w-full"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <h3 className="font-black text-gray-900 mb-1">
+                      <h3 className="m-0 mb-1 font-display font-semibold text-[18px] text-[var(--ink)]">
                         {zh ? '加开发者微信' : 'WeChat'}
                       </h3>
-                      <p className="text-xs text-gray-500 mb-4">
+                      <p className="font-zh-serif text-[12px] text-[var(--ink-subtle)] m-0 mb-4">
                         {zh ? '扫码即可添加' : 'Scan to add'}
                       </p>
                       <img
                         src={wechatQrSrc}
                         alt="WeChat QR"
-                        className="w-full rounded-2xl border border-gray-100"
+                        className="w-full rounded-[14px] border border-[var(--ink-hairline)]"
                       />
                       <button
                         onClick={() => setShowWechat(false)}
-                        className="mt-4 w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-colors text-sm"
+                        className="mt-4 w-full py-2.5 bg-transparent border border-[var(--ink-hairline)] hover:border-[var(--ink-rule)] text-[var(--ink-body)] font-zh-serif font-bold rounded-[12px] transition-colors text-[13px]"
                       >
                         {zh ? '关闭' : 'Close'}
                       </button>
@@ -284,10 +296,12 @@ function SettingRow({
   trailing: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between px-3 py-3 rounded-xl">
-      <div className="flex items-center gap-3 text-gray-700">
-        <span className="text-gray-400">{icon}</span>
-        <span className="font-medium text-sm">{title}</span>
+    <div className="flex items-center gap-3 px-3 py-3 rounded-[12px]">
+      <span className="w-6 flex-shrink-0 text-[var(--ink-subtle)]">{icon}</span>
+      <div className="flex-1 min-w-0">
+        <div className="font-zh-sans font-semibold text-[14px] tracking-[0.01em] text-[var(--ink)]">
+          {title}
+        </div>
       </div>
       <div>{trailing}</div>
     </div>
@@ -300,28 +314,63 @@ function SettingButton({
   subtitle,
   onClick,
   danger,
+  chevron,
 }: {
   icon: React.ReactNode;
   title: string;
   subtitle?: string;
   onClick: () => void;
   danger?: boolean;
+  chevron?: boolean;
 }) {
   return (
     <button
       onClick={onClick}
       className={
-        'w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-colors ' +
+        'w-full flex items-center gap-3 px-3 py-3 rounded-[12px] text-left transition-colors cursor-pointer border-0 bg-transparent ' +
         (danger
-          ? 'hover:bg-red-50 text-red-600'
-          : 'hover:bg-[rgba(91,127,232,0.08)] text-gray-700')
+          ? 'hover:bg-[rgba(229,56,43,0.08)]'
+          : 'hover:bg-[rgba(91,127,232,0.06)]')
       }
     >
-      <span className={danger ? 'text-red-400' : 'text-gray-400'}>{icon}</span>
-      <div className="flex-1">
-        <div className="font-medium text-sm">{title}</div>
-        {subtitle && <div className="text-xs text-gray-400 mt-0.5">{subtitle}</div>}
+      <span
+        className={
+          'w-6 flex-shrink-0 ' +
+          (danger ? 'text-[var(--red-warn)]' : 'text-[var(--ink-subtle)]')
+        }
+      >
+        {icon}
+      </span>
+      <div className="flex-1 min-w-0">
+        <div
+          className={
+            'font-zh-sans font-semibold text-[14px] tracking-[0.01em] ' +
+            (danger ? 'text-[var(--red-warn)]' : 'text-[var(--ink)]')
+          }
+        >
+          {title}
+        </div>
+        {subtitle && (
+          <div className="font-zh-sans font-medium text-[12.5px] tracking-[0.01em] text-[var(--ink-body)] mt-1">
+            {subtitle}
+          </div>
+        )}
       </div>
+      {chevron && (
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="text-[var(--ink-subtle)] flex-shrink-0"
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+      )}
     </button>
   );
 }

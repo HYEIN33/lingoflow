@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Wordbook · MemeFlow Prototype</title>
+<link rel="preconnect" href="https://api.fontshare.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&f[]=satoshi@400,500,600,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Serif+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  .folder-panel {
+    padding: 20px 20px 18px;
+    background: #FFFFFF;
+    border: 1px solid var(--border-solid);
+    border-radius: 14px;
+  }
+  .folder-panel h4 {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-weight: 500;
+    font-size: 14px;
+    color: rgba(10,14,26,0.58);
+    margin: 0 0 12px;
+    display: flex; align-items: baseline; gap: 10px;
+  }
+  .folder-panel h4 .zh {
+    font-family: "Noto Sans SC", sans-serif;
+    font-weight: 300; font-size: 10px; letter-spacing: 0.15em;
+    color: rgba(10,14,26,0.38);
+  }
+  .folder-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; }
+  .folder-list a {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 12px; border-radius: 12px;
+    text-decoration: none; color: rgba(10,14,26,0.7);
+    font-family: "Noto Serif SC", serif;
+    font-size: 14px;
+    transition: background .15s;
+  }
+  .folder-list a:hover { background: rgba(10,14,26,0.04); color: var(--ink); }
+  .folder-list a.active {
+    background: rgba(91,127,232,0.1);
+    color: var(--ink);
+    font-weight: 700;
+    border-left: 3px solid var(--blue-accent);
+    padding-left: 9px;
+  }
+  .folder-list a .count {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: rgba(10,14,26,0.45);
+  }
+  .new-folder {
+    display: inline-flex; gap: 6px; align-items: center;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 13px;
+    color: var(--blue-accent);
+    cursor: pointer;
+  }
+
+  .toolbar-row {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .search-pill {
+    flex: 1; min-width: 220px;
+    padding: 10px 14px;
+    display: inline-flex; align-items: center; gap: 10px;
+    background: #FFFFFF;
+    border: 1px solid var(--border-solid);
+    border-radius: 12px;
+  }
+  .search-pill:focus-within {
+    border-color: var(--blue-accent);
+    box-shadow: 0 0 0 3px rgba(91,127,232,0.15);
+  }
+  .search-pill input {
+    flex: 1; background: transparent; border: 0; outline: none;
+    font-family: "Noto Serif SC", serif; font-size: 14px;
+    color: var(--ink);
+  }
+  .search-pill input::placeholder {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; color: rgba(10,14,26,0.4);
+  }
+
+  .filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+  .chip-active {
+    background: var(--ink) !important; color: #fff !important;
+    border-color: var(--ink) !important;
+  }
+
+  .word-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+  }
+  @media (max-width: 720px) { .word-grid { grid-template-columns: 1fr; } }
+
+  .word-card {
+    padding: 20px 22px;
+    cursor: pointer;
+    background: #FFFFFF;
+    border: 1px solid var(--border-solid);
+    border-radius: 14px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .word-card:hover {
+    border-color: var(--border-solid-strong);
+    box-shadow: 0 4px 14px rgba(10,14,26,0.06);
+  }
+  .word-card .top {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 6px;
+  }
+  .word-card .term {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 700; font-size: 24px;
+    letter-spacing: -0.025em;
+    color: var(--ink);
+  }
+  .word-card .term em { font-style: italic; color: var(--blue-accent); font-weight: 600; }
+  .word-card .pron {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11.5px; color: var(--ink-muted);
+    margin-top: 3px;
+    letter-spacing: 0.03em;
+  }
+  .word-card .tag {
+    display: inline-block; padding: 3px 10px;
+    border-radius: 9999px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 9.5px; letter-spacing: 0.15em; text-transform: uppercase;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .word-card .meaning {
+    font-family: "Noto Sans SC", system-ui, sans-serif;
+    font-weight: 500;
+    font-size: 13.5px; line-height: 1.8;
+    color: var(--ink-body);
+    margin: 10px 0 12px;
+    letter-spacing: 0.01em;
+  }
+  .word-card .example {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-size: 13.5px; line-height: 1.65;
+    color: var(--ink-body);
+    padding: 10px 14px;
+    background: rgba(10,14,26,0.04);
+    border-left: 2px solid var(--ink-rule);
+    border-radius: 0 8px 8px 0;
+  }
+  .word-card .footer-row {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 12px; padding-top: 12px;
+    border-top: 1px solid var(--ink-hairline);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10.5px; font-weight: 600;
+    color: var(--ink-muted);
+    letter-spacing: 0.08em;
+  }
+  .word-card .actions { display: flex; gap: 6px; }
+  .icon-btn {
+    width: 28px; height: 28px; border-radius: 9px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; border: 0; cursor: pointer;
+    color: rgba(10,14,26,0.35);
+    transition: color .15s, background .15s;
+  }
+  .icon-btn:hover { color: var(--blue-accent); background: rgba(91,127,232,0.08); }
+
+  /* BATCH-MODE toolbar (shown when user taps "批量整理") */
+  .batch-toolbar {
+    padding: 12px 18px;
+    margin: -6px 0 14px;
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(91,127,232,0.04);
+    border: 1px solid var(--border-solid);
+    border-left: 3px solid var(--blue-accent);
+    border-radius: 12px;
+  }
+  .batch-toolbar .count {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-weight: 600;
+    font-size: 14px;
+    color: var(--blue-accent);
+  }
+  .batch-toolbar .sep {
+    width: 1px; height: 16px;
+    background: var(--ink-hairline);
+  }
+  .batch-toolbar button {
+    padding: 7px 12px;
+    border-radius: 10px;
+    font-size: 12px; font-weight: 600;
+    font-family: "Noto Serif SC", serif;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+    border: 1px solid;
+  }
+  .batch-toolbar .move-to {
+    background: rgba(91,127,232,0.12);
+    color: var(--blue-accent);
+    border-color: rgba(91,127,232,0.3);
+  }
+  .batch-toolbar .del {
+    background: rgba(229,56,43,0.08);
+    color: var(--red-warn);
+    border-color: rgba(229,56,43,0.25);
+  }
+  .batch-toolbar .cancel {
+    background: transparent;
+    color: rgba(10,14,26,0.6);
+    border-color: rgba(10,14,26,0.15);
+    margin-left: auto;
+  }
+  /* Batch-mode word-card: adds checkbox column */
+  .word-card.batch {
+    padding-left: 52px;
+    position: relative;
+  }
+  .word-card.batch .check {
+    position: absolute;
+    left: 18px; top: 22px;
+    width: 22px; height: 22px;
+    border-radius: 7px;
+    border: 1.5px solid rgba(10,14,26,0.2);
+    background: rgba(255,255,255,0.55);
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .word-card.batch .check.sel {
+    background: var(--blue-accent);
+    border-color: var(--blue-accent);
+    color: #fff;
+  }
+
+  /* ========== DETAIL VIEW ========== */
+  .detail-back {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px 6px 8px;
+    margin-bottom: 18px;
+    background: transparent;
+    border: 0; cursor: pointer;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-size: 13px;
+    color: var(--blue-accent);
+  }
+  .detail-card {
+    padding: 32px 36px 28px;
+    background: #FFFFFF;
+    border: 1px solid var(--border-solid);
+    border-radius: 18px;
+  }
+  .detail-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 20px; padding-bottom: 22px;
+    border-bottom: 1px solid var(--ink-hairline);
+  }
+  .detail-head .term {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 700; font-size: 46px;
+    letter-spacing: -0.03em; line-height: 1.0;
+    margin: 0 0 6px;
+  }
+  .detail-head .term em { font-style: italic; color: var(--blue-accent); font-weight: 500; }
+  .detail-head .translated {
+    font-family: "Noto Serif SC", serif;
+    font-size: 20px; font-weight: 500;
+    color: var(--ink);
+    margin: 0 0 10px;
+  }
+  .detail-head .pron {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 12px; color: var(--blue-accent);
+    background: rgba(91,127,232,0.1);
+    padding: 3px 10px; border-radius: 7px;
+    display: inline-block;
+    margin-right: 8px;
+  }
+  .detail-head .del-btn {
+    padding: 10px;
+    background: transparent;
+    border: 1px solid rgba(10,14,26,0.08);
+    color: rgba(10,14,26,0.35);
+    border-radius: 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .detail-head .del-btn:hover {
+    color: var(--red-warn);
+    background: rgba(229,56,43,0.06);
+    border-color: rgba(229,56,43,0.25);
+  }
+
+  /* Usage tabs — authentic / academic / standard variants of the same word */
+  .usage-tabs {
+    display: flex; gap: 8px;
+    padding: 20px 0 18px;
+    flex-wrap: wrap;
+  }
+  .usage-tab {
+    padding: 8px 14px;
+    border-radius: 12px;
+    border: 1.5px solid rgba(10,14,26,0.08);
+    background: rgba(255,255,255,0.5);
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px; font-weight: 600;
+    color: rgba(10,14,26,0.55);
+    cursor: pointer;
+  }
+  .usage-tab.on {
+    background: var(--ink);
+    color: #fff;
+    border-color: var(--ink);
+    transform: scale(1.04);
+    box-shadow: 0 4px 12px rgba(10,14,26,0.2);
+  }
+
+  .detail-section { padding: 18px 0; }
+  .detail-section + .detail-section { border-top: 1px solid var(--ink-hairline); }
+  .detail-section h4 {
+    margin: 0 0 10px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: rgba(10,14,26,0.5);
+  }
+  .meaning-box {
+    padding: 16px 18px;
+    background: rgba(255,255,255,0.5);
+    border: 1px solid rgba(255,255,255,0.7);
+    border-radius: 14px;
+  }
+  .meaning-box .en {
+    font-family: "Noto Serif SC", serif;
+    font-weight: 600; font-size: 16px;
+    color: var(--ink);
+    margin: 0 0 8px;
+  }
+  .meaning-box .zh {
+    font-family: "Noto Serif SC", serif;
+    font-size: 15px; font-weight: 500;
+    color: var(--blue-accent);
+    margin: 8px 0 0;
+    padding-top: 8px;
+    border-top: 1px solid var(--ink-hairline);
+  }
+  .example-list { display: flex; flex-direction: column; gap: 10px; }
+  .example-row {
+    padding: 14px 16px;
+    background: rgba(255,255,255,0.5);
+    border: 1px solid rgba(255,255,255,0.7);
+    border-radius: 13px;
+  }
+  .example-row .num {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-weight: 700; font-size: 16px;
+    color: rgba(91,127,232,0.35);
+    margin-right: 8px;
+  }
+  .example-row .en {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-size: 14px; line-height: 1.6;
+    color: var(--ink);
+    margin: 0;
+  }
+  .example-row .zh {
+    font-family: "Noto Serif SC", serif;
+    font-size: 12.5px;
+    color: rgba(10,14,26,0.58);
+    margin: 6px 0 0;
+    padding-left: 24px;
+    border-left: 2px solid rgba(91,127,232,0.2);
+  }
+  .syn-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .syn-chips .c {
+    padding: 5px 11px;
+    border-radius: 9px;
+    background: rgba(91,127,232,0.1);
+    color: var(--blue-accent);
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 13px; font-weight: 500;
+    cursor: pointer;
+    border: 1px solid rgba(91,127,232,0.2);
+  }
+  .syn-chips .c:hover { background: rgba(91,127,232,0.2); }
+
+  /* removed the old stats-row — replaced by a single summary pill */
+  .summary-pill {
+    padding: 14px 20px;
+    display: flex; gap: 22px; align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    background: #FFFFFF;
+    border: 1px solid var(--border-solid);
+    border-radius: 14px;
+  }
+  .summary-pill .item {
+    display: flex; align-items: baseline; gap: 6px;
+  }
+  .summary-pill .num {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 600; font-size: 20px;
+    letter-spacing: -0.02em;
+  }
+  .summary-pill .num.blue { color: var(--blue-accent); }
+  .summary-pill .num.green { color: #4C8F3B; }
+  .summary-pill .lbl {
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px;
+    color: rgba(10,14,26,0.72);
+  }
+  .summary-pill .sep { width: 1px; height: 18px; background: var(--ink-hairline); }
+
+  .states-head {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 0 6px;
+    margin: 36px 0 14px;
+  }
+  .states-head::before {
+    content: "";
+    width: 16px; height: 1px; background: rgba(10,14,26,0.35);
+    transform: translateY(-4px);
+  }
+  .states-head .en {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 13px;
+    color: rgba(10,14,26,0.58);
+  }
+  .states-head .zh {
+    font-family: "Noto Sans SC", sans-serif;
+    font-weight: 300; font-size: 11px; letter-spacing: 0.15em;
+    color: rgba(10,14,26,0.42);
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" style="text-decoration:none;color:inherit"><span class="brand">MemeFlow</span><span class="version">PROTOTYPE</span></a>
+      <nav class="tab-rail">
+        <a href="index.html">· overview</a>
+        <a href="slang-dictionary.html">slang · 梗百科</a>
+        <a href="wordbook.html" class="active"><span class="tab-dot"></span>wordbook · 单词本</a>
+        <a href="review.html">review · 复习</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <div class="eyebrow"><span class="en">wordbook</span><span class="zh">单词本</span></div>
+
+    <section class="summary-pill">
+      <div class="item"><span class="num">284</span><span class="lbl">收藏</span></div>
+      <div class="sep"></div>
+      <div class="item"><span class="num blue">17</span><span class="lbl">今天待复习</span></div>
+      <div class="sep"></div>
+      <div class="item"><span class="num green">62%</span><span class="lbl">已掌握</span></div>
+      <div class="sep"></div>
+      <div class="item"><span class="num" style="color:rgba(10,14,26,0.5)">36</span><span class="lbl">本周新增</span></div>
+    </section>
+
+    <section class="layout">
+      <!-- Left: folders panel -->
+      <aside class="folder-panel">
+        <h4>— folders <span class="zh">文件夹</span></h4>
+        <div class="folder-list">
+          <a href="#" class="active">
+            <span>全部</span>
+            <span class="count">284</span>
+          </a>
+          <a href="#">
+            <span>学术 · essays</span>
+            <span class="count">89</span>
+          </a>
+          <a href="#">
+            <span>口语 · daily</span>
+            <span class="count">112</span>
+          </a>
+          <a href="#">
+            <span>商务 · emails</span>
+            <span class="count">46</span>
+          </a>
+          <a href="#">
+            <span>梗 · slang</span>
+            <span class="count">37</span>
+          </a>
+          <a href="#">
+            <span style="color:rgba(10,14,26,0.45)">未分类</span>
+            <span class="count">—</span>
+          </a>
+        </div>
+        <span class="new-folder">+ 新建文件夹</span>
+      </aside>
+
+      <!-- Right: list -->
+      <div>
+        <div class="toolbar-row">
+          <div class="search-pill">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:rgba(10,14,26,0.45)">
+              <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input placeholder="search your words · 查找单词或释义">
+          </div>
+          <button class="btn-ghost">批量整理</button>
+        </div>
+
+        <div class="filter-row">
+          <span class="glass-chip zh chip-active">全部 · all</span>
+          <span class="glass-chip en">Authentic</span>
+          <span class="glass-chip en">Academic</span>
+          <span class="glass-chip zh">标准</span>
+          <span class="glass-chip zh">梗</span>
+        </div>
+
+        <div class="word-grid">
+          <article class="word-card">
+            <div class="top">
+              <div>
+                <div class="term"><em>wedge</em></div>
+                <div class="pron">/wedʒ/ · n.</div>
+              </div>
+              <span class="tag tag-authentic">Authentic</span>
+            </div>
+            <p class="meaning">楔子、契机；引申为"把两方分裂开的东西"。地道用法多用于政治或人际关系。</p>
+            <div class="example">"His comment drove a wedge between the two factions."</div>
+            <div class="footer-row">
+              <span>SAVED 2026-04-18 · 7 天后复习</span>
+              <div class="actions">
+                <button class="icon-btn" title="朗读"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15 9a5 5 0 0 1 0 6"/></svg></button>
+                <button class="icon-btn" title="删除"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+              </div>
+            </div>
+          </article>
+
+          <article class="word-card">
+            <div class="top">
+              <div>
+                <div class="term"><em>ephemeral</em></div>
+                <div class="pron">/ɪˈfemərəl/ · adj.</div>
+              </div>
+              <span class="tag tag-academic">Academic</span>
+            </div>
+            <p class="meaning">短暂的、转瞬即逝的。正式写作中用来替换 short-lived，能提升文本 register。</p>
+            <div class="example">"Online fame is often ephemeral, lasting only a handful of weeks."</div>
+            <div class="footer-row">
+              <span>SAVED 2026-04-15 · 明天复习</span>
+              <div class="actions">
+                <button class="icon-btn" title="朗读"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15 9a5 5 0 0 1 0 6"/></svg></button>
+                <button class="icon-btn" title="删除"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+              </div>
+            </div>
+          </article>
+
+          <article class="word-card">
+            <div class="top">
+              <div>
+                <div class="term"><em>yyds</em></div>
+                <div class="pron">中文拼音首字母 · slang</div>
+              </div>
+              <span class="tag tag-standard">Slang</span>
+            </div>
+            <p class="meaning">"永远的神"拼音缩写，中英互联网都在用。表达极度崇拜，带游戏圈和饭圈语气。</p>
+            <div class="example">"Sushi Zanmai is still yyds after 15 years in business."</div>
+            <div class="footer-row">
+              <span>SAVED 2026-04-12 · 已掌握</span>
+              <div class="actions">
+                <button class="icon-btn" title="朗读"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15 9a5 5 0 0 1 0 6"/></svg></button>
+                <button class="icon-btn" title="删除"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+              </div>
+            </div>
+          </article>
+
+          <article class="word-card">
+            <div class="top">
+              <div>
+                <div class="term"><em>mitigate</em></div>
+                <div class="pron">/ˈmɪtɪɡeɪt/ · v.</div>
+              </div>
+              <span class="tag tag-academic">Academic</span>
+            </div>
+            <p class="meaning">缓解、减轻（风险、损害）。法律、商务、环保报告里几乎必用，替代 reduce 能让文风更专业。</p>
+            <div class="example">"These measures aim to mitigate the long-term impact on biodiversity."</div>
+            <div class="footer-row">
+              <span>SAVED 2026-04-10 · 3 天后复习</span>
+              <div class="actions">
+                <button class="icon-btn" title="朗读"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15 9a5 5 0 0 1 0 6"/></svg></button>
+                <button class="icon-btn" title="删除"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+              </div>
+            </div>
+          </article>
+
+          <article class="word-card">
+            <div class="top">
+              <div>
+                <div class="term"><em>bussin</em></div>
+                <div class="pron">/ˈbʌsɪn/ · adj.</div>
+              </div>
+              <span class="tag tag-standard">Slang</span>
+            </div>
+            <p class="meaning">极其好吃、爽；形容食物或体验炸裂。源自非裔美国英语。</p>
+            <div class="example">"These dumplings are bussin, no cap."</div>
+            <div class="footer-row">
+              <span>SAVED 2026-04-08 · 今天复习</span>
+              <div class="actions">
+                <button class="icon-btn" title="朗读"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15 9a5 5 0 0 1 0 6"/></svg></button>
+                <button class="icon-btn" title="删除"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+              </div>
+            </div>
+          </article>
+
+          <article class="word-card">
+            <div class="top">
+              <div>
+                <div class="term"><em>throw in the towel</em></div>
+                <div class="pron">idiom · phrase</div>
+              </div>
+              <span class="tag tag-authentic">Authentic</span>
+            </div>
+            <p class="meaning">认输、放弃。源自拳击——教练把毛巾扔进场内代表终止比赛。日常谈话里比 "give up" 更有画面感。</p>
+            <div class="example">"After three failed launches, they finally threw in the towel."</div>
+            <div class="footer-row">
+              <span>SAVED 2026-04-05 · 5 天后复习</span>
+              <div class="actions">
+                <button class="icon-btn" title="朗读"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15 9a5 5 0 0 1 0 6"/></svg></button>
+                <button class="icon-btn" title="删除"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ BATCH-MODE STATE ============ -->
+    <div class="states-head">
+      <span class="en">batch mode</span>
+      <span class="zh">批量模式 · 多选后整体移动或删除</span>
+    </div>
+
+    <div class="batch-toolbar">
+      <span class="count">已选 3 个</span>
+      <span class="sep"></span>
+      <button class="move-to">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        移动到文件夹 ▾
+      </button>
+      <button class="del">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+        删除
+      </button>
+      <button class="cancel">取消批量模式</button>
+    </div>
+
+    <div class="word-grid">
+      <article class="word-card batch">
+        <span class="check sel">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <div class="top">
+          <div>
+            <div class="term"><em>wedge</em></div>
+            <div class="pron">/wedʒ/ · n.</div>
+          </div>
+          <span class="tag tag-authentic">Authentic</span>
+        </div>
+        <p class="meaning">楔子、契机；引申为"把两方分裂开的东西"。</p>
+      </article>
+
+      <article class="word-card batch">
+        <span class="check sel">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <div class="top">
+          <div>
+            <div class="term"><em>ephemeral</em></div>
+            <div class="pron">/ɪˈfemərəl/ · adj.</div>
+          </div>
+          <span class="tag tag-academic">Academic</span>
+        </div>
+        <p class="meaning">短暂的、转瞬即逝的。</p>
+      </article>
+
+      <article class="word-card batch">
+        <span class="check"></span>
+        <div class="top">
+          <div>
+            <div class="term"><em>yyds</em></div>
+            <div class="pron">中文拼音首字母 · slang</div>
+          </div>
+          <span class="tag tag-standard">Slang</span>
+        </div>
+        <p class="meaning">永远的神，拼音缩写。</p>
+      </article>
+
+      <article class="word-card batch">
+        <span class="check sel">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <div class="top">
+          <div>
+            <div class="term"><em>mitigate</em></div>
+            <div class="pron">/ˈmɪtɪɡeɪt/ · v.</div>
+          </div>
+          <span class="tag tag-academic">Academic</span>
+        </div>
+        <p class="meaning">缓解、减轻（风险、损害）。</p>
+      </article>
+    </div>
+
+    <!-- ============ DETAIL VIEW ============ -->
+    <div class="states-head">
+      <span class="en">word detail</span>
+      <span class="zh">词条详情 · 点列表里任一词卡进入</span>
+    </div>
+
+    <button class="detail-back">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      返回列表 · back
+    </button>
+
+    <article class="detail-card">
+      <div class="detail-head">
+        <div>
+          <h2 class="term"><em>mitigate</em></h2>
+          <p class="translated">缓解；减轻（风险 / 损害）</p>
+          <span class="pron">/ˈmɪtɪɡeɪt/</span>
+          <span class="tag tag-academic" style="padding:3px 10px;font-size:10px;font-family:'JetBrains Mono',ui-monospace,monospace;letter-spacing:0.15em;text-transform:uppercase;font-weight:700;border-radius:7px">Academic</span>
+        </div>
+        <button class="del-btn" title="从单词本删除">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+        </button>
+      </div>
+
+      <div class="usage-tabs">
+        <button class="usage-tab on">常用 · Common</button>
+        <button class="usage-tab">法律语境 · Legal</button>
+        <button class="usage-tab">气候/环境 · Climate</button>
+      </div>
+
+      <div class="detail-section">
+        <h4>meaning · 释义</h4>
+        <div class="meaning-box">
+          <p class="en">to make something less severe or painful</p>
+          <p class="zh">使某事变得不那么严重 / 让痛苦或损害变小</p>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <h4>examples · 例句</h4>
+        <div class="example-list">
+          <div class="example-row">
+            <p class="en"><span class="num">01</span>"These measures aim to mitigate the long-term impact on biodiversity."</p>
+            <p class="zh">这些措施的目的是减轻对生物多样性的长期影响。</p>
+          </div>
+          <div class="example-row">
+            <p class="en"><span class="num">02</span>"The company took steps to mitigate the financial damage from the recall."</p>
+            <p class="zh">公司采取措施来缓解召回事件带来的经济损失。</p>
+          </div>
+          <div class="example-row">
+            <p class="en"><span class="num">03</span>"Early detection can significantly mitigate the spread of the disease."</p>
+            <p class="zh">早期发现可以极大地减缓疾病的扩散。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <h4>synonyms · 近义词（点击查这些词）</h4>
+        <div class="syn-chips">
+          <span class="c">alleviate</span>
+          <span class="c">lessen</span>
+          <span class="c">soften</span>
+          <span class="c">moderate</span>
+          <span class="c">cushion</span>
+          <span class="c">ease</span>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <h4>antonyms · 反义词</h4>
+        <div class="syn-chips">
+          <span class="c" style="background:rgba(229,56,43,0.08);color:var(--red-warn);border-color:rgba(229,56,43,0.2)">aggravate</span>
+          <span class="c" style="background:rgba(229,56,43,0.08);color:var(--red-warn);border-color:rgba(229,56,43,0.2)">worsen</span>
+          <span class="c" style="background:rgba(229,56,43,0.08);color:var(--red-warn);border-color:rgba(229,56,43,0.2)">intensify</span>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <h4>word forms · 词形变化</h4>
+        <div class="syn-chips">
+          <span class="c" style="background:rgba(168,168,217,0.15);color:#7D6EA3;border-color:rgba(168,168,217,0.3)">
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:9px;font-style:normal;letter-spacing:0.1em;font-weight:700;color:#7D6EA3;margin-right:6px">过去式</span>mitigated
+          </span>
+          <span class="c" style="background:rgba(168,168,217,0.15);color:#7D6EA3;border-color:rgba(168,168,217,0.3)">
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:9px;font-style:normal;letter-spacing:0.1em;font-weight:700;color:#7D6EA3;margin-right:6px">现在分词</span>mitigating
+          </span>
+          <span class="c" style="background:rgba(168,168,217,0.15);color:#7D6EA3;border-color:rgba(168,168,217,0.3)">
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:9px;font-style:normal;letter-spacing:0.1em;font-weight:700;color:#7D6EA3;margin-right:6px">名词</span>mitigation
+          </span>
+          <span class="c" style="background:rgba(168,168,217,0.15);color:#7D6EA3;border-color:rgba(168,168,217,0.3)">
+            <span style="font-family:'JetBrains Mono',ui-monospace,monospace;font-size:9px;font-style:normal;letter-spacing:0.1em;font-weight:700;color:#7D6EA3;margin-right:6px">形容词</span>mitigable
+          </span>
+        </div>
+      </div>
+    </article>
+  </main>
+</body>
+</html>

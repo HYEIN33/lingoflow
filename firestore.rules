@@ -66,6 +66,17 @@ service cloud.firestore {
       );
     }
 
+    // Banned-user gate. A banned author cannot create new slang_meanings or
+    // slang_comments (they can still read). The gate reads users/{uid}.isBanned.
+    // Safe default: if the user doc doesn't exist yet, treat as NOT banned
+    // (fresh users shouldn't be blocked). `get()` adds one extra document read
+    // per write; acceptable for write paths, unacceptable on hot read paths.
+    function isBannedUser() {
+      return isAuthenticated() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isBanned == true;
+    }
+
     function isValidWord(data) {
       return data.original is string && data.original.size() > 0 && data.original.size() < 500 &&
              data.userId == request.auth.uid &&
@@ -114,7 +125,16 @@ service cloud.firestore {
              (!('l2PenaltyUntil' in data) || data.l2PenaltyUntil is timestamp) &&
              (!('l3PenaltyActive' in data) || data.l3PenaltyActive is bool) &&
              (!('vPenaltyLevel' in data) || data.vPenaltyLevel is number) &&
-             (!('reputationScore' in data) || data.reputationScore is number);
+             (!('reputationScore' in data) || data.reputationScore is number) &&
+             // Admin-only moderation flags. Never written by the user path
+             // (isUserSelfUpdate whitelist does not include these), but we
+             // declare them here as optional so that a user doc containing
+             // these fields still passes isValidUserProfile when admin reads
+             // via merged updates or when rules revalidate the full doc.
+             (!('isBanned' in data) || data.isBanned is bool) &&
+             (!('bannedAt' in data) || data.bannedAt is timestamp) &&
+             (!('bannedBy' in data) || data.bannedBy is string) &&
+             (!('bannedReason' in data) || data.bannedReason is string);
     }
 
     // Fields a user is allowed to mutate on their own profile.
@@ -128,21 +148,33 @@ service cloud.firestore {
     // leaderboard / profile header read from Firestore.
     function isUserSelfUpdate(before, after) {
       return after.diff(before).affectedKeys().hasOnly([
+        // ── Profile basics ─────────────────────────────────────────────
         'displayName',
         'photoURL',
         'tabOrder',
-        'lastContributionDate',
-        'currentStreak',
-        'hasCompletedOnboarding',
+        'equippedBadge',          // User clicks a medal on profile to "equip" it
+        // ── Activity counters (low-stakes, user-visible) ───────────────
         'translationCount',
         'grammarCount',
         'lastResetDate',
-        'titleLevel1',
-        'titleLevel2',
-        'titleLevel3',
+        'lastContributionDate',
+        'currentStreak',
+        'dailyContributionCount',
+        // ── Onboarding / wordbook ──────────────────────────────────────
+        'hasCompletedOnboarding',
         'hasUploadedMedia',
         'folders',
-        'wordFolderMap'
+        'wordFolderMap',
+        // ── Titles ─────────────────────────────────────────────────────
+        'titleLevel1',
+        'titleLevel2',
+        'titleLevel3'
+        // ── NOT in whitelist (admin-SDK only via Cloud Functions) ──────
+        // reputationScore / approvedSlangCount / l1PenaltyCount /
+        // l2PenaltyUntil / l3PenaltyActive / vPenaltyLevel / isPro / role /
+        // isBanned. Any client-side write to these fields is silently
+        // rejected; see functions/index.js syncContributionStats for the
+        // legitimate server-side path.
       ]);
     }
 
@@ -185,7 +217,10 @@ service cloud.firestore {
 
     match /slang_meanings/{meaningId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidSlangMeaning(request.resource.data) && request.resource.data.upvotes == 0;
+      // Banned authors can't create new meanings. Check via users/{uid}.isBanned
+      // (set by Cloud Function banAuthor). Freshly-created users with no doc
+      // yet pass isBannedUser() == false, so the gate doesn't block them.
+      allow create: if isAuthenticated() && !isBannedUser() && isValidSlangMeaning(request.resource.data) && request.resource.data.upvotes == 0;
       // Counter (upvote/downvote) updates: anyone authed; full edits: author or admin
       allow update: if isAuthenticated() && (
         isValidCounterUpdate(meaningId) ||
@@ -222,7 +257,7 @@ service cloud.firestore {
     // create their own comment. Author / admin can delete. Text is capped.
     match /slang_comments/{commentId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() &&
+      allow create: if isAuthenticated() && !isBannedUser() &&
                     request.resource.data.authorId == request.auth.uid &&
                     request.resource.data.text is string &&
                     request.resource.data.text.size() > 0 &&
@@ -267,6 +302,42 @@ service cloud.firestore {
                     request.resource.data.audioSource in ['tab', 'mic'] &&
                     request.resource.data.startedAt is timestamp;
       allow update: if isAuthenticated() && resource.data.uid == request.auth.uid;
+    }
+
+    // Classroom live-notes — when a user hits "save to notes" on the
+    // live notes panel during class, we persist the current structured
+    // notes (title / overview / keyPoints) here. User-owned, same model
+    // as classSessions. Size-capped to keep the doc under 1 MB Firestore
+    // limit (Gemini rarely goes above a few KB, but be defensive).
+    //
+    // Shape:
+    //   - uid: string (owner, must match request.auth.uid)
+    //   - title: string (0-500)
+    //   - overview: list<string> (each ≤1000 char, total ≤20 items)
+    //   - keyPoints: list<string> (each ≤1000 char, total ≤20 items)
+    //   - course: string | null (display name, ≤100)
+    //   - mode: 'paragraph' | 'realtime'
+    //   - savedAt / createdAt: timestamp
+    match /classNotes/{noteId} {
+      allow read, delete: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow create: if isAuthenticated() &&
+                    request.resource.data.uid == request.auth.uid &&
+                    request.resource.data.title is string &&
+                    request.resource.data.title.size() < 500 &&
+                    request.resource.data.overview is list &&
+                    request.resource.data.overview.size() <= 20 &&
+                    request.resource.data.keyPoints is list &&
+                    request.resource.data.keyPoints.size() <= 20 &&
+                    request.resource.data.mode in ['paragraph', 'realtime'] &&
+                    (request.resource.data.savedAt is timestamp || request.resource.data.savedAt == request.time);
+      allow update: if isAuthenticated() && resource.data.uid == request.auth.uid;
+    }
+
+    // Admin audit log — only admin SDK (Cloud Functions) writes here.
+    // Client reads require admin; no writes ever from the client.
+    match /admin_audit_log/{logId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
     }
 
     // Classroom note folders — users can bucket their saved sessions by

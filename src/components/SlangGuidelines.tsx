@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
+import { BookOpen, CheckCircle, XCircle, AlertTriangle, MessageSquare } from 'lucide-react';
 
 // Standardized slang contribution guidelines
 // Used by: SlangDictionary (add form), SlangOnboarding (step 3), AI validation prompt
@@ -30,7 +30,7 @@ export const SLANG_GUIDELINES = {
       },
       {
         icon: '🚫',
-        title: '不允许的内容',
+        title: '不允许',
         items: [
           '广告、推广、无关链接',
           '仇恨言论、歧视性内容',
@@ -39,7 +39,7 @@ export const SLANG_GUIDELINES = {
         ]
       }
     ],
-    qualityTips: '高质量词条 = 详细含义 + 自然例句 + 来源说明。AI 会根据这些标准评分 (0-100)，70 分以上自动通过。',
+    qualityTips: '高质量词条 = 详细含义 + 自然例句 + 来源说明。AI 会根据这些标准评分 0–100，70 分以上自动通过，60 以下打回，介于之间的人工复核。',
     examples: {
       good: {
         title: '好的示例',
@@ -113,81 +113,139 @@ export function SlangGuidelinesPanel({ uiLang, compact = false }: { uiLang: 'en'
 
   if (compact) {
     return (
-      <div className="bg-[rgba(91,127,232,0.08)] border border-[rgba(91,127,232,0.3)] rounded-xl p-4 space-y-2">
-        <h4 className="text-sm font-bold text-[#5B7FE8] flex items-center gap-2">
-          <BookOpen className="w-4 h-4" />
-          {g.title}
+      <div className="bg-[rgba(91,127,232,0.06)] border border-[var(--border-solid)] border-l-[3px] border-l-[var(--blue-accent)] rounded-xl p-[18px_22px] space-y-2">
+        <h4 className="font-display italic text-[14px] font-semibold text-[var(--ink-body)] flex items-center gap-2">
+          <BookOpen className="w-4 h-4 text-[var(--blue-accent)]" />
+          — {g.title}
         </h4>
-        <ul className="text-xs text-[#5B7FE8] space-y-1">
+        <ul className="font-zh-serif text-[13px] leading-[1.85] text-[var(--ink-body)] list-disc pl-[18px]">
           {g.rules[0].items.slice(0, 2).map((item, i) => (
-            <li key={i} className="flex items-start gap-1.5">
-              <span className="text-[rgba(91,127,232,0.6)] mt-0.5">•</span>
-              {item}
-            </li>
+            <li key={i}>{item}</li>
           ))}
         </ul>
-        <p className="text-[10px] text-[#5B7FE8]">{g.qualityTips}</p>
+        <p className="font-zh-serif text-[11px] text-[var(--ink-muted)]">{g.qualityTips}</p>
       </div>
     );
   }
 
   return (
-    <div className="bg-white/60 backdrop-blur-md border border-white/60 rounded-3xl p-6 shadow-sm space-y-6">
-      <div>
-        <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2 mb-1">
-          <BookOpen className="w-5 h-5 text-[#5B7FE8]" />
-          {g.title}
+    <div className="glass-thick rounded-[28px] p-6 space-y-6">
+      <div className="text-center pb-4 border-b border-[var(--ink-hairline)]">
+        <h3 className="font-display font-bold text-[22px] text-[var(--ink)] tracking-[-0.02em] flex items-center justify-center gap-2 mb-1">
+          <BookOpen className="w-5 h-5 text-[var(--blue-accent)]" />
+          {(() => {
+            const title = g.title;
+            // Highlight "贡献准则" (zh) or "Guidelines" (en) with italic blue em
+            const zhKeyword = '贡献准则';
+            const enKeyword = 'Guidelines';
+            if (title.includes(zhKeyword)) {
+              const [pre, post] = title.split(zhKeyword);
+              return <>{pre}<em className="italic text-[var(--blue-accent)] font-medium">{zhKeyword}</em>{post}</>;
+            }
+            if (title.includes(enKeyword)) {
+              const [pre, post] = title.split(enKeyword);
+              return <>{pre}<em className="italic text-[var(--blue-accent)] font-medium">{enKeyword}</em>{post}</>;
+            }
+            return title;
+          })()}
         </h3>
-        <p className="text-sm text-gray-500">{g.subtitle}</p>
+        <p className="font-zh-sans text-[13px] font-medium text-[var(--ink-body)]">{g.subtitle}</p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {g.rules.map((rule, i) => (
-          <div key={i} className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
-            <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
-              <span>{rule.icon}</span>
-              {rule.title}
-            </h4>
-            <ul className="text-sm text-gray-600 space-y-2">
-              {rule.items.map((item, j) => (
-                <li key={j} className="flex items-start gap-2">
-                  <span className="text-gray-400 mt-1 shrink-0">•</span>
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+        {g.rules.map((rule, i) => {
+          const variantClass =
+            i === 0
+              ? 'bg-[rgba(47,99,23,0.05)] border-[rgba(47,99,23,0.25)]'
+              : i === 1
+                ? 'bg-[rgba(91,127,232,0.05)] border-[rgba(91,127,232,0.25)]'
+                : 'bg-[rgba(229,56,43,0.05)] border-[rgba(229,56,43,0.25)]';
+          const iconBg =
+            i === 0
+              ? 'bg-[rgba(47,99,23,0.15)] text-[var(--green-ok)]'
+              : i === 1
+                ? 'bg-[rgba(91,127,232,0.15)] text-[var(--blue-accent)]'
+                : 'bg-[rgba(229,56,43,0.15)] text-[var(--red-warn)]';
+          return (
+            <div key={i} className={`rounded-[16px] p-[20px_22px] border ${variantClass}`}>
+              <div
+                className={`w-[38px] h-[38px] rounded-[11px] inline-flex items-center justify-center mb-[10px] ${iconBg}`}
+              >
+                {i === 0 ? (
+                  <CheckCircle className="w-[18px] h-[18px]" strokeWidth={2} />
+                ) : i === 1 ? (
+                  <MessageSquare className="w-[18px] h-[18px]" strokeWidth={2} />
+                ) : (
+                  <XCircle className="w-[18px] h-[18px]" strokeWidth={2} />
+                )}
+              </div>
+              <h4 className="font-display font-bold text-[16px] tracking-[-0.02em] text-[var(--ink)] mb-[10px]">
+                {rule.title}
+              </h4>
+              <ul className="font-zh-serif text-[13px] leading-[1.85] text-[var(--ink-body)] list-disc pl-[18px] space-y-0">
+                {rule.items.map((item, j) => (
+                  <li key={j}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
       </div>
 
       {/* Good vs Bad example */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
-          <h4 className="font-bold text-emerald-700 mb-2 flex items-center gap-2">
-            <CheckCircle className="w-4 h-4" />
+        <div className="bg-[rgba(47,99,23,0.06)] border-2 border-[rgba(47,99,23,0.3)] rounded-[16px] p-[18px_20px]">
+          <span className="inline-flex items-center gap-[5px] px-[10px] py-[3px] rounded-full font-mono-meta text-[10px] font-extrabold tracking-[0.12em] uppercase bg-[rgba(47,99,23,0.15)] text-[var(--green-ok)] mb-3">
+            <CheckCircle className="w-3 h-3" strokeWidth={2.5} />
             {g.examples.good.title}
+            <span className="opacity-75">· AI 94</span>
+          </span>
+          <h4 className="font-display font-bold text-[22px] tracking-[-0.02em] text-[var(--ink)] m-0 mb-[10px]">
+            {g.examples.good.term}
           </h4>
-          <p className="text-xs text-emerald-600 font-medium mb-1">{uiLang === 'zh' ? '含义：' : 'Meaning:'}</p>
-          <p className="text-sm text-emerald-800 mb-2">{g.examples.good.meaning}</p>
-          <p className="text-xs text-emerald-600 font-medium mb-1">{uiLang === 'zh' ? '例句：' : 'Example:'}</p>
-          <p className="text-sm text-emerald-800 italic">"{g.examples.good.example}"</p>
+          <p className="font-zh-serif text-[13px] leading-[1.85] text-[var(--ink-body)] mb-2">
+            <span className="font-bold text-[var(--ink)]">{uiLang === 'zh' ? '含义：' : 'Meaning: '}</span>
+            {g.examples.good.meaning}
+          </p>
+          <p className="font-zh-serif text-[13px] leading-[1.85] text-[var(--ink-body)]">
+            <span className="font-bold text-[var(--ink)]">{uiLang === 'zh' ? '例句：' : 'Example: '}</span>
+            {g.examples.good.example}
+          </p>
         </div>
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
-          <h4 className="font-bold text-red-600 mb-2 flex items-center gap-2">
-            <XCircle className="w-4 h-4" />
+        <div className="bg-[rgba(229,56,43,0.06)] border-2 border-[rgba(229,56,43,0.3)] rounded-[16px] p-[18px_20px]">
+          <span className="inline-flex items-center gap-[5px] px-[10px] py-[3px] rounded-full font-mono-meta text-[10px] font-extrabold tracking-[0.12em] uppercase bg-[rgba(229,56,43,0.15)] text-[var(--red-warn)] mb-3">
+            <XCircle className="w-3 h-3" strokeWidth={2.5} />
             {g.examples.bad.title}
+            <span className="opacity-75">· AI 32</span>
+          </span>
+          <h4 className="font-display font-bold text-[22px] tracking-[-0.02em] text-[var(--ink)] m-0 mb-[10px]">
+            {g.examples.bad.term}
           </h4>
-          <p className="text-xs text-red-500 font-medium mb-1">{uiLang === 'zh' ? '含义：' : 'Meaning:'}</p>
-          <p className="text-sm text-red-700 mb-2">{g.examples.bad.meaning}</p>
-          <p className="text-xs text-red-500 font-medium mb-1">{uiLang === 'zh' ? '例句：' : 'Example:'}</p>
-          <p className="text-sm text-red-700 italic">"{g.examples.bad.example}"</p>
+          <p className="font-zh-serif text-[13px] leading-[1.85] text-[var(--ink-subtle)] mb-2">
+            <span className="font-bold text-[var(--ink)]">{uiLang === 'zh' ? '含义：' : 'Meaning: '}</span>
+            {g.examples.bad.meaning}
+          </p>
+          <p className="font-zh-serif text-[13px] leading-[1.85] text-[var(--ink-subtle)]">
+            <span className="font-bold text-[var(--ink)]">{uiLang === 'zh' ? '例句：' : 'Example: '}</span>
+            {g.examples.bad.example}
+          </p>
+          <div className="mt-3 pt-3 border-t border-dashed border-[rgba(229,56,43,0.25)]">
+            <div className="font-mono-meta text-[10px] tracking-[0.18em] uppercase text-[var(--red-warn)] mb-1.5 font-bold">
+              AI {uiLang === 'zh' ? '反馈' : 'feedback'}
+            </div>
+            <p className="m-0 font-zh-serif text-[12.5px] leading-[1.75] text-[var(--red-warn)] opacity-85">
+              {uiLang === 'zh' ? '含义过短、没说明来源和使用语境，缺少褒贬色彩；例句未体现梗的情绪。' : 'Meaning too short, no context/origin, no tone description; example lacks emotional valence.'}
+            </p>
+          </div>
         </div>
       </div>
 
-      <p className="text-xs text-gray-500 bg-amber-50 border border-amber-200 rounded-xl p-3 flex items-start gap-2">
-        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-        {g.qualityTips}
-      </p>
+      <div className="border-[1.5px] border-[rgba(91,127,232,0.3)] bg-[rgba(91,127,232,0.06)] rounded-[14px] p-[16px_20px]">
+        <p className="font-zh-serif text-[13px] leading-[1.85] text-[var(--ink-body)] m-0 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 text-[var(--blue-accent)] shrink-0 mt-0.5" />
+          <span>{g.qualityTips}</span>
+        </p>
+      </div>
     </div>
   );
 }

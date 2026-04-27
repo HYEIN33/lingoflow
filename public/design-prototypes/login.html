@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sign In · MemeFlow Prototype</title>
+<link rel="preconnect" href="https://api.fontshare.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&f[]=satoshi@400,500,600,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Serif+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_shared.css">
+<style>
+  body { display: flex; flex-direction: column; }
+
+  .login-shell {
+    flex: 1;
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 60px 24px 40px;
+    display: grid;
+    grid-template-columns: 1fr 440px;
+    gap: 60px;
+    align-items: center;
+    position: relative; z-index: 1;
+  }
+  @media (max-width: 900px) {
+    .login-shell { grid-template-columns: 1fr; gap: 40px; padding: 40px 20px; }
+    .login-shell .poster { order: 2; max-width: 440px; margin: 0 auto; }
+    .login-shell .card-column { order: 1; }
+  }
+
+  /* LEFT — poster */
+  .poster .brand-row {
+    display: flex; align-items: baseline; gap: 12px;
+    margin-bottom: 22px;
+  }
+  .poster .brand-row::before {
+    content: "";
+    width: 20px; height: 1px;
+    background: rgba(10,14,26,0.35);
+    transform: translateY(-3px);
+  }
+  .poster .brand-row .en {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 14px;
+    color: rgba(10,14,26,0.58);
+  }
+  .poster .brand-row .v {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px; letter-spacing: 0.12em;
+    color: rgba(10,14,26,0.42);
+  }
+  .poster h1 {
+    margin: 0 0 18px;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 600;
+    font-size: clamp(44px, 6.5vw, 80px);
+    line-height: 1.0;
+    letter-spacing: -0.04em;
+  }
+  .poster h1 em { font-style: italic; color: var(--blue-accent); font-weight: 500; }
+  .poster .tag-zh {
+    font-family: "Noto Serif SC", serif;
+    font-size: 17px; line-height: 1.9;
+    color: rgba(10,14,26,0.78);
+    max-width: 460px;
+    margin: 0 0 28px;
+  }
+  .poster .chip-row {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-bottom: 26px;
+  }
+  .feature-list {
+    padding-left: 0;
+    list-style: none;
+    margin: 0;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .feature-list li {
+    display: flex; align-items: flex-start; gap: 12px;
+    font-family: "Noto Serif SC", serif;
+    font-size: 14px; line-height: 1.75;
+    color: rgba(10,14,26,0.75);
+  }
+  .feature-list li .tick {
+    width: 22px; height: 22px; border-radius: 7px;
+    background: rgba(91,127,232,0.12);
+    color: var(--blue-accent);
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 2px;
+  }
+  .feature-list li strong { color: var(--ink); font-weight: 600; }
+
+  /* RIGHT — auth card */
+  .auth-card {
+    padding: 34px 30px 28px;
+  }
+  .auth-head {
+    display: flex; align-items: center; gap: 14px;
+    margin-bottom: 4px;
+  }
+  .logo-square {
+    width: 52px; height: 52px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #5B7FE8, #89A3F0);
+    color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 6px 16px rgba(91,127,232,0.35);
+  }
+  .auth-head h2 {
+    margin: 0;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 28px;
+    letter-spacing: -0.03em;
+  }
+  .auth-head h2 .staging {
+    display: inline-block;
+    margin-left: 8px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 9px; font-weight: 800; letter-spacing: 0.15em;
+    background: #FFE26B; color: #6C5000;
+    padding: 2px 6px; border-radius: 5px;
+    vertical-align: middle;
+    transform: translateY(-2px);
+  }
+  .auth-head .v {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px; color: rgba(10,14,26,0.42);
+    letter-spacing: 0.05em;
+  }
+  .auth-tag {
+    font-family: "Noto Sans SC", system-ui, sans-serif;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: var(--ink-body);
+    margin: 14px 0 24px;
+    line-height: 1.75;
+  }
+
+  /* MODE TABS at top */
+  .mode-tabs {
+    display: flex; gap: 6px;
+    padding: 4px;
+    background: rgba(10,14,26,0.05);
+    border-radius: 14px;
+    margin-bottom: 20px;
+  }
+  .mode-tabs button {
+    flex: 1; padding: 10px 8px;
+    border: 0; background: transparent;
+    border-radius: 10px;
+    font-family: "Noto Sans SC", system-ui, sans-serif;
+    font-size: 13px; font-weight: 600;
+    color: var(--ink-muted);
+    cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .mode-tabs button:hover { color: var(--ink-body); }
+  .mode-tabs button.on {
+    background: #fff;
+    color: var(--ink);
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(10,14,26,0.1);
+  }
+
+  /* MODE 1: main — 3 ways to sign in */
+  .mode-main { display: flex; flex-direction: column; gap: 10px; }
+  .btn-google {
+    width: 100%;
+    padding: 14px;
+    background: var(--ink); color: #fff;
+    border: 0; border-radius: 16px;
+    font-weight: 700; font-size: 14px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    box-shadow: 0 6px 16px rgba(10,14,26,0.22);
+    font-family: "Noto Serif SC", serif;
+  }
+  .btn-google:hover { background: #1a2440; }
+  .btn-google .g-logo {
+    width: 20px; height: 20px;
+    background: #fff;
+    border-radius: 5px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 700; font-size: 12px;
+    color: #4285F4;
+  }
+  .btn-email {
+    width: 100%;
+    padding: 13px;
+    background: #fff;
+    border: 1.5px solid rgba(91,127,232,0.35);
+    color: var(--blue-accent);
+    border-radius: 16px;
+    font-weight: 700; font-size: 14px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    font-family: "Noto Serif SC", serif;
+  }
+  .btn-email:hover {
+    background: rgba(91,127,232,0.05);
+    border-color: var(--blue-accent);
+  }
+  .divider-or {
+    display: flex; align-items: center; gap: 10px;
+    margin: 4px 0;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-size: 11px; color: rgba(10,14,26,0.4);
+  }
+  .divider-or::before, .divider-or::after {
+    content: ""; flex: 1; height: 1px;
+    background: rgba(10,14,26,0.1);
+  }
+  .btn-beta {
+    width: 100%;
+    padding: 13px;
+    background: transparent;
+    border: 1.5px solid rgba(10,14,26,0.12);
+    color: rgba(10,14,26,0.72);
+    border-radius: 16px;
+    font-weight: 600; font-size: 13.5px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    font-family: "Noto Serif SC", serif;
+  }
+  .btn-beta:hover {
+    border-color: rgba(10,14,26,0.3);
+    background: rgba(255,255,255,0.5);
+  }
+
+  /* MODE 2: email form */
+  .mode-form { display: none; flex-direction: column; gap: 14px; text-align: left; }
+  .mode-form.on { display: flex; }
+  .back-btn {
+    background: transparent; border: 0; cursor: pointer;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 13px;
+    color: var(--blue-accent);
+    padding: 0; align-self: flex-start;
+  }
+  .form-title {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 600; font-size: 18px;
+    letter-spacing: -0.02em;
+    margin: 0;
+  }
+  .form-title em { font-style: italic; color: var(--blue-accent); }
+  .field-group label {
+    display: block;
+    font-family: "Noto Sans SC", system-ui, sans-serif;
+    font-size: 12.5px; font-weight: 700;
+    color: var(--ink);
+    margin-bottom: 6px;
+    letter-spacing: 0.02em;
+  }
+  .field-group input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(10,14,26,0.12);
+    background: rgba(255,255,255,0.7);
+    outline: none;
+    font-family: "Noto Serif SC", serif;
+    font-size: 14px; color: var(--ink);
+  }
+  .field-group input:focus {
+    border-color: var(--blue-accent);
+    box-shadow: 0 0 0 3px rgba(91,127,232,0.2);
+  }
+  .field-group input.code {
+    text-align: center;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 18px;
+    letter-spacing: 0.3em;
+    font-weight: 600;
+  }
+  .form-actions {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px;
+    margin-top: -2px;
+  }
+  .link-btn {
+    background: transparent; border: 0; cursor: pointer;
+    color: var(--blue-accent);
+    font-family: "Noto Sans SC", system-ui, sans-serif;
+    font-weight: 600; font-size: 13px;
+    padding: 0;
+  }
+  .link-btn.muted { color: var(--ink-muted); font-weight: 600; }
+  .link-btn:hover { text-decoration: underline; }
+  .submit-ink {
+    width: 100%;
+    padding: 13px;
+    background: var(--ink); color: #fff;
+    border: 0; border-radius: 13px;
+    font-weight: 700; font-size: 14px;
+    cursor: pointer;
+    font-family: "Noto Serif SC", serif;
+    box-shadow: 0 4px 12px rgba(10,14,26,0.22);
+  }
+  .submit-ink:hover { background: #1a2440; }
+  .notice {
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-family: "Noto Serif SC", serif;
+    font-size: 12.5px;
+  }
+  .notice.ok {
+    background: rgba(76,143,59,0.08);
+    color: #2F6317;
+    border: 1px solid rgba(76,143,59,0.22);
+  }
+  .notice.err {
+    background: rgba(229,56,43,0.08);
+    color: var(--red-warn);
+    border: 1px solid rgba(229,56,43,0.22);
+  }
+
+  .legal {
+    margin-top: 22px; padding-top: 18px;
+    border-top: 1px solid var(--ink-hairline);
+    font-family: "Noto Sans SC", system-ui, sans-serif;
+    font-weight: 500;
+    font-size: 12.5px; line-height: 1.9;
+    color: var(--ink-body);
+    text-align: center;
+    letter-spacing: 0.01em;
+  }
+  .legal a { color: var(--blue-accent); text-decoration: none; }
+  .legal a:hover { text-decoration: underline; }
+
+  .lang-switch {
+    position: absolute; top: 16px; right: 20px;
+    display: inline-flex; gap: 6px;
+    padding: 4px;
+    background: rgba(255,255,255,0.6);
+    border: 1px solid rgba(255,255,255,0.7);
+    border-radius: 9999px;
+    backdrop-filter: blur(14px);
+  }
+  .lang-switch button {
+    background: transparent; border: 0; cursor: pointer;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-size: 12px;
+    color: var(--ink-muted);
+    padding: 4px 10px; border-radius: 9999px;
+    font-weight: 600;
+  }
+  .lang-switch button.on {
+    background: var(--ink); color: #fff; font-style: normal;
+    font-family: "Noto Serif SC", serif; font-weight: 600;
+  }
+
+  /* ========== MAINTENANCE STATE (preview section at the bottom) ========== */
+  .alt-states {
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px 72px;
+    position: relative; z-index: 1;
+  }
+  .alt-head {
+    display: flex; align-items: baseline; gap: 12px;
+    margin: 40px 0 14px;
+  }
+  .alt-head::before {
+    content: "";
+    width: 16px; height: 1px; background: rgba(10,14,26,0.35);
+    transform: translateY(-4px);
+  }
+  .alt-head .en {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 13px;
+    color: rgba(10,14,26,0.58);
+  }
+  .alt-head .zh {
+    font-family: "Noto Sans SC", sans-serif;
+    font-weight: 300; font-size: 11px; letter-spacing: 0.15em;
+    color: rgba(10,14,26,0.42);
+  }
+  .maint-card {
+    max-width: 440px;
+    margin: 0 auto;
+    padding: 36px 36px 30px;
+    text-align: center;
+  }
+  .maint-card .icon {
+    width: 56px; height: 56px;
+    border-radius: 17px;
+    background: rgba(232,180,60,0.15);
+    color: #8A5D0E;
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-bottom: 18px;
+  }
+  .maint-card h2 {
+    margin: 0 0 8px;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 600; font-size: 24px;
+    letter-spacing: -0.02em;
+  }
+  .maint-card h2 em { font-style: italic; color: var(--blue-accent); }
+  .maint-card p {
+    margin: 0 0 18px;
+    font-family: "Noto Serif SC", serif;
+    font-size: 14px; line-height: 1.85;
+    color: rgba(10,14,26,0.68);
+  }
+  .maint-card .eta {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px;
+    background: rgba(91,127,232,0.08);
+    border: 1px solid rgba(91,127,232,0.22);
+    border-radius: 12px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 12px; color: var(--blue-accent);
+  }
+</style>
+</head>
+<body>
+  <div class="lang-switch">
+    <button class="on">中</button>
+    <button>EN</button>
+  </div>
+
+  <main class="login-shell">
+    <!-- LEFT: poster / value prop -->
+    <section class="poster">
+      <div class="brand-row">
+        <span class="en">MemeFlow · 进入前</span>
+        <span class="v">v0.2.15 · STAGING</span>
+      </div>
+      <h1>
+        中英<em>翻译</em><br>
+        带<em>梗</em>带上下文
+      </h1>
+      <p class="tag-zh">
+        把字典读不懂的"rizz、yyds、bussin"翻明白，把课堂英文实时同传成中文，把收藏的词按艾宾浩斯曲线推到你眼前复习。一个账号，五个页面，全部打通。
+      </p>
+      <div class="chip-row">
+        <span class="glass-chip zh">翻译 · 带文化背景</span>
+        <span class="glass-chip en">slang dictionary</span>
+        <span class="glass-chip zh">课堂同传</span>
+        <span class="glass-chip en">spaced review</span>
+      </div>
+      <ul class="feature-list">
+        <li>
+          <span class="tick">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </span>
+          <div><strong>免费试用</strong>：登录后翻译 / 梗百科 / 单词本开箱可用，不强制付费。</div>
+        </li>
+        <li>
+          <span class="tick">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </span>
+          <div><strong>云端同步</strong>：词汇本、复习进度、贡献的梗词条跨设备同步。</div>
+        </li>
+        <li>
+          <span class="tick">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </span>
+          <div><strong>贡献词条解锁 Pro 7 天</strong>，或直接订阅。内测有邀请码可走下方入口。</div>
+        </li>
+      </ul>
+    </section>
+
+    <!-- RIGHT: auth card -->
+    <section class="card-column">
+      <div class="glass-thick auth-card">
+        <div class="auth-head">
+          <div class="logo-square">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>
+          </div>
+          <div>
+            <h2>MemeFlow<span class="staging">STAGING</span></h2>
+            <div class="v">v0.2.15 · env: preview</div>
+          </div>
+        </div>
+        <p class="auth-tag">登录后同步你的单词本与复习记录 · 全部功能免费开放</p>
+
+        <!-- MODE SWITCHER TABS (demo: user can click to see each form) -->
+        <div class="mode-tabs">
+          <button class="on" onclick="showMode('main')">登录方式 · main</button>
+          <button onclick="showMode('email')">邮箱 · email</button>
+          <button onclick="showMode('guest')">邀请码 · beta</button>
+        </div>
+
+        <!-- MODE 1: MAIN — Google / Email / Beta -->
+        <div class="mode-main" id="mode-main">
+          <button class="btn-google">
+            <span class="g-logo">G</span>
+            使用 Google 账号登录
+          </button>
+          <button class="btn-email" onclick="showMode('email')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/></svg>
+            邮箱登录 / 注册
+          </button>
+          <div class="divider-or">or · 或</div>
+          <button class="btn-beta" onclick="showMode('guest')">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11V7a5 5 0 0 1 10 0v4"/><rect x="3" y="11" width="18" height="11" rx="2"/></svg>
+            内测体验 · 用邀请码
+          </button>
+        </div>
+
+        <!-- MODE 2: EMAIL form (sign in / sign up toggle) -->
+        <div class="mode-form" id="mode-email">
+          <button class="back-btn" onclick="showMode('main')">← 返回</button>
+          <h3 class="form-title"><em>Sign In</em> · 邮箱登录</h3>
+
+          <div class="field-group">
+            <label>邮箱</label>
+            <input type="email" placeholder="you@example.com" value="caizewei11@gmail.com">
+          </div>
+          <div class="field-group">
+            <label>密码</label>
+            <input type="password" placeholder="••••••" value="••••••••">
+          </div>
+
+          <button class="submit-ink">登录 · sign in</button>
+
+          <div class="form-actions">
+            <button class="link-btn">没有账号？注册</button>
+            <button class="link-btn muted">忘记密码</button>
+          </div>
+
+          <div class="notice ok">
+            重置邮件已发送到 you@example.com，请查收
+          </div>
+          <div class="notice err">
+            邮箱或密码不正确，请重试
+          </div>
+        </div>
+
+        <!-- MODE 3: BETA / INVITE CODE -->
+        <div class="mode-form" id="mode-guest">
+          <button class="back-btn" onclick="showMode('main')">← 返回</button>
+          <h3 class="form-title"><em>Beta Access</em> · 内测体验</h3>
+          <p style="font-family:'Noto Serif SC',serif;font-size:13px;color:rgba(10,14,26,0.6);margin:0;line-height:1.7">
+            输入邀请码即可体验全部功能（包括复习系统和 Pro 翻译模式）
+          </p>
+
+          <div class="field-group">
+            <label>邀请码</label>
+            <input type="text" class="code" maxlength="10" placeholder="XXXX-XXXX" value="MEME-4567">
+          </div>
+
+          <button class="submit-ink">进入体验 · enter</button>
+        </div>
+
+        <div class="legal">
+          登录即表示你同意 <a href="#">用户协议</a> 与 <a href="#">隐私条款</a>。
+          你的音频（课堂同传）会上传到 Google 处理，不会长期保存。
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- MAINTENANCE state preview -->
+  <section class="alt-states">
+    <div class="alt-head">
+      <span class="en">maintenance mode</span>
+      <span class="zh">维护模式 · 切 MAINTENANCE_MODE = true 时全站变这样</span>
+    </div>
+
+    <div class="glass-thick maint-card">
+      <div class="icon">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+      </div>
+      <h2><em>MemeFlow</em> 维护中</h2>
+      <p>我们正在升级服务器，<br>预计 20 分钟内恢复。感谢耐心等待。</p>
+      <div class="eta">ETA · 2026-04-21 16:45</div>
+    </div>
+  </section>
+
+  <script>
+    function showMode(mode) {
+      document.querySelectorAll('.mode-tabs button').forEach(b => b.classList.remove('on'));
+      document.querySelectorAll('.mode-tabs button').forEach(b => {
+        if (b.textContent.includes(mode === 'main' ? 'main' : mode === 'email' ? 'email' : 'beta')) b.classList.add('on');
+      });
+      document.getElementById('mode-main').style.display = mode === 'main' ? 'flex' : 'none';
+      document.getElementById('mode-email').classList.toggle('on', mode === 'email');
+      document.getElementById('mode-guest').classList.toggle('on', mode === 'guest');
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,425 @@
+/* MemeFlow Design Prototypes — shared tokens
+   Mirrors src/index.css so prototypes feel identical to the live app. */
+
+:root {
+  --bg-top: #F4F7FF;
+  --bg-mid: #E8EEFC;
+  --bg-deep: #DDE5F7;
+  --blue-accent: #5B7FE8;
+  --blue-accent-deep: #3E5FBF;
+  --blue-glow: #89A3F0;
+  --blue-soft: #B8C8F0;
+
+  /* Ink ramp — round 2 strengthened. Previous (82/72/60/45) still left
+     meta/time/support text too thin on ambient glass backgrounds. */
+  --ink: #0A0E1A;
+  --ink-body: rgba(10, 14, 26, 0.88);   /* primary body — almost solid */
+  --ink-soft: rgba(10, 14, 26, 0.78);    /* secondary body */
+  --ink-muted: rgba(10, 14, 26, 0.68);   /* tertiary / subtitle — legible */
+  --ink-subtle: rgba(10, 14, 26, 0.55);  /* caption — still readable */
+  --ink-hairline: rgba(10, 14, 26, 0.12);
+  --ink-rule: rgba(10, 14, 26, 0.18);    /* stronger divider for data */
+
+  --red-warn: #E5382B;       /* vivid destructive red — iOS system red tier */
+  --red-deep: #B81F14;       /* hover/active */
+  --red-soft: rgba(229, 56, 43, 0.08);
+  --green-ok: #2F6317;
+  --amber: #8A5D0E;
+
+  /* Surface tokens — differentiate glass (hero) vs solid (data) */
+  --surface-solid: rgba(255, 255, 255, 0.92);
+  --surface-solid-hover: rgba(255, 255, 255, 1);
+  --border-solid: rgba(10, 14, 26, 0.10);
+  --border-solid-strong: rgba(10, 14, 26, 0.14);
+}
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #F4F7FF 0%, #E8EEFC 45%, #DDE5F7 100%);
+  color: var(--ink);
+  font-family: "Satoshi", system-ui, sans-serif;
+  letter-spacing: -0.005em;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Ambient blobs — two soft blurred circles tint the corners. */
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  width: 40vw;
+  height: 40vw;
+  border-radius: 9999px;
+  filter: blur(80px);
+  pointer-events: none;
+  z-index: 0;
+}
+body::before {
+  top: -10%;
+  left: -10%;
+  background: rgba(137, 163, 240, 0.25);
+}
+body::after {
+  bottom: -10%;
+  right: -10%;
+  background: rgba(184, 200, 240, 0.30);
+}
+
+main, header, footer, .page-shell { position: relative; z-index: 1; }
+
+/* Fonts (utility classes mirror src/index.css) */
+.font-display { font-family: "Clash Display", system-ui, sans-serif; letter-spacing: -0.03em; }
+.font-body-en { font-family: "Satoshi", system-ui, sans-serif; letter-spacing: -0.005em; }
+.font-zh-serif { font-family: "Noto Serif SC", serif; letter-spacing: 0.02em; }
+.font-zh-sans { font-family: "Noto Sans SC", system-ui, sans-serif; letter-spacing: 0.04em; font-weight: 300; }
+.font-mono-meta { font-family: "JetBrains Mono", ui-monospace, monospace; letter-spacing: 0; }
+
+/* Glass primitives — mirrored from src/index.css */
+.glass-shell {
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.42) 0%, rgba(255,255,255,0.22) 100%),
+    radial-gradient(circle at 85% 10%, rgba(137,163,240,0.18) 0%, transparent 65%);
+  backdrop-filter: blur(40px) saturate(160%);
+  -webkit-backdrop-filter: blur(40px) saturate(160%);
+  border: 1px solid rgba(255,255,255,0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.75),
+    inset 0 -1px 0 rgba(255,255,255,0.15),
+    0 4px 16px rgba(91,127,232,0.06);
+}
+.glass-thick {
+  position: relative;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.5) 100%),
+    radial-gradient(circle at 85% 15%, rgba(137,163,240,0.32) 0%, transparent 60%),
+    radial-gradient(circle at 15% 90%, rgba(184,200,240,0.25) 0%, transparent 65%);
+  backdrop-filter: blur(80px) saturate(180%);
+  -webkit-backdrop-filter: blur(80px) saturate(180%);
+  border: 1.5px solid rgba(255,255,255,0.75);
+  border-radius: 28px;
+  overflow: hidden;
+  box-shadow:
+    inset 0 2.5px 0 rgba(255,255,255,1),
+    inset 0 -1px 0 rgba(255,255,255,0.4),
+    0 24px 60px rgba(91,127,232,0.18),
+    0 8px 20px rgba(91,127,232,0.1),
+    0 2px 6px rgba(10,14,26,0.05);
+}
+/* Specular highlight — subtle top-left gloss. Must sit BEHIND content
+   (z-index: 0) and mix gently instead of bleaching text. Previously this
+   overlay was dimming body copy to white-on-white. */
+.glass-thick::after {
+  content: "";
+  position: absolute;
+  inset: 0 55% auto 0;
+  height: 38%;
+  border-top-left-radius: 28px;
+  border-top-right-radius: 28px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 75%);
+  pointer-events: none;
+  z-index: 0;
+  mix-blend-mode: soft-light;
+}
+/* All direct children of glass-thick lift above the gloss. */
+.glass-thick > * {
+  position: relative;
+  z-index: 1;
+}
+
+.glass-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 13px;
+  color: var(--ink-body);
+  background: rgba(255,255,255,0.7);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid var(--border-solid);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+  cursor: pointer;
+  transition: color .15s, transform .15s;
+}
+
+/* ============================================================
+   Solid surface — for data, lists, admin. Opaque white on the
+   ambient bg (no backdrop-filter, no white-on-white border halo).
+   ============================================================ */
+.surface {
+  background: var(--surface-solid);
+  border: 1px solid var(--border-solid);
+  border-radius: 18px;
+  box-shadow:
+    0 1px 2px rgba(10, 14, 26, 0.04),
+    0 4px 14px rgba(10, 14, 26, 0.04);
+}
+.surface.strong {
+  border-color: var(--border-solid-strong);
+}
+
+/* Hairline — for in-card row separators (replaces dashed whites) */
+.rule {
+  border: 0;
+  border-top: 1px solid var(--ink-hairline);
+  margin: 0;
+}
+.rule.strong { border-top-color: var(--ink-rule); }
+
+/* Section eyebrow — use once per section, not repeatedly */
+.eyebrow-once {
+  display: flex; align-items: baseline; gap: 10px;
+  margin-bottom: 14px; padding: 0 4px;
+}
+.eyebrow-once::before {
+  content: ""; width: 18px; height: 1px;
+  background: var(--ink-rule);
+  transform: translateY(-4px);
+}
+.eyebrow-once .en {
+  font-family: "Clash Display", system-ui, sans-serif;
+  font-style: italic; font-size: 13px;
+  color: var(--ink-muted);
+  letter-spacing: -0.01em;
+}
+.eyebrow-once .zh {
+  font-family: "Noto Sans SC", sans-serif;
+  font-weight: 400; font-size: 11.5px;
+  letter-spacing: 0.12em;
+  color: var(--ink-subtle);
+}
+
+/* Text ramp helpers — H1 / H2 / H3 / body / caption */
+.t-h1 {
+  font-family: "Clash Display", system-ui, sans-serif;
+  font-weight: 700; font-size: 28px;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  line-height: 1.15;
+}
+.t-h2 {
+  font-family: "Clash Display", system-ui, sans-serif;
+  font-weight: 600; font-size: 18px;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  line-height: 1.3;
+}
+.t-h3 {
+  font-family: "Noto Serif SC", serif;
+  font-weight: 600; font-size: 15px;
+  color: var(--ink);
+  line-height: 1.5;
+}
+.t-body {
+  font-family: "Noto Serif SC", serif;
+  font-size: 14px;
+  color: var(--ink-body);
+  line-height: 1.75;
+}
+.t-caption {
+  font-family: "Noto Serif SC", serif;
+  font-size: 12.5px;
+  color: var(--ink-muted);
+  line-height: 1.6;
+}
+.t-mono {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+/* Info / support-copy helper — the "mid-priority" voice. Used for
+   agreements, rewards rules, saved-at timestamps, payment guarantees,
+   onboarding step descriptions. Previously these were serif caption
+   and fading out on glass/ambient backgrounds. Now: sans 500,
+   stronger color, more legible at small sizes. */
+.t-info {
+  font-family: "Noto Sans SC", system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-body);
+  line-height: 1.75;
+  letter-spacing: 0.01em;
+}
+.t-info strong { font-weight: 700; color: var(--ink); }
+.t-info .accent { color: var(--blue-accent); font-weight: 600; }
+.t-info .warn { color: var(--red-warn); font-weight: 600; }
+
+/* Stronger mono — for table heads and data meta, where mono was before
+   too pale to claim attention. */
+.t-mono-strong {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  font-weight: 800;
+}
+.glass-chip:hover { color: var(--ink); transform: translateY(-1px); }
+.glass-chip.en { font-family: "Clash Display", system-ui, sans-serif; font-style: italic; font-weight: 500; letter-spacing: -0.01em; }
+.glass-chip.zh { font-family: "Noto Serif SC", serif; font-weight: 500; }
+
+/* Eyebrow label — the · translate · 翻译 pattern */
+.eyebrow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 0 6px;
+  margin-bottom: 12px;
+}
+.eyebrow::before {
+  content: "";
+  width: 16px;
+  height: 1px;
+  background: rgba(10,14,26,0.35);
+  transform: translateY(-4px);
+}
+.eyebrow .en {
+  font-family: "Clash Display", system-ui, sans-serif;
+  font-style: italic;
+  font-size: 13px;
+  color: rgba(10,14,26,0.58);
+  letter-spacing: -0.02em;
+}
+.eyebrow .zh {
+  font-family: "Noto Sans SC", system-ui, sans-serif;
+  font-weight: 300;
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  color: rgba(10,14,26,0.38);
+}
+
+/* Divider — the thin hairline we use inside glass-thick */
+.hairline { border-top: 1px solid var(--ink-hairline); }
+
+/* Section header inside a glass card */
+.section-label {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(10,14,26,0.45);
+}
+
+/* Primary dark pill button (matches translate page submit) */
+.btn-ink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--ink);
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 16px;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  border: 0;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(10,14,26,0.25);
+  transition: transform .15s, background .15s;
+}
+.btn-ink:hover { background: #1a2440; transform: translateY(-1px); }
+
+.btn-ghost {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 16px; border-radius: 16px;
+  background: rgba(255,255,255,0.5);
+  border: 1px solid rgba(255,255,255,0.7);
+  color: rgba(10,14,26,0.7);
+  font-weight: 600; font-size: 13px;
+  cursor: pointer;
+}
+.btn-ghost:hover { color: var(--ink); background: rgba(255,255,255,0.75); }
+
+/* Scroll-free surface for transcript / review flows */
+.soft-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(10,14,26,0.1), transparent);
+  margin: 20px 0;
+}
+
+/* Top bar shared across all prototypes */
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  background: rgba(255,255,255,0.55);
+  border-bottom: 1px solid rgba(255,255,255,0.6);
+  box-shadow: 0 4px 20px rgba(91,127,232,0.08);
+}
+.topbar-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 14px 24px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.topbar .brand {
+  font-family: "Clash Display", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 22px;
+  letter-spacing: -0.03em;
+}
+.topbar .version {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+  color: rgba(10,14,26,0.45);
+  margin-left: 8px;
+}
+
+.tab-rail {
+  display: flex; gap: 4px; padding: 4px;
+  background: rgba(255,255,255,0.5);
+  border: 1px solid rgba(255,255,255,0.7);
+  border-radius: 999px;
+  backdrop-filter: blur(20px);
+}
+.tab-rail a {
+  padding: 8px 14px; border-radius: 999px;
+  font-size: 13px; color: rgba(10,14,26,0.55);
+  text-decoration: none;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.tab-rail a.active {
+  background: rgba(255,255,255,0.95);
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 #fff, 0 2px 6px rgba(91,127,232,0.15);
+  font-weight: 600;
+}
+.tab-dot {
+  width: 4px; height: 4px; border-radius: 9999px;
+  background: var(--blue-accent);
+  box-shadow: 0 0 6px rgba(91,127,232,0.8), 0 0 12px rgba(91,127,232,0.3);
+}
+
+.page-shell { max-width: 1100px; margin: 0 auto; padding: 28px 24px 80px; }
+
+/* Accent palette helpers */
+.tag-authentic {
+  background: rgba(91,127,232,0.12);
+  color: var(--blue-accent);
+  border: 1px solid rgba(91,127,232,0.25);
+}
+.tag-academic {
+  background: rgba(168,168,217,0.15);
+  color: #7D6EA3;
+  border: 1px solid rgba(168,168,217,0.3);
+}
+.tag-standard {
+  background: rgba(10,14,26,0.06);
+  color: rgba(10,14,26,0.7);
+  border: 1px solid rgba(10,14,26,0.1);
+}
+.tag-warn {
+  background: rgba(229,56,43,0.08);
+  color: var(--red-warn);
+  border: 1px solid rgba(229,56,43,0.2);
+}

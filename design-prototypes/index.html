@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MemeFlow · Design Prototypes</title>
+<link rel="preconnect" href="https://api.fontshare.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&f[]=satoshi@400,500,600,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Serif+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .cover { padding: 38px 40px; margin: 16px 0 28px; }
+  .cover h1 {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-size: clamp(40px, 6vw, 64px);
+    line-height: 1.02;
+    letter-spacing: -0.04em;
+    font-weight: 600;
+    margin: 6px 0 14px 0;
+  }
+  .cover h1 em { font-style: italic; color: var(--blue-accent); font-weight: 400; }
+  .cover .sub-en {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-size: 15px;
+    color: rgba(10,14,26,0.58);
+    margin-bottom: 4px;
+  }
+  .cover .sub-zh {
+    font-family: "Noto Serif SC", serif;
+    font-size: 14.5px;
+    color: rgba(10,14,26,0.72);
+    line-height: 1.85;
+    max-width: 680px;
+  }
+  .cover .chip-row { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .group-head {
+    display: flex; align-items: baseline; gap: 12px;
+    margin: 34px 0 12px;
+    padding: 0 6px;
+  }
+  .group-head::before {
+    content: ""; width: 18px; height: 1px;
+    background: rgba(10,14,26,0.35);
+    transform: translateY(-4px);
+  }
+  .group-head .en {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 15px;
+    color: rgba(10,14,26,0.65);
+  }
+  .group-head .zh {
+    font-family: "Noto Sans SC", sans-serif;
+    font-weight: 300; font-size: 11px; letter-spacing: 0.15em;
+    color: rgba(10,14,26,0.45);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+  }
+  @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+
+  .proto-card {
+    padding: 20px 22px;
+    display: flex; flex-direction: column;
+    min-height: 156px;
+    text-decoration: none;
+    color: inherit;
+    transition: transform .18s;
+  }
+  .proto-card:hover { transform: translateY(-3px); }
+  .proto-card .num {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-size: 11px;
+    color: rgba(10,14,26,0.4);
+    letter-spacing: 0.1em;
+    margin-bottom: 6px;
+  }
+  .proto-card .title-en {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 600;
+    font-size: 20px;
+    letter-spacing: -0.025em;
+  }
+  .proto-card .title-zh {
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(10,14,26,0.68);
+    margin: 0 0 10px;
+  }
+  .proto-card p {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: rgba(10,14,26,0.62);
+  }
+  .proto-card .arrow {
+    margin-top: auto; padding-top: 14px;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 12.5px;
+    color: var(--blue-accent);
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div>
+        <span class="brand">MemeFlow</span>
+        <span class="version">DESIGN-PROTO · v0.2.15</span>
+      </div>
+      <span style="font-family:'Clash Display';font-style:italic;font-size:13px;color:rgba(10,14,26,0.55)">
+        全站 17 页设计样板
+      </span>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <div class="eyebrow"><span class="en">design prototypes</span><span class="zh">设计样板总览 · 全站全功能</span></div>
+
+    <section class="glass-thick cover">
+      <div class="sub-en">— white-blue ambient · liquid glass · clash display</div>
+      <h1>把<em>翻译页</em>的设计语言<br>铺到全站 <em>17 个</em>页面</h1>
+      <p class="sub-zh">
+        从登录、主壳（Header / Tab / 启动 / 错误 / 离线），到 5 个主 Tab 页（翻译 / 语法 / 梗百科 / 单词本 / 复习 / 课堂），再到用户私域（设置 / 个人 / 新手任务 / 头像裁剪）、付费漏斗、社区（排行榜 / 贡献准则 / 新手引导）、弹窗集合、Admin 审核后台。每页都按源码真实功能画，不是 mockup。
+      </p>
+      <div class="chip-row">
+        <span class="glass-chip zh">#5B7FE8 强调色</span>
+        <span class="glass-chip en">Clash Display</span>
+        <span class="glass-chip zh">思源宋体正文</span>
+        <span class="glass-chip en">glass-thick · blur 80</span>
+        <span class="glass-chip zh">iOS 26 液态玻璃</span>
+      </div>
+    </section>
+
+    <!-- 1. ENTRY / AUTH -->
+    <div class="group-head"><span class="en">entry & auth</span><span class="zh">入口</span></div>
+    <div class="grid">
+      <a class="glass-thick proto-card" href="login.html">
+        <span class="num">00 / LOGIN</span>
+        <div class="title-en">Sign In</div>
+        <div class="title-zh">登录页</div>
+        <p>Google / 邮箱 / 邀请码三种登录 · 注册 · 忘记密码 · 维护模式</p>
+        <span class="arrow">open →</span>
+      </a>
+      <a class="glass-thick proto-card" href="shell.html">
+        <span class="num">01 / SHELL</span>
+        <div class="title-en">App Shell</div>
+        <div class="title-zh">全局壳层</div>
+        <p>Header · 6-Tab 栏 · 更新日志 toast · Splash · 错误页 · 离线条</p>
+        <span class="arrow">open →</span>
+      </a>
+    </div>
+
+    <!-- 2. MAIN 6 TABS -->
+    <div class="group-head"><span class="en">main tabs</span><span class="zh">6 个主 Tab 页</span></div>
+    <div class="grid">
+      <a class="glass-thick proto-card" href="grammar.html">
+        <span class="num">02 / GRAMMAR</span>
+        <div class="title-en">Grammar Check</div>
+        <div class="title-zh">语法检查</div>
+        <p>输入 · 红绿 edit · 风格建议 · 有错 / 无错两态</p>
+        <span class="arrow">open →</span>
+      </a>
+      <a class="glass-thick proto-card" href="slang-dictionary.html">
+        <span class="num">03 / SLANG</span>
+        <div class="title-en">Slang Dictionary</div>
+        <div class="title-zh">梗百科</div>
+        <p>每日挑战 · 搜索 · 热榜 · 词条详情（评论/举报/朗读）· AI 投稿</p>
+        <span class="arrow">open →</span>
+      </a>
+      <a class="glass-thick proto-card" href="wordbook.html">
+        <span class="num">04 / WORDBOOK</span>
+        <div class="title-en">Wordbook</div>
+        <div class="title-zh">单词本</div>
+        <p>文件夹 · 筛选 · 词卡 · 批量多选 · 词条详情页</p>
+        <span class="arrow">open →</span>
+      </a>
+      <a class="glass-thick proto-card" href="review.html">
+        <span class="num">05 / REVIEW</span>
+        <div class="title-en">Spaced Review</div>
+        <div class="title-zh">复习</div>
+        <p>翻牌 · 四色难度按钮 · 多义项 · AI 对话 · 空态 · 付费墙</p>
+        <span class="arrow">open →</span>
+      </a>
+      <a class="glass-thick proto-card" href="classroom.html">
+        <span class="num">06 / CLASSROOM</span>
+        <div class="title-en">Classroom Live</div>
+        <div class="title-zh">课堂同传</div>
+        <p>整段/实时两模式 · Live notes · 5 种状态 · 合规弹窗</p>
+        <span class="arrow">open →</span>
+      </a>
+    </div>
+
+    <!-- 3. USER PRIVATE -->
+    <div class="group-head"><span class="en">user private</span><span class="zh">用户私域</span></div>
+    <div class="grid">
+      <a class="glass-thick proto-card" href="user.html">
+        <span class="num">07 / USER</span>
+        <div class="title-en">User</div>
+        <div class="title-zh">个人中心合集</div>
+        <p>设置 · 微信 QR · 个人资料（铜银金徽）· 订阅 · 新手任务 · 头像裁剪</p>
+        <span class="arrow">open →</span>
+      </a>
+      <a class="glass-thick proto-card" href="paywall.html">
+        <span class="num">08 / PAYWALL</span>
+        <div class="title-en">Paywall</div>
+        <div class="title-zh">付费漏斗</div>
+        <p>完整支付页（月/年切换 · 4 种支付）· 成功态 · 4 种触发弹窗</p>
+        <span class="arrow">open →</span>
+      </a>
+    </div>
+
+    <!-- 4. COMMUNITY -->
+    <div class="group-head"><span class="en">community</span><span class="zh">社区</span></div>
+    <div class="grid">
+      <a class="glass-thick proto-card" href="leaderboard.html">
+        <span class="num">09 / LEADERBOARD</span>
+        <div class="title-en">Leaderboard</div>
+        <div class="title-zh">排行榜</div>
+        <p>小组 / 全球 / 月榜 · 倒计时 · 金银铜牌 · 连击徽章</p>
+        <span class="arrow">open →</span>
+      </a>
+      <a class="glass-thick proto-card" href="guidelines.html">
+        <span class="num">10 / GUIDELINES</span>
+        <div class="title-en">Guidelines & Onboarding</div>
+        <div class="title-zh">贡献准则 & 投稿引导</div>
+        <p>3 大类规则 · 好/坏示例对比 · 6 步投稿向导</p>
+        <span class="arrow">open →</span>
+      </a>
+    </div>
+
+    <!-- 5. MODALS & ADMIN -->
+    <div class="group-head"><span class="en">modals & admin</span><span class="zh">弹窗与后台</span></div>
+    <div class="grid">
+      <a class="glass-thick proto-card" href="modals.html">
+        <span class="num">11 / MODALS</span>
+        <div class="title-en">Modals</div>
+        <div class="title-zh">弹窗合集</div>
+        <p>课堂笔记列表 · 会话详情 · 3 种删除确认（词/文件夹/贡献）</p>
+        <span class="arrow">open →</span>
+      </a>
+      <a class="glass-thick proto-card" href="admin.html">
+        <span class="num">12 / ADMIN</span>
+        <div class="title-en">Admin Panel</div>
+        <div class="title-zh">管理后台</div>
+        <p>待审核 · 举报处理 · 批量通过/拒绝 · 数据修复 · 批量导入</p>
+        <span class="arrow">open →</span>
+      </a>
+    </div>
+  </main>
+</body>
+</html>

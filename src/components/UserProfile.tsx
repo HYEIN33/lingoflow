@@ -2,12 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as Sentry from '@sentry/react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
-import { Settings, Edit2, Camera, X, Bell, LogOut, Check, Loader2, Award, Flame, Star, MessageSquare } from 'lucide-react';
+import { Settings, Edit2, Camera, X, Bell, LogOut, Check, Loader2, Award, Flame, Star, MessageSquare, Download, Sparkles, ChevronRight, Zap } from 'lucide-react';
 import { doc, updateDoc, collection, query, where, orderBy, onSnapshot, getDocs } from 'firebase/firestore';
 import { db, auth, storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { updateProfile } from 'firebase/auth';
 import { UserProfile as UserProfileType } from '../App';
+import AvatarCropperModal from './AvatarCropperModal';
+import OnboardingChecklistModal from './OnboardingChecklistModal';
 
 // Achievement Badge System — game-quality metallic medals
 // Reference: 3D Interactive Badge (dev.to), Genshin Impact achievement UI
@@ -67,10 +69,90 @@ const badgeStyles = `
 `;
 let badgeStylesInjected = false;
 
-export function AchievementBadge({ achievement, unlocked, size = 'md' }: { achievement: typeof ACHIEVEMENTS[0], unlocked: boolean, size?: 'sm' | 'md' | 'lg' }) {
-  const px = size === 'sm' ? 44 : size === 'lg' ? 72 : 58;
-  const fontSize = size === 'sm' ? 14 : size === 'lg' ? 24 : 18;
-  const metal = TIER_METAL[achievement.tier];
+/**
+ * AchievementBadge — redesigned 2026-04-21.
+ *
+ * Previous: round metal coin with an embossed 初/观/连/媒/编/神 Chinese
+ * character. Felt like a cheap gamified sticker and clashed with the
+ * liquid-glass + Clash Display brand language.
+ *
+ * New: hex glass shield. Bronze = warm white glass + amber rim; silver =
+ * cold blue glass + blue rim; gold = deep navy glass + conic gold rim with
+ * ambient glow + gentle float. Icons use lucide glyphs (star / eye / zap /
+ * image / pencil / sparkles) per achievement semantic. Locked state is a
+ * frosted hex with a lock icon.
+ *
+ * The `achievement.symbol` field is ignored — we now map by id.
+ */
+const ACHIEVEMENT_ICONS: Record<string, (size: number) => React.ReactNode> = {
+  apprentice: (s) => (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l2.5 6.5L21 10l-5 4.5L17 22l-5-3-5 3 1-7.5L3 10l6.5-1.5z"/></svg>
+  ),
+  observer: (s) => (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+  ),
+  streak7: (s) => (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+  ),
+  multimedia: (s) => (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>
+  ),
+  expert: (s) => (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
+  ),
+  legend: (s) => (
+    <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 3 1.5 3L11 7 8 9l1 4-3-2-3 2 1-4-3-2 3.5-1L6 3z"/><path d="m18 3 1.5 3L23 7l-3 2 1 4-3-2-3 2 1-4-3-2 3.5-1L18 3z"/><path d="M12 14v8"/><path d="m9 20 3-2 3 2"/></svg>
+  ),
+};
+
+const hexClipStyle: React.CSSProperties = {
+  clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)',
+};
+
+const hexGlassByTier = {
+  bronze: {
+    rim: 'linear-gradient(135deg, #E8C088 0%, #FFF5E4 40%, #C49A5C 100%)',
+    glass: 'linear-gradient(135deg, rgba(255,251,244,0.92) 0%, rgba(248,238,223,0.68) 100%), radial-gradient(ellipse at 30% 25%, rgba(224,192,148,0.45) 0%, transparent 60%)',
+    icon: '#5C3A0A',
+    shadow: '0 8px 20px rgba(200,140,60,0.22)',
+    glow: false,
+  },
+  silver: {
+    rim: 'linear-gradient(135deg, #89A3F0 0%, #FFFFFF 45%, #5B7FE8 100%)',
+    glass: 'linear-gradient(135deg, rgba(236,242,255,0.92) 0%, rgba(210,220,245,0.68) 100%), radial-gradient(ellipse at 30% 25%, rgba(91,127,232,0.45) 0%, transparent 60%)',
+    icon: '#5B7FE8',
+    shadow: '0 8px 20px rgba(91,127,232,0.22)',
+    glow: false,
+  },
+  gold: {
+    rim: 'conic-gradient(from 135deg, #FFE293 0deg, #FFFFFF 60deg, #FFCA5A 120deg, #FFE293 220deg, #FFFFFF 320deg, #FFE293 360deg)',
+    glass: 'linear-gradient(135deg, rgba(30,40,80,0.92) 0%, rgba(10,14,26,0.85) 100%), radial-gradient(ellipse at 30% 25%, rgba(255,215,130,0.35) 0%, transparent 55%), radial-gradient(ellipse at 70% 80%, rgba(91,127,232,0.5) 0%, transparent 55%)',
+    icon: '#FFE8A8',
+    shadow: '0 8px 20px rgba(91,127,232,0.22)',
+    glow: true,
+  },
+} as const;
+
+// Map DHH's tier names to the new hex-glass tiers
+const TIER_MAP: Record<string, keyof typeof hexGlassByTier> = {
+  bronze: 'bronze',
+  silver: 'silver',
+  gold: 'gold',
+};
+
+export function AchievementBadge({
+  achievement,
+  unlocked,
+  size = 'md',
+}: {
+  achievement: typeof ACHIEVEMENTS[0];
+  unlocked: boolean;
+  size?: 'sm' | 'md' | 'lg';
+}) {
+  // Sizes: hex shield is taller than it is wide (6:7 ratio from the polygon)
+  const width = size === 'sm' ? 56 : size === 'lg' ? 96 : 72;
+  const height = Math.round(width * (7 / 6));
+  const iconSize = size === 'sm' ? 20 : size === 'lg' ? 32 : 26;
 
   if (!badgeStylesInjected && typeof document !== 'undefined') {
     const el = document.createElement('style');
@@ -79,105 +161,124 @@ export function AchievementBadge({ achievement, unlocked, size = 'md' }: { achie
     badgeStylesInjected = true;
   }
 
+  const iconRenderer = ACHIEVEMENT_ICONS[achievement.id];
+
   if (!unlocked) {
     return (
-      <div style={{ width: px, height: px }} className="rounded-full relative">
-        <div className="absolute inset-0 rounded-full" style={{
-          background: 'conic-gradient(from 45deg, #D1D5DB, #E5E7EB, #D1D5DB, #9CA3AF, #E5E7EB, #D1D5DB)',
-          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-        }} />
-        <div className="absolute inset-[3px] rounded-full" style={{
-          background: 'radial-gradient(ellipse at 30% 20%, #F9FAFB, #E5E7EB 50%, #D1D5DB)',
-          boxShadow: 'inset 0 1px 3px rgba(255,255,255,0.5), inset 0 -1px 3px rgba(0,0,0,0.1)',
-        }} />
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span style={{ fontSize, color: '#9CA3AF', fontFamily: "'PingFang SC', 'Noto Sans SC', serif", fontWeight: 800 }} className="select-none">{achievement.symbol}</span>
+      <div
+        style={{ width, height, filter: 'drop-shadow(0 3px 8px rgba(10,14,26,0.06))' }}
+        className="relative transition-transform"
+      >
+        {/* frosted rim */}
+        <div
+          style={{
+            ...hexClipStyle,
+            position: 'absolute',
+            inset: 0,
+            background: 'linear-gradient(135deg, rgba(10,14,26,0.15), rgba(255,255,255,0.6), rgba(10,14,26,0.15))',
+            padding: '1.5px',
+          }}
+        >
+          <div
+            style={{
+              ...hexClipStyle,
+              position: 'absolute',
+              inset: '1.5px',
+              background:
+                'linear-gradient(135deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.3) 100%)',
+              backdropFilter: 'blur(30px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(30px) saturate(180%)',
+            }}
+          />
         </div>
-        <div className="absolute inset-0 rounded-full bg-white/30" />
+        {/* lock icon */}
+        <div className="absolute inset-0 flex items-center justify-center" style={{ color: 'rgba(10,14,26,0.35)' }}>
+          <svg width={iconSize - 2} height={iconSize - 2} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </div>
+        {/* gentle gloss */}
+        <div
+          style={{
+            ...hexClipStyle,
+            position: 'absolute',
+            inset: 0,
+            background: 'linear-gradient(155deg, rgba(255,255,255,0.35) 0%, rgba(255,255,255,0) 45%)',
+            mixBlendMode: 'screen',
+            pointerEvents: 'none',
+          }}
+        />
       </div>
     );
   }
 
+  const tierKey = TIER_MAP[achievement.tier] || 'bronze';
+  const tier = hexGlassByTier[tierKey];
+
   return (
     <div
       style={{
-        width: px, height: px,
-        animation: metal.glow ? 'medal-float 3s ease-in-out infinite' : undefined,
+        width,
+        height,
+        filter: `drop-shadow(${tier.shadow})`,
+        animation: tier.glow ? 'medal-float 4s ease-in-out infinite' : undefined,
       }}
-      className="rounded-full relative group cursor-pointer transition-transform hover:scale-110"
+      className="relative group cursor-pointer transition-transform hover:-translate-y-0.5"
     >
-      {/* Ambient glow (gold only) */}
-      {metal.glow && (
-        <div className="absolute -inset-[6px] rounded-full" style={{
-          animation: 'medal-glow 3s ease-in-out infinite',
-        }} />
+      {/* gold ambient glow */}
+      {tier.glow && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: '-8px',
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(255,215,130,0.25) 0%, transparent 60%)',
+            animation: 'medal-glow 4s ease-in-out infinite',
+            zIndex: -1,
+          }}
+        />
       )}
 
-      {/* Outer rim — conic gradient for spinning metal look */}
-      <div className="absolute inset-0 rounded-full" style={{
-        background: metal.rim,
-        boxShadow: metal.outer,
-      }} />
-
-      {/* Rim notch detail — dashed ring */}
-      <div className="absolute inset-[2px] rounded-full" style={{
-        border: '1px dashed rgba(255,255,255,0.25)',
-      }} />
-
-      {/* Face — radial gradient for convex 3D surface */}
-      <div className="absolute inset-[4px] rounded-full" style={{
-        background: metal.face,
-        boxShadow: metal.inset,
-      }} />
-
-      {/* Embossed inner ring */}
-      <div className="absolute inset-[8px] rounded-full" style={{
-        border: '0.5px solid rgba(255,255,255,0.3)',
-        boxShadow: 'inset 0 0.5px 0 rgba(255,255,255,0.2), 0 0.5px 0 rgba(0,0,0,0.1)',
-      }} />
-
-      {/* Specular highlight — top-left ellipse */}
-      <div className="absolute rounded-full" style={{
-        top: '8%', left: '12%', width: '45%', height: '25%',
-        background: 'radial-gradient(ellipse, rgba(255,255,255,0.6) 0%, transparent 70%)',
-        transform: 'rotate(-20deg)',
-      }} />
-
-      {/* Small bright dot highlight */}
-      <div className="absolute rounded-full" style={{
-        top: '14%', left: '20%', width: '12%', height: '8%',
-        background: 'rgba(255,255,255,0.8)',
-        filter: 'blur(1px)',
-        transform: 'rotate(-20deg)',
-      }} />
-
-      {/* Chinese character — embossed text */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <span className="select-none" style={{
-          fontSize, fontWeight: 900,
-          fontFamily: "'PingFang SC', 'Noto Sans SC', 'Microsoft YaHei', serif",
-          color: metal.text,
-          textShadow: metal.textShadow,
-          letterSpacing: '-0.5px',
-        }}>
-          {achievement.symbol}
-        </span>
+      {/* rim */}
+      <div
+        style={{
+          ...hexClipStyle,
+          position: 'absolute',
+          inset: 0,
+          background: tier.rim,
+          padding: '1.5px',
+        }}
+      >
+        {/* glass face */}
+        <div
+          style={{
+            ...hexClipStyle,
+            position: 'absolute',
+            inset: '1.5px',
+            background: tier.glass,
+            backdropFilter: 'blur(30px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(30px) saturate(180%)',
+          }}
+        />
       </div>
 
-      {/* Animated sweep shimmer (gold only) */}
-      {metal.glow && (
-        <div className="absolute inset-[4px] rounded-full overflow-hidden pointer-events-none">
-          <div style={{
-            position: 'absolute',
-            inset: '-50%',
-            width: '40%',
-            height: '200%',
-            background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.1) 30%, rgba(255,255,255,0.5) 50%, rgba(255,255,255,0.1) 70%, transparent 100%)',
-            animation: 'medal-shimmer 4s ease-in-out infinite',
-            mixBlendMode: 'overlay' as any,
-          }} />
-        </div>
-      )}
+      {/* icon */}
+      <div className="absolute inset-0 flex items-center justify-center" style={{ color: tier.icon }}>
+        {iconRenderer ? iconRenderer(iconSize) : null}
+      </div>
+
+      {/* specular highlight */}
+      <div
+        style={{
+          ...hexClipStyle,
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(155deg, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0) 45%)',
+          mixBlendMode: 'screen',
+          pointerEvents: 'none',
+        }}
+      />
     </div>
   );
 }
@@ -222,7 +323,82 @@ export default function UserProfile({
   onLogout?: () => void
 }) {
   const [activeTab, setActiveTab] = useState<'entries' | 'vocab' | 'activity'>('entries');
-  const [showSettings, setShowSettings] = useState(false);
+  // showSettings state removed — gear button now dispatches a global
+  // `memeflow:open-settings` event that SettingsModal listens for.
+  const [showChecklist, setShowChecklist] = useState(false);
+
+  // 新手任务 checklist 进度 —— 来源优先级：
+  //   1. localStorage(`onboarding_checklist`)：OnboardingChecklist 组件沿用的 store，
+  //      translate/slang/wordbook/review 页面在用户完成动作时会调 markOnboardingStep
+  //   2. userProfile 字段作为兜底：有词条计数 / hasCompletedOnboarding 就认为对应项已完成
+  //   3. 字段都没有 → done = false（按未完成展示）
+  // 设计：读一次 + 监听 onboarding-update 自定义事件（OnboardingChecklist 里 dispatch 过）
+  const [onboardLocal, setOnboardLocal] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem('onboarding_checklist');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    const handler = () => {
+      try {
+        const raw = localStorage.getItem('onboarding_checklist');
+        setOnboardLocal(raw ? JSON.parse(raw) : {});
+      } catch {
+        setOnboardLocal({});
+      }
+    };
+    window.addEventListener('onboarding-update', handler);
+    window.addEventListener('storage', handler); // 同 tab 跨组件变化靠 onboarding-update；跨 tab 靠 storage
+    return () => {
+      window.removeEventListener('onboarding-update', handler);
+      window.removeEventListener('storage', handler);
+    };
+  }, []);
+
+  const allDone = !!userProfile?.hasCompletedOnboarding;
+  const checklistItems = [
+    {
+      key: 'search_slang',
+      label: '搜索一个梗',
+      labelEn: 'Search a slang',
+      done: allDone || !!onboardLocal['search_slang'],
+    },
+    {
+      key: 'translate_word',
+      label: '翻译一个单词',
+      labelEn: 'Translate a word',
+      done:
+        allDone ||
+        !!onboardLocal['translate_word'] ||
+        (userProfile?.translationCount ?? 0) > 0,
+    },
+    {
+      key: 'save_wordbook',
+      label: '保存到单词本',
+      labelEn: 'Save to wordbook',
+      done: allDone || !!onboardLocal['save_wordbook'],
+    },
+    {
+      key: 'contribute_entry',
+      label: '贡献一个词条',
+      labelEn: 'Contribute an entry',
+      done:
+        allDone ||
+        !!onboardLocal['contribute_entry'] ||
+        (userProfile?.approvedSlangCount ?? 0) >= 1,
+    },
+    {
+      key: 'complete_review',
+      label: '完成一次复习',
+      labelEn: 'Complete a review',
+      done: allDone || !!onboardLocal['complete_review'],
+    },
+  ];
+  const checklistDone = checklistItems.filter((i) => i.done).length;
+  const checklistTotal = checklistItems.length;
 
   // Editable fields
   const [isEditingName, setIsEditingName] = useState(false);
@@ -230,6 +406,7 @@ export default function UserProfile({
   const [errorMsg, setErrorMsg] = useState('');
   const [isSavingName, setIsSavingName] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
   // Badge equip
@@ -275,24 +452,31 @@ export default function UserProfile({
     return () => unsub();
   }, [user]);
 
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
     if (file.size > 2 * 1024 * 1024) {
       toast.error(uiLang === 'zh' ? '图片不能超过 2MB' : 'Image must be less than 2MB');
       return;
     }
+    // 打开裁剪 modal；真正的 storage 上传在 handleAvatarConfirm 里做
+    setPendingAvatarFile(file);
+    // 清掉 input value，保证同一张图再次选中时仍触发 change
+    if (avatarInputRef.current) avatarInputRef.current.value = '';
+  };
 
+  const handleAvatarConfirm = async (blob: Blob) => {
+    if (!user) return;
     setIsUploadingAvatar(true);
     setErrorMsg('');
     try {
-      const ext = file.name.split('.').pop();
-      const storageRef = ref(storage, `avatars/${user.uid}.${ext}`);
-      await uploadBytes(storageRef, file);
+      const storageRef = ref(storage, `avatars/${user.uid}.jpg`);
+      await uploadBytes(storageRef, blob);
       const url = await getDownloadURL(storageRef);
       await updateProfile(user, { photoURL: url });
       await updateDoc(doc(db, 'users', user.uid), { photoURL: url });
       setLocalPhotoURL(url);
+      setPendingAvatarFile(null);
     } catch (error) {
       console.error('Avatar upload failed:', error);
       setErrorMsg(uiLang === 'zh' ? '头像上传失败，请重试' : 'Avatar upload failed, please try again');
@@ -342,32 +526,61 @@ export default function UserProfile({
 
   const unlockedAchievements = ACHIEVEMENTS.filter(a => userProfile && a.condition(userProfile));
 
+  // 身份副标题 — 优先用已装备成就的中英文名；没装备就回退到"梗新人 / Slang Newbie"
+  const profileTitle = equippedAchievement
+    ? (uiLang === 'zh' ? equippedAchievement.name : equippedAchievement.nameEn)
+    : (uiLang === 'zh' ? '梗新人' : 'Slang Newbie');
+
   return (
     <div className="space-y-6">
-      {/* Profile Header Card */}
-      <div className="bg-white/60 backdrop-blur-md border border-white/60 rounded-3xl p-6 shadow-sm">
-        <div className="flex items-start gap-5">
-          {/* Avatar */}
-          <div className="relative group">
-            <div className="w-20 h-20 rounded-2xl bg-[rgba(91,127,232,0.1)] overflow-hidden shadow-md">
+      {/* ============ PROFILE MAIN CARD (glass-thick) ============ */}
+      <div className="glass-thick" style={{ borderRadius: 28, overflow: 'hidden' }}>
+        {/* ---- profile-head ---- */}
+        <div
+          className="relative flex items-center flex-wrap"
+          style={{ padding: '32px 36px 28px', paddingRight: 60, gap: 24 }}
+        >
+          {/* Avatar — 92×92 圆形蓝渐变 + 右下 camera-btn */}
+          <div className="relative shrink-0">
+            <div
+              className="rounded-full text-white inline-flex items-center justify-center overflow-hidden"
+              style={{
+                width: 92,
+                height: 92,
+                background: 'linear-gradient(135deg, #89A3F0, #5B7FE8)',
+                fontFamily: '"Clash Display", system-ui, sans-serif',
+                fontWeight: 700,
+                fontSize: 38,
+                boxShadow: '0 8px 20px rgba(91,127,232,0.35)',
+              }}
+            >
               {photoURL ? (
                 <img src={photoURL} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-2xl font-bold text-[#5B7FE8]">
-                  {displayName.charAt(0).toUpperCase()}
-                </div>
+                <span>{displayName.charAt(0).toUpperCase()}</span>
               )}
             </div>
             {isOwnProfile && (
               <>
                 <button
                   onClick={() => avatarInputRef.current?.click()}
-                  className="absolute inset-0 bg-black/40 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                  className="absolute rounded-full inline-flex items-center justify-center"
+                  title={uiLang === 'zh' ? '更换头像' : 'Change avatar'}
+                  style={{
+                    bottom: -4,
+                    right: -4,
+                    width: 32,
+                    height: 32,
+                    background: '#fff',
+                    border: '2px solid rgba(91,127,232,0.25)',
+                    color: 'var(--blue-accent)',
+                    cursor: 'pointer',
+                  }}
                 >
                   {isUploadingAvatar ? (
-                    <Loader2 className="w-6 h-6 text-white animate-spin" />
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   ) : (
-                    <Camera className="w-6 h-6 text-white" />
+                    <Camera className="w-3.5 h-3.5" />
                   )}
                 </button>
                 <input
@@ -381,9 +594,10 @@ export default function UserProfile({
             )}
           </div>
 
-          {/* Info */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
+          {/* Meta */}
+          <div className="flex-1 min-w-[240px]">
+            {/* name-row: h1 + edit-icon + Pro badge */}
+            <div className="flex items-center gap-[10px] mb-1.5">
               {isEditingName ? (
                 <div className="flex items-center gap-2">
                   <input
@@ -391,7 +605,7 @@ export default function UserProfile({
                     value={editName}
                     onChange={e => setEditName(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleSaveName()}
-                    className="bg-white border border-[rgba(91,127,232,0.4)] rounded-lg px-2 py-1 text-lg font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#5B7FE8] w-40"
+                    className="bg-white border border-[rgba(91,127,232,0.4)] rounded-lg px-2 py-1 text-lg font-bold text-[var(--ink)] focus:outline-none focus:ring-2 focus:ring-[#5B7FE8] w-40"
                     maxLength={20}
                     placeholder={displayName}
                   />
@@ -402,24 +616,31 @@ export default function UserProfile({
                   >
                     {isSavingName ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                   </button>
-                  <button onClick={() => setIsEditingName(false)} className="p-1 text-gray-400 hover:bg-gray-50 rounded-lg">
+                  <button onClick={() => setIsEditingName(false)} className="p-1 text-[var(--ink-muted)] hover:bg-[rgba(10,14,26,0.04)] rounded-lg">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               ) : (
                 <>
-                  <h2 className="text-xl font-bold text-gray-900 truncate flex items-center gap-2">
+                  <h1
+                    className="m-0 truncate"
+                    style={{
+                      fontFamily: '"Clash Display", system-ui, sans-serif',
+                      fontWeight: 700,
+                      fontSize: 28,
+                      letterSpacing: '-0.03em',
+                    }}
+                  >
                     {displayName}
-                    {equippedAchievement && (
-                      <span className="shrink-0 scale-50 origin-left -ml-1" title={uiLang === 'zh' ? equippedAchievement.name : equippedAchievement.nameEn}>
-                        <AchievementBadge achievement={equippedAchievement} unlocked={true} size="sm" />
-                      </span>
-                    )}
-                  </h2>
+                  </h1>
                   {isOwnProfile && (
                     <button
                       onClick={() => { setEditName(displayName); setIsEditingName(true); }}
-                      className="p-1 text-gray-400 hover:text-[#5B7FE8] hover:bg-[rgba(91,127,232,0.08)] rounded-lg transition-colors"
+                      className="p-1 transition-colors"
+                      style={{ background: 'transparent', border: 0, color: 'rgba(10,14,26,0.35)', cursor: 'pointer' }}
+                      title={uiLang === 'zh' ? '编辑名字' : 'Edit name'}
+                      onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--blue-accent)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(10,14,26,0.35)')}
                     >
                       <Edit2 className="w-3.5 h-3.5" />
                     </button>
@@ -427,67 +648,118 @@ export default function UserProfile({
                 </>
               )}
               {userProfile?.isPro && (
-                <span className="px-2 py-0.5 bg-gradient-to-r from-[#F0D78A] to-[#E88B7D] text-white text-[10px] font-black rounded-full">Pro</span>
+                <span
+                  className="inline-flex items-center gap-1 text-white"
+                  style={{
+                    padding: '3px 10px',
+                    borderRadius: 9999,
+                    background: 'linear-gradient(135deg, #F0D78A, #E88B7D)',
+                    fontFamily: '"Clash Display", system-ui, sans-serif',
+                    fontStyle: 'italic',
+                    fontWeight: 700,
+                    fontSize: 11,
+                    letterSpacing: '0.02em',
+                  }}
+                >
+                  <Zap className="w-2.5 h-2.5" fill="currentColor" strokeWidth={0} />
+                  Pro
+                </span>
               )}
             </div>
 
-            {/* Title badges */}
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              {userProfile?.titleLevel1 && (
-                <span className="px-2 py-0.5 bg-[rgba(91,127,232,0.1)] text-[#5B7FE8] text-xs font-medium rounded-lg border border-[rgba(91,127,232,0.3)]">{userProfile.titleLevel1}</span>
-              )}
-              {userProfile?.titleLevel2 && (
-                <span className="px-2 py-0.5 bg-[rgba(168,168,217,0.1)] text-[#7D6EA3] text-xs font-medium rounded-lg border border-[rgba(168,168,217,0.3)]">{userProfile.titleLevel2}</span>
-              )}
-              {userProfile?.titleLevel3 && (
-                <span className="px-2 py-0.5 bg-amber-50 text-amber-600 text-xs font-medium rounded-lg border border-amber-200">{userProfile.titleLevel3}</span>
-              )}
+            {/* title 身份副标题 */}
+            <p
+              className="m-0 mb-[10px]"
+              style={{
+                fontFamily: '"Noto Serif SC", serif',
+                fontSize: 13,
+                color: 'var(--blue-accent)',
+              }}
+            >
+              {profileTitle}
+            </p>
+
+            {/* ruby-row — 4 个指标 */}
+            <div className="flex flex-wrap gap-x-[18px] gap-y-[6px]">
+              {(() => {
+                const rubyStrong: React.CSSProperties = {
+                  fontFamily: '"Clash Display", system-ui, sans-serif',
+                  fontWeight: 700,
+                  fontSize: 18,
+                  color: 'var(--ink)',
+                  letterSpacing: '-0.02em',
+                };
+                const rubyWrap: React.CSSProperties = {
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  gap: 6,
+                  fontFamily: '"Noto Serif SC", serif',
+                  fontSize: 13,
+                  color: 'rgba(10,14,26,0.72)',
+                };
+                return (
+                  <>
+                    <div style={rubyWrap}>
+                      <strong style={rubyStrong}>{userProfile?.approvedSlangCount || 0}</strong>
+                      {uiLang === 'zh' ? '贡献' : 'contributions'}
+                    </div>
+                    <div style={rubyWrap}>
+                      <strong style={{ ...rubyStrong, color: '#E55B28' }}>{userProfile?.currentStreak || 0}</strong>
+                      {uiLang === 'zh' ? '天连续' : 'day streak'}
+                    </div>
+                    <div style={rubyWrap}>
+                      <strong style={rubyStrong}>{userProfile?.reputationScore ?? 100}</strong>
+                      {uiLang === 'zh' ? '声望' : 'rep'}
+                    </div>
+                    <div style={rubyWrap}>
+                      <strong style={rubyStrong}>{unlockedAchievements.length}</strong>
+                      {uiLang === 'zh' ? '徽章' : 'badges'}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
-            {/* Quick Stats Row */}
-            <div className="flex items-center gap-4 text-sm text-gray-500">
-              <span className="flex items-center gap-1"><MessageSquare className="w-3.5 h-3.5" /> {userProfile?.approvedSlangCount || 0} {uiLang === 'zh' ? '词条' : 'entries'}</span>
-              <span className="flex items-center gap-1"><Flame className="w-3.5 h-3.5 text-orange-400" /> {userProfile?.currentStreak || 0} {uiLang === 'zh' ? '天连续' : 'day streak'}</span>
-            </div>
             {errorMsg && (
-              <p className="text-red-500 text-xs mt-2 bg-red-50 px-3 py-1.5 rounded-lg">{errorMsg}</p>
+              <p className="text-[var(--red-warn)] text-xs mt-2 bg-[rgba(229,56,43,0.08)] px-3 py-1.5 rounded-lg">{errorMsg}</p>
             )}
           </div>
 
-          {/* Settings */}
+          {/* Settings 齿轮 — absolute 右上。点击派发全局事件 memeflow:open-settings，
+              由 header 的 SettingsModal 监听并打开，避免两份 Settings UI 并存。 */}
           {isOwnProfile && (
-            <button onClick={() => setShowSettings(true)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-xl transition-colors">
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('memeflow:open-settings'))}
+              className="absolute p-2 text-[var(--ink-muted)] hover:text-[var(--ink-body)] hover:bg-[rgba(10,14,26,0.04)] rounded-xl transition-colors"
+              style={{ top: 18, right: 18 }}
+              title={uiLang === 'zh' ? '设置' : 'Settings'}
+            >
               <Settings className="w-5 h-5" />
             </button>
           )}
         </div>
-      </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: uiLang === 'zh' ? '词条贡献' : 'Contributions', value: userProfile?.approvedSlangCount || 0, color: 'text-[#5B7FE8]', bg: 'bg-[rgba(91,127,232,0.08)]' },
-          { label: uiLang === 'zh' ? '信誉分' : 'Reputation', value: userProfile?.reputationScore || 100, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-          { label: uiLang === 'zh' ? '连续天数' : 'Streak', value: userProfile?.currentStreak || 0, color: 'text-orange-600', bg: 'bg-orange-50', suffix: uiLang === 'zh' ? ' 天' : 'd' },
-        ].map((stat, i) => (
-          <div key={i} className={`${stat.bg} border border-white/60 rounded-2xl p-4 text-center`}>
-            <p className="text-xs font-medium text-gray-500 mb-1">{stat.label}</p>
-            <p className={`text-2xl font-bold ${stat.color}`}>
-              <CountUp to={stat.value} />{stat.suffix}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {/* Achievement Badges */}
-      <div className="bg-white/60 backdrop-blur-md border border-white/60 rounded-3xl p-6 shadow-sm">
-        <h3 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
-          <Award className="w-4 h-4 text-amber-500" />
-          {uiLang === 'zh' ? '成就勋章' : 'Achievements'}
-          <span className="text-xs font-normal text-gray-400">{unlockedAchievements.length}/{ACHIEVEMENTS.length}</span>
-        </h3>
-        <p className="text-[10px] text-gray-400 mb-3">{uiLang === 'zh' ? '点击勋章佩戴 / 取消佩戴' : 'Click a badge to equip / unequip'}</p>
-        <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+        {/* ---- Achievement Badges (合并进主卡，border-top 分段) ---- */}
+        <div style={{ padding: '24px 36px 28px', borderTop: '1px solid var(--ink-hairline)' }}>
+        <div className="flex items-baseline justify-between flex-wrap gap-x-3 gap-y-1 mb-[18px]">
+          <h3
+            className="m-0 inline-flex items-center gap-2 whitespace-nowrap"
+            style={{
+              fontFamily: '"Clash Display", system-ui, sans-serif',
+              fontStyle: 'italic',
+              fontWeight: 500,
+              fontSize: 15,
+              color: 'rgba(10,14,26,0.68)',
+            }}
+          >
+            — {uiLang === 'zh' ? 'achievements · 成就徽章' : 'achievements'}
+            <span className="text-[11px] font-mono-meta font-semibold tracking-[0.08em] text-[var(--ink-muted)] ml-1">{unlockedAchievements.length}/{ACHIEVEMENTS.length}</span>
+          </h3>
+          <span style={{ fontFamily: '"Noto Serif SC", serif', fontSize: 12.5, color: 'rgba(10,14,26,0.68)' }}>
+            {uiLang === 'zh' ? '点击徽章装备' : 'Click a badge to equip'}
+          </span>
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-[18px]">
           {ACHIEVEMENTS.map((achievement) => {
             const unlocked = userProfile ? achievement.condition(userProfile) : false;
             const isEquipped = equippedBadge === achievement.id;
@@ -496,15 +768,15 @@ export default function UserProfile({
                 key={achievement.id}
                 onClick={() => unlocked && handleEquipBadge(achievement.id)}
                 className={`flex flex-col items-center gap-1.5 group relative rounded-2xl p-2 transition-all ${
-                  isEquipped ? 'bg-[rgba(91,127,232,0.08)] ring-2 ring-[rgba(91,127,232,0.5)] shadow-sm' : 'hover:bg-gray-50'
+                  isEquipped ? 'bg-[rgba(91,127,232,0.08)] ring-2 ring-[rgba(91,127,232,0.5)] shadow-sm' : 'hover:bg-[rgba(10,14,26,0.04)]'
                 } ${!unlocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}
               >
                 <AchievementBadge achievement={achievement} unlocked={unlocked} size="md" />
-                <span className={`text-[10px] font-medium text-center leading-tight ${isEquipped ? 'text-[#5B7FE8] font-bold' : unlocked ? 'text-gray-700' : 'text-gray-400'}`}>
+                <span className={`font-zh-serif text-[13px] font-medium text-center leading-tight ${isEquipped ? 'text-[#5B7FE8] font-bold' : unlocked ? 'text-[var(--ink-body)]' : 'text-[var(--ink-muted)]'}`}>
                   {uiLang === 'zh' ? achievement.name : achievement.nameEn}
                 </span>
                 {!unlocked && (
-                  <span className="text-[9px] text-gray-400 text-center leading-tight">{achievement.requirement}</span>
+                  <span className="text-[9px] text-[var(--ink-muted)] text-center leading-tight">{achievement.requirement}</span>
                 )}
                 {isEquipped && (
                   <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#5B7FE8] rounded-full flex items-center justify-center">
@@ -512,7 +784,7 @@ export default function UserProfile({
                   </span>
                 )}
                 {/* Tooltip */}
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-28 bg-gray-800 text-white text-[10px] text-center p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-28 bg-[var(--ink)] text-white text-[10px] text-center p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
                   {isEquipped ? (uiLang === 'zh' ? '已佩戴 · 点击取消' : 'Equipped · Click to remove') : unlocked ? (uiLang === 'zh' ? '点击佩戴' : 'Click to equip') : achievement.requirement}
                 </div>
               </button>
@@ -521,150 +793,381 @@ export default function UserProfile({
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="bg-white/60 backdrop-blur-md border border-white/60 rounded-3xl shadow-sm overflow-hidden">
-        <div className="flex border-b border-gray-100">
-          {[
-            { id: 'entries', label: uiLang === 'zh' ? '我的词条' : 'My Entries' },
-            { id: 'activity', label: uiLang === 'zh' ? '活动记录' : 'Activity' }
-          ].map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex-1 py-3 text-sm font-semibold transition-colors relative ${activeTab === tab.id ? 'text-[#5B7FE8]' : 'text-gray-400 hover:text-gray-600'}`}
-            >
-              {tab.label}
-              {activeTab === tab.id && (
-                <motion.div layoutId="profileTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#0A0E1A]" />
-              )}
-            </button>
-          ))}
-        </div>
-
-        <div className="p-4">
-          <AnimatePresence mode="wait">
-            {activeTab === 'entries' && (
-              <motion.div key="entries" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-3">
-                {entries.length === 0 ? (
-                  <div className="text-center py-8">
-                    <MessageSquare className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-400 text-sm">{uiLang === 'zh' ? '还没有词条，去梗百科贡献吧' : 'No entries yet'}</p>
-                  </div>
-                ) : (
-                  entries.map((entry: any) => (
-                    <div key={entry.id} className="bg-white border border-gray-100 rounded-xl p-4 flex items-center justify-between">
-                      <div className="min-w-0">
-                        <p className="font-semibold text-gray-900 truncate">{entry.meaning}</p>
-                        {entry.example && <p className="text-sm text-gray-500 truncate mt-1">"{entry.example}"</p>}
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0 ml-3">
-                        <span className={`text-xs px-2 py-1 rounded-lg font-medium ${
-                          entry.status === 'approved' ? 'bg-emerald-50 text-emerald-600' :
-                          entry.status === 'pending' ? 'bg-amber-50 text-amber-600' :
-                          'bg-red-50 text-red-500'
-                        }`}>
-                          {entry.status === 'approved' ? (uiLang === 'zh' ? '已发布' : 'Published') :
-                           entry.status === 'pending' ? (uiLang === 'zh' ? '审核中' : 'Pending') :
-                           (uiLang === 'zh' ? '被退回' : 'Rejected')}
-                        </span>
-                        <span className="text-xs text-gray-400">{entry.upvotes || 0} 👍</span>
-                      </div>
-                    </div>
-                  ))
+      {/* ---- Contribution history (contrib-history 分段) ---- */}
+      <div style={{ padding: '20px 36px 4px', borderTop: '1px solid var(--ink-hairline)' }}>
+        {/* 保留 tab 头（"我的词条 / 活动记录"切换）— 放在 section 标题位置 */}
+        <div className="flex items-center justify-between mb-[14px] flex-wrap gap-2">
+          <h3
+            className="m-0"
+            style={{
+              fontFamily: '"Clash Display", system-ui, sans-serif',
+              fontStyle: 'italic',
+              fontWeight: 500,
+              fontSize: 15,
+              color: 'rgba(10,14,26,0.68)',
+            }}
+          >
+            — {uiLang === 'zh' ? 'recent contributions · 贡献历史' : 'recent contributions'}
+          </h3>
+          <div className="flex gap-1">
+            {[
+              { id: 'entries', label: uiLang === 'zh' ? '我的词条' : 'My Entries' },
+              { id: 'activity', label: uiLang === 'zh' ? '活动记录' : 'Activity' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`py-1 px-3 text-xs font-semibold transition-colors relative rounded-lg ${activeTab === tab.id ? 'text-[#5B7FE8] bg-[rgba(91,127,232,0.08)]' : 'text-[var(--ink-muted)] hover:text-[var(--ink-body)]'}`}
+              >
+                {tab.label}
+                {activeTab === tab.id && (
+                  <motion.div layoutId="profileTab" className="absolute bottom-0 left-2 right-2 h-0.5 bg-[#0A0E1A]" />
                 )}
-              </motion.div>
-            )}
-
-            {activeTab === 'activity' && (
-              <motion.div key="activity" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="py-4">
-                <div className="text-center py-8">
-                  <Star className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-400 text-sm">{uiLang === 'zh' ? '活动记录即将上线' : 'Coming soon'}</p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Settings Drawer */}
-      <AnimatePresence>
-        {showSettings && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setShowSettings(false)}
-              className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40"
-            />
-            <motion.div
-              initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="fixed top-0 right-0 bottom-0 w-full max-w-sm bg-white border-l border-gray-200 z-50 overflow-y-auto shadow-2xl"
-            >
-              <div className="p-6 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white/90 backdrop-blur">
-                <h2 className="text-xl font-bold text-gray-900">{uiLang === 'zh' ? '设置' : 'Settings'}</h2>
-                <button onClick={() => setShowSettings(false)} className="p-2 text-gray-400 hover:text-gray-600 bg-gray-50 rounded-full">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="p-6 space-y-8">
-                {/* Subscription */}
-                <div>
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">{uiLang === 'zh' ? '当前方案' : 'Plan'}</h3>
-                  <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-lg text-gray-900">{userProfile?.isPro ? 'Pro' : 'Free'}</span>
-                      {!userProfile?.isPro && (
-                        <button onClick={() => onOpenPayment('default')} className="bg-[#0A0E1A] text-white text-xs font-bold px-3 py-1.5 rounded-lg hover:bg-[#1a2440] transition-colors">
-                          {uiLang === 'zh' ? '升级 Pro' : 'Upgrade'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Account */}
-                <div>
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">{uiLang === 'zh' ? '账号' : 'Account'}</h3>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl text-sm">
-                      <span className="text-gray-600">{uiLang === 'zh' ? '邮箱' : 'Email'}</span>
-                      <span className="text-gray-400 text-xs truncate max-w-[180px]">{user?.email || (user?.isAnonymous ? (uiLang === 'zh' ? '匿名用户' : 'Anonymous') : '-')}</span>
-                    </div>
-                    <button
-                      onClick={handleExportData}
-                      className="w-full flex items-center justify-center gap-2 p-3 bg-[rgba(91,127,232,0.1)] text-[#5B7FE8] hover:bg-[rgba(91,127,232,0.15)] rounded-xl transition-colors text-sm font-bold mt-2"
-                    >
-                      {uiLang === 'zh' ? '导出单词本' : 'Export Wordbook'}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Notifications */}
-                <div>
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-4">{uiLang === 'zh' ? '通知' : 'Notifications'}</h3>
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-xl text-sm">
-                    <span className="flex items-center gap-2 text-gray-600"><Bell className="w-4 h-4" /> {uiLang === 'zh' ? '推送通知' : 'Push'}</span>
-                    <div className="w-10 h-6 bg-[#0A0E1A] rounded-full relative cursor-pointer">
-                      <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow" />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Logout */}
-                <div className="pt-4 border-t border-gray-100">
-                  <button
-                    onClick={onLogout}
-                    className="w-full flex items-center justify-center gap-2 p-3 bg-red-50 text-red-500 hover:bg-red-100 rounded-xl transition-colors text-sm font-bold"
+        <AnimatePresence mode="wait">
+          {activeTab === 'entries' && (
+            <motion.div key="entries" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col gap-2">
+              {entries.length === 0 ? (
+                <div
+                  className="text-center p-10 rounded-[12px]"
+                  style={{
+                    background: 'rgba(255,255,255,0.4)',
+                    border: '1px dashed var(--ink-hairline)',
+                  }}
+                >
+                  <MessageSquare className="w-10 h-10 text-[var(--ink-subtle)] mx-auto mb-3" />
+                  <p
+                    className="text-sm m-0"
+                    style={{ fontFamily: '"Noto Serif SC", serif', color: 'rgba(10,14,26,0.62)' }}
                   >
-                    <LogOut className="w-4 h-4" /> {uiLang === 'zh' ? '退出登录' : 'Sign Out'}
-                  </button>
+                    {uiLang === 'zh' ? '还没有词条，去梗百科贡献吧' : 'No entries yet — contribute in Slang Encyclopedia'}
+                  </p>
                 </div>
+              ) : (
+                entries.map((entry: any) => {
+                  // entries 里没有 term 字段（meaning 才是条目解释），按 fallback：slangTerm → term → id 前 8 位
+                  const term = entry.slangTerm || entry.term || (entry.id || '').slice(0, 8);
+                  return (
+                    <div
+                      key={entry.id}
+                      className="flex items-center gap-[12px] p-[12px_14px] rounded-[12px]"
+                      style={{
+                        background: 'rgba(255,255,255,0.5)',
+                        border: '1px solid rgba(255,255,255,0.65)',
+                      }}
+                    >
+                      <span
+                        style={{
+                          flex: '0 0 110px',
+                          fontFamily: '"Clash Display", system-ui, sans-serif',
+                          fontStyle: 'italic',
+                          fontWeight: 600,
+                          fontSize: 15,
+                          color: 'var(--blue-accent)',
+                        }}
+                        className="truncate"
+                      >
+                        {term}
+                      </span>
+                      <span
+                        className="flex-1 min-w-0 truncate whitespace-nowrap overflow-hidden"
+                        style={{
+                          fontFamily: '"Noto Serif SC", serif',
+                          fontSize: 13,
+                          color: 'rgba(10,14,26,0.72)',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {entry.meaning || (uiLang === 'zh' ? '（无描述）' : '(no description)')}
+                      </span>
+                      <span
+                        className="shrink-0 flex items-center gap-2"
+                        style={{
+                          fontFamily: '"JetBrains Mono", ui-monospace, monospace',
+                          fontSize: 11,
+                          color: 'rgba(10,14,26,0.5)',
+                        }}
+                      >
+                        ▲ <strong style={{ color: 'var(--blue-accent)' }}>{entry.upvotes || 0}</strong> · AI {entry.aiQuality ?? '--'}
+                      </span>
+                      <span className={`text-xs px-2 py-1 rounded-lg font-medium shrink-0 ${
+                        entry.status === 'approved' ? 'bg-emerald-50 text-emerald-600' :
+                        entry.status === 'pending' ? 'bg-amber-50 text-amber-600' :
+                        'bg-red-50 text-red-500'
+                      }`}>
+                        {entry.status === 'approved' ? (uiLang === 'zh' ? '已发布' : 'Published') :
+                         entry.status === 'pending' ? (uiLang === 'zh' ? '审核中' : 'Pending') :
+                         (uiLang === 'zh' ? '被退回' : 'Rejected')}
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </motion.div>
+          )}
+
+          {activeTab === 'activity' && (
+            <motion.div key="activity" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="py-4">
+              <div className="text-center py-8">
+                <Star className="w-10 h-10 text-[var(--ink-subtle)] mx-auto mb-3" />
+                <p className="text-[var(--ink-muted)] text-sm">{uiLang === 'zh' ? '活动记录即将上线' : 'Coming soon'}</p>
               </div>
             </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* ---- Subscription (合并进主卡，border-top 分段) ---- */}
+      <div style={{ padding: '22px 28px', borderTop: '1px solid var(--ink-hairline)', marginTop: 14 }}>
+        <h3
+          className="m-0 mb-[14px]"
+          style={{
+            fontFamily: '"Clash Display", system-ui, sans-serif',
+            fontStyle: 'italic',
+            fontWeight: 500,
+            fontSize: 15,
+            color: 'rgba(10,14,26,0.68)',
+          }}
+        >
+          — {uiLang === 'zh' ? 'subscription · 订阅状态' : 'subscription'}
+        </h3>
+        <div
+          className="flex justify-between items-center gap-4 flex-wrap"
+          style={{
+            padding: '16px 18px',
+            background: 'linear-gradient(135deg, rgba(91,127,232,0.1), rgba(137,163,240,0.08))',
+            border: '1px solid rgba(91,127,232,0.22)',
+            borderRadius: 14,
+          }}
+        >
+          <div>
+            <div
+              className="inline-flex items-center gap-1.5"
+              style={{
+                fontFamily: '"Clash Display", system-ui, sans-serif',
+                fontWeight: 700,
+                fontSize: 18,
+                color: 'var(--blue-accent)',
+              }}
+            >
+              <Zap className="w-4 h-4" fill="currentColor" strokeWidth={0} />
+              {userProfile?.isPro
+                ? (uiLang === 'zh' ? 'MemeFlow Pro · 年付' : 'MemeFlow Pro · Yearly')
+                : (uiLang === 'zh' ? 'Free · 免费版' : 'Free')}
+            </div>
+            <div
+              className="mt-1"
+              style={{
+                fontFamily: '"Noto Sans SC", system-ui, sans-serif',
+                fontWeight: 500,
+                fontSize: 13,
+                color: 'var(--ink-body)',
+                letterSpacing: '0.01em',
+              }}
+            >
+              {userProfile?.isPro
+                ? (() => {
+                    // 下次续费日期：当前没有 Firestore 字段存，用"今日 + 1 年"作占位显示，
+                    // 避免显示"长期有效"造成误解；等后续接 Stripe/订阅才有真日期。
+                    const next = new Date();
+                    next.setFullYear(next.getFullYear() + 1);
+                    const label = uiLang === 'zh'
+                      ? `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-${String(next.getDate()).padStart(2, '0')}`
+                      : next.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+                    return uiLang === 'zh' ? `¥336 / 年 · 下次续费 ${label}` : `¥336 / yr · renews ${label}`;
+                  })()
+                : (uiLang === 'zh' ? '升级 Pro 解锁无限翻译 / 课堂同传无限时长' : 'Upgrade to unlock unlimited translations')}
+            </div>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {userProfile?.isPro ? (
+              <>
+                <button
+                  onClick={() => toast.info(uiLang === 'zh' ? '即将开放 · 请邮件联系 caizewei11@gmail.com' : 'Coming soon · Email caizewei11@gmail.com')}
+                  className="transition-colors"
+                  style={{
+                    padding: '8px 14px',
+                    fontSize: 12.5,
+                    background: 'transparent',
+                    border: '1px solid var(--border-solid-strong)',
+                    color: 'var(--ink-body)',
+                    borderRadius: 10,
+                    fontFamily: '"Noto Sans SC", system-ui, sans-serif',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {uiLang === 'zh' ? '管理订阅' : 'Manage'}
+                </button>
+                <button
+                  onClick={() => toast.info(uiLang === 'zh' ? '即将开放 · 请邮件联系 caizewei11@gmail.com' : 'Coming soon · Email caizewei11@gmail.com')}
+                  className="transition-colors"
+                  style={{
+                    padding: '8px 14px',
+                    fontSize: 12.5,
+                    background: 'transparent',
+                    border: '1px solid rgba(229,56,43,0.25)',
+                    color: 'var(--red-warn)',
+                    borderRadius: 10,
+                    fontFamily: '"Noto Sans SC", system-ui, sans-serif',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {uiLang === 'zh' ? '取消订阅' : 'Cancel'}
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => onOpenPayment('profile-subscription')}
+                className="transition-colors"
+                style={{
+                  padding: '10px 16px',
+                  fontSize: 13,
+                  background: 'var(--ink)',
+                  border: '1px solid var(--ink)',
+                  color: '#fff',
+                  borderRadius: 12,
+                  fontFamily: '"Noto Sans SC", system-ui, sans-serif',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                {uiLang === 'zh' ? '立即升级 Pro' : 'Upgrade to Pro'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+      {/* ============ END PROFILE MAIN CARD ============ */}
+      </div>
+
+      {/* ============ ONBOARDING CHECKLIST entry ============ */}
+      {isOwnProfile && (
+        <button
+          onClick={() => setShowChecklist(true)}
+          className="surface !rounded-[14px] w-full flex items-center gap-3 transition-colors hover:bg-[rgba(91,127,232,0.04)]"
+          style={{ padding: '16px 20px', cursor: 'pointer', textAlign: 'left' }}
+        >
+          <span
+            className="inline-flex items-center justify-center rounded-full shrink-0"
+            style={{
+              width: 32,
+              height: 32,
+              background: 'rgba(91,127,232,0.1)',
+              color: 'var(--blue-accent)',
+            }}
+          >
+            <Sparkles className="w-4 h-4" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <div
+              style={{
+                fontFamily: '"Clash Display", system-ui, sans-serif',
+                fontStyle: 'italic',
+                fontWeight: 500,
+                fontSize: 14,
+                color: 'var(--ink)',
+              }}
+            >
+              {uiLang === 'zh' ? '新手任务 · Getting Started' : 'Getting Started · 新手任务'}
+            </div>
+            <div
+              className="mt-0.5"
+              style={{
+                fontFamily: '"Noto Serif SC", serif',
+                fontSize: 12,
+                color: 'var(--ink-muted)',
+              }}
+            >
+              {checklistDone === checklistTotal
+                ? (uiLang === 'zh' ? '✓ 已完成' : '✓ Completed')
+                : (uiLang === 'zh'
+                    ? `${checklistDone}/${checklistTotal} 已完成`
+                    : `${checklistDone}/${checklistTotal} completed`)}
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-[var(--ink-muted)] shrink-0" />
+        </button>
+      )}
+
+      {/* ============ DATA EXPORT ============ */}
+      {isOwnProfile && (
+        <div
+          className="surface !rounded-[14px] flex items-center gap-4 flex-wrap"
+          style={{ padding: '22px 26px' }}
+        >
+          <Download
+            className="shrink-0"
+            style={{ width: 28, height: 28, color: 'var(--blue-accent)', strokeWidth: 1.8 }}
+          />
+          <div className="flex-1 min-w-[240px]">
+            <div
+              style={{
+                fontFamily: '"Clash Display", system-ui, sans-serif',
+                fontWeight: 600,
+                fontSize: 15,
+                marginBottom: 2,
+              }}
+            >
+              {uiLang === 'zh' ? '导出我的数据' : 'Export my data'}
+            </div>
+            <p
+              className="m-0"
+              style={{
+                fontFamily: '"Noto Serif SC", serif',
+                fontSize: 13,
+                color: 'rgba(10,14,26,0.62)',
+                lineHeight: 1.7,
+              }}
+            >
+              {uiLang === 'zh'
+                ? 'JSON 格式，当前仅包含单词本，后续会扩展到贡献词条、搜索历史、复习记录、课堂笔记。符合 GDPR 可移植性要求。'
+                : 'JSON format. Currently includes wordbook only; will expand to contributions, search history, reviews and class notes. GDPR-portable.'}
+            </p>
+          </div>
+          <button
+            onClick={handleExportData}
+            className="transition-colors"
+            style={{
+              padding: '11px 18px',
+              fontSize: 13,
+              background: 'var(--ink)',
+              border: '1px solid var(--ink)',
+              color: '#fff',
+              borderRadius: 12,
+              fontFamily: '"Noto Sans SC", system-ui, sans-serif',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            {uiLang === 'zh' ? '下载 JSON' : 'Download JSON'}
+          </button>
+        </div>
+      )}
+
+      {/* ============ AVATAR CROPPER MODAL ============ */}
+      {pendingAvatarFile && (
+        <AvatarCropperModal
+          file={pendingAvatarFile}
+          uiLang={uiLang}
+          onCancel={() => setPendingAvatarFile(null)}
+          onConfirm={handleAvatarConfirm}
+        />
+      )}
+
+      {/* ============ ONBOARDING CHECKLIST MODAL ============ */}
+      <OnboardingChecklistModal
+        open={showChecklist}
+        onClose={() => setShowChecklist(false)}
+        uiLang={uiLang}
+        items={checklistItems}
+      />
+
     </div>
   );
 }

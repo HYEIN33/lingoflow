@@ -110,28 +110,43 @@ export function DailyChallenge({ uiLang }: DailyChallengeProps) {
     <div className="mb-4 relative">
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center justify-between bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/60 rounded-2xl px-4 py-3 text-left hover:shadow-sm transition-shadow"
+        className="w-full flex items-center gap-[14px] glass-thick !rounded-[14px] border-[1.5px] border-[rgba(91,127,232,0.35)] px-[18px] py-[14px] text-left hover:shadow-sm transition-shadow"
+        style={{
+          backgroundImage:
+            'linear-gradient(135deg, rgba(255,255,255,0.8), rgba(255,255,255,0.55)), radial-gradient(circle at 90% 0%, rgba(137,163,240,0.4), transparent 65%)',
+        }}
       >
-        <div className="flex items-center gap-2">
-          <Zap className="w-5 h-5 text-amber-500" />
-          <span className="font-bold text-amber-800 text-sm">
+        <span className="w-9 h-9 rounded-[12px] inline-flex items-center justify-center text-white bg-gradient-to-br from-[#5B7FE8] to-[#89A3F0] shadow-[0_4px_10px_rgba(91,127,232,0.35)] shrink-0">
+          <Zap className="w-[18px] h-[18px]" fill="currentColor" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="font-display italic font-semibold text-[14px] text-[var(--blue-accent)]">
+            — {uiLang === 'zh' ? 'daily challenge' : 'daily challenge'}
+          </div>
+          <div className="font-zh-serif text-[13px] text-[var(--ink-body)] truncate">
             {uiLang === 'zh' ? '每日挑战' : 'Daily Challenge'}
-          </span>
-          {completed && (
-            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
-              {uiLang === 'zh' ? '已完成' : 'Done'}
-            </span>
-          )}
+            {slang ? ` · ${slang.term}` : ''}
+            {completed && (
+              <span className="ml-2 text-xs bg-[rgba(47,99,23,0.1)] text-[var(--green-ok)] px-2 py-0.5 rounded-full font-medium">
+                {uiLang === 'zh' ? '已完成' : 'Done'}
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          {isExpanded ? <ChevronUp className="w-4 h-4 text-amber-500" /> : <ChevronDown className="w-4 h-4 text-amber-500" />}
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="font-display italic text-[13px] text-[var(--blue-accent)] hidden sm:inline">
+            {isExpanded
+              ? (uiLang === 'zh' ? '收起 ↑' : 'collapse ↑')
+              : (uiLang === 'zh' ? '展开揭晓 →' : 'reveal →')}
+          </span>
+          {isExpanded ? <ChevronUp className="w-4 h-4 text-[var(--blue-accent)]" /> : <ChevronDown className="w-4 h-4 text-[var(--blue-accent)]" />}
           {completed && (
             <span
               role="button"
               tabIndex={0}
               onClick={handleDismiss}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleDismiss(e as any); }}
-              className="ml-1 p-1 text-amber-400 hover:text-amber-700 hover:bg-amber-100 rounded-md transition-colors cursor-pointer"
+              className="ml-1 p-1 text-[var(--ink-muted)] hover:text-[var(--ink)] hover:bg-[rgba(10,14,26,0.04)] rounded-md transition-colors cursor-pointer"
               title={uiLang === 'zh' ? '今日关闭（明日重新出现）' : 'Hide for today'}
               aria-label={uiLang === 'zh' ? '关闭今日挑战' : 'Dismiss today\'s challenge'}
             >
@@ -149,16 +164,16 @@ export function DailyChallenge({ uiLang }: DailyChallengeProps) {
             exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden"
           >
-            <div className="bg-white/60 backdrop-blur-md border border-amber-100 rounded-2xl p-5 mt-2 shadow-sm">
+            <div className="surface !rounded-[18px] border-[var(--ink-hairline)] p-5 mt-2">
               {completed && !slang ? (
-                <p className="text-center text-amber-700 text-sm">
+                <p className="text-center font-zh-serif text-[13px] text-[var(--ink-body)]">
                   {uiLang === 'zh' ? '今日挑战已完成，明天再来！' : "Today's challenge is done. Come back tomorrow!"}
                 </p>
               ) : slang ? (
                 <div className="space-y-3">
                   <div className="text-center">
-                    <p className="text-2xl font-black text-gray-900 mb-1">{slang.term}</p>
-                    <p className="text-sm text-amber-700">
+                    <p className="font-display italic font-bold text-[28px] text-[var(--ink)] tracking-[-0.03em] mb-1">{slang.term}</p>
+                    <p className="font-zh-serif text-[13px] text-[var(--ink-body)]">
                       {uiLang === 'zh' ? '你知道这个梗是什么意思吗？' : 'Do you know what this means?'}
                     </p>
                   </div>
@@ -167,7 +182,7 @@ export function DailyChallenge({ uiLang }: DailyChallengeProps) {
                     <div className="text-center">
                       <button
                         onClick={handleReveal}
-                        className="inline-flex items-center gap-2 bg-amber-500 text-white px-5 py-2.5 rounded-xl text-sm font-medium hover:bg-amber-600 transition-colors shadow-sm"
+                        className="inline-flex items-center gap-2 bg-[var(--ink)] text-white px-5 py-2.5 rounded-xl font-zh-serif text-sm font-bold hover:bg-[#1a2440] transition-colors shadow-[0_4px_12px_rgba(10,14,26,0.25)]"
                       >
                         <Eye className="w-4 h-4" />
                         {uiLang === 'zh' ? '揭晓答案' : 'Reveal Answer'}
@@ -181,15 +196,15 @@ export function DailyChallenge({ uiLang }: DailyChallengeProps) {
                     >
                       {meanings.length > 0 ? (
                         meanings.map((m) => (
-                          <div key={m.id} className="bg-amber-50/50 border border-amber-100 rounded-xl p-3">
-                            <p className="text-gray-900 text-sm font-medium">{m.meaning}</p>
+                          <div key={m.id} className="bg-[rgba(91,127,232,0.05)] border border-[rgba(91,127,232,0.2)] rounded-xl p-3">
+                            <p className="font-zh-serif text-[var(--ink)] text-sm font-medium leading-[1.75]">{m.meaning}</p>
                             {m.example && (
-                              <p className="text-gray-500 text-xs mt-1 italic">"{m.example}"</p>
+                              <p className="font-display italic text-[var(--ink-body)] text-xs mt-1">"{m.example}"</p>
                             )}
                           </div>
                         ))
                       ) : (
-                        <p className="text-center text-gray-500 text-sm">
+                        <p className="text-center text-[var(--ink-muted)] text-sm">
                           {uiLang === 'zh' ? '暂无解释' : 'No meanings yet'}
                         </p>
                       )}

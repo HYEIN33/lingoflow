@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Leaderboard · MemeFlow Prototype</title>
+<link rel="preconnect" href="https://api.fontshare.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&f[]=satoshi@400,500,600,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Serif+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_shared.css">
+<style>
+  /* =============== HERO (ONE glass card at top) =============== */
+  .hero {
+    padding: 26px 28px 20px;
+    margin-bottom: 20px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: start;
+    gap: 22px;
+  }
+  @media (max-width: 640px) { .hero { grid-template-columns: 1fr; } }
+
+  .hero h1 {
+    margin: 0 0 6px;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 700;
+    font-size: 28px;
+    letter-spacing: -0.03em;
+    color: var(--ink);
+  }
+  .hero .sub {
+    font-family: "Noto Sans SC", system-ui, sans-serif;
+    font-weight: 500;
+    font-size: 13.5px;
+    color: var(--ink-body);
+    margin: 0 0 16px;
+    line-height: 1.8;
+    letter-spacing: 0.01em;
+  }
+
+  .segbar {
+    display: inline-flex;
+    padding: 3px;
+    background: rgba(10,14,26,0.06);
+    border-radius: 11px;
+    gap: 2px;
+  }
+  .segbar button {
+    padding: 8px 14px;
+    border: 0; background: transparent;
+    border-radius: 9px;
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px; font-weight: 600;
+    color: var(--ink-muted);
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .segbar button.on {
+    background: #fff;
+    color: var(--ink);
+    box-shadow: 0 1.5px 4px rgba(10,14,26,0.08);
+  }
+
+  .countdown {
+    text-align: right;
+    min-width: 200px;
+  }
+  .countdown .label {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10.5px;
+    color: var(--ink-subtle);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .countdown .time {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: 0.04em;
+    line-height: 1;
+  }
+  .countdown .time .dim {
+    color: var(--ink-muted); font-weight: 400;
+  }
+  .countdown .reset-note {
+    margin-top: 6px;
+    font-family: "Noto Sans SC", system-ui, sans-serif;
+    font-weight: 500;
+    font-size: 11.5px;
+    color: var(--ink-body);
+    letter-spacing: 0.01em;
+  }
+
+  /* =============== PODIUM — top 3 =============== */
+  .podium {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr 1fr;
+    gap: 12px;
+    padding: 24px 0 14px;
+    border-top: 1px solid var(--ink-hairline);
+    align-items: end;
+  }
+  @media (max-width: 640px) {
+    .podium { grid-template-columns: 1fr; }
+    .podium .slot.p-2, .podium .slot.p-3 { transform: none !important; }
+  }
+
+  .slot {
+    text-align: center;
+    padding: 18px 16px 16px;
+    border-radius: 16px;
+    background: #FFFFFF;
+    border: 1px solid var(--border-solid);
+    position: relative;
+    transition: transform .2s;
+  }
+  .slot:hover { transform: translateY(-2px); }
+  .slot .rank-n {
+    position: absolute;
+    top: 12px; right: 14px;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-weight: 700;
+    font-size: 46px;
+    letter-spacing: -0.05em;
+    color: rgba(10, 14, 26, 0.16);
+    line-height: 1;
+  }
+
+  .slot .avatar {
+    width: 50px; height: 50px;
+    border-radius: 9999px;
+    margin: 0 auto 10px;
+    color: #fff;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 700; font-size: 18px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .slot .name {
+    font-family: "Noto Serif SC", serif;
+    font-weight: 700; font-size: 15px;
+    color: var(--ink);
+    margin: 0 0 2px;
+  }
+  .slot .title {
+    font-family: "Noto Sans SC", system-ui, sans-serif;
+    font-weight: 500;
+    font-size: 12.5px;
+    color: var(--ink-body);
+    margin-bottom: 10px;
+    letter-spacing: 0.02em;
+  }
+  .slot .score {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 700; font-size: 24px;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    line-height: 1;
+  }
+  .slot .score-lab {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10.5px; font-weight: 700;
+    color: var(--ink-soft);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-top: 6px;
+  }
+
+  /* #1 is the hero — elevated, blue accent */
+  .slot.p-1 {
+    border: 2px solid var(--blue-accent);
+    background: linear-gradient(180deg, rgba(91,127,232,0.06) 0%, #FFFFFF 60%);
+    box-shadow: 0 14px 32px rgba(91,127,232,0.22);
+    padding: 22px 18px 20px;
+  }
+  .slot.p-1 .rank-n { font-size: 58px; color: rgba(91,127,232,0.18); }
+  .slot.p-1 .avatar { width: 62px; height: 62px; font-size: 22px; }
+  .slot.p-1 .name { font-size: 17px; }
+  .slot.p-1 .score { font-size: 32px; color: var(--blue-accent); }
+  .slot.p-1 .title { color: var(--blue-accent); font-weight: 600; }
+
+  .slot.p-2 { transform: translateY(10px); }
+  .slot.p-3 { transform: translateY(18px); }
+
+  /* Crown — only on #1 */
+  .crown-wrap {
+    position: absolute;
+    top: -14px; left: 50%;
+    transform: translateX(-50%);
+    width: 32px; height: 32px;
+    background: var(--blue-accent);
+    border-radius: 9999px;
+    color: #fff;
+    display: inline-flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 10px rgba(91,127,232,0.4);
+  }
+
+  /* =============== REWARD STRIP =============== */
+  .reward {
+    padding: 16px 24px;
+    display: flex; align-items: center; gap: 18px;
+    margin-bottom: 20px;
+    background: #FFFFFF;
+    border: 1px solid var(--border-solid);
+    border-left: 3px solid var(--blue-accent);
+    border-radius: 14px;
+  }
+  .reward .label {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--blue-accent);
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .reward .divider {
+    width: 1px; height: 20px;
+    background: var(--ink-hairline);
+    flex-shrink: 0;
+  }
+  .reward .items {
+    font-family: "Noto Sans SC", system-ui, sans-serif;
+    font-weight: 500;
+    font-size: 13.5px;
+    color: var(--ink-body);
+    line-height: 1.7;
+    letter-spacing: 0.01em;
+  }
+  .reward .items strong { color: var(--ink); font-weight: 700; }
+
+  /* =============== RANK TABLE =============== */
+  .table-wrap {
+    background: #FFFFFF;
+    border: 1px solid var(--border-solid);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .table-head {
+    display: grid;
+    grid-template-columns: 64px 1fr 160px 90px;
+    gap: 16px;
+    padding: 14px 22px;
+    background: rgba(10,14,26,0.04);
+    border-bottom: 1px solid var(--ink-rule);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+  .table-head .num { text-align: center; }
+  .table-head .score, .table-head .trend { text-align: right; }
+
+  .tr {
+    display: grid;
+    grid-template-columns: 64px 1fr 160px 90px;
+    gap: 16px;
+    padding: 14px 22px;
+    align-items: center;
+    border-bottom: 1px solid var(--ink-hairline);
+    cursor: pointer;
+    transition: background .12s;
+  }
+  .tr:last-child { border-bottom: 0; }
+  .tr:hover { background: rgba(91,127,232,0.04); }
+
+  .tr.me {
+    background: rgba(91,127,232,0.08);
+    border-left: 3px solid var(--blue-accent);
+    padding-left: 19px;
+  }
+  .tr.me:hover { background: rgba(91,127,232,0.12); }
+
+  .tr .n {
+    text-align: center;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-weight: 700;
+    font-size: 22px;
+    color: var(--ink-soft);
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+  .tr.me .n { color: var(--blue-accent); }
+
+  .tr .who {
+    display: flex; align-items: center; gap: 12px;
+    min-width: 0;
+  }
+  .tr .ava {
+    width: 36px; height: 36px; border-radius: 9999px;
+    color: #fff;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 700; font-size: 13px;
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .tr .nm {
+    font-family: "Noto Serif SC", serif;
+    font-weight: 700; font-size: 14.5px;
+    color: var(--ink);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tr .me-tag {
+    display: inline-block;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 9px; font-weight: 800; letter-spacing: 0.15em;
+    color: var(--blue-accent);
+    background: rgba(91,127,232,0.15);
+    padding: 2px 6px; border-radius: 4px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+  .tr .tt {
+    font-family: "Noto Sans SC", system-ui, sans-serif;
+    font-weight: 500;
+    font-size: 12px;
+    color: var(--ink-body);
+    margin-top: 3px;
+    letter-spacing: 0.02em;
+  }
+
+  .tr .score-cell {
+    text-align: right;
+  }
+  .tr .score-cell .num {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 700; font-size: 18px;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    line-height: 1;
+  }
+  .tr .score-cell .meta {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px; font-weight: 600;
+    color: var(--ink-soft);
+    margin-top: 3px;
+    letter-spacing: 0.05em;
+  }
+
+  .tr .trend-cell {
+    text-align: right;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .trend-up { color: var(--green-ok); }
+  .trend-down { color: var(--red-warn); }
+  .trend-flat { color: var(--ink-subtle); }
+
+  .table-foot {
+    padding: 14px 22px;
+    border-top: 1px solid var(--ink-rule);
+    background: rgba(10,14,26,0.025);
+    display: flex; justify-content: space-between; align-items: center;
+    flex-wrap: wrap; gap: 10px;
+    font-family: "Noto Sans SC", system-ui, sans-serif;
+    font-weight: 500;
+    font-size: 12.5px;
+    color: var(--ink-body);
+    letter-spacing: 0.01em;
+  }
+  .table-foot .more {
+    color: var(--blue-accent);
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-weight: 600;
+    text-decoration: none;
+    font-size: 13px;
+  }
+  .table-foot .more:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" style="text-decoration:none;color:inherit"><span class="brand">MemeFlow</span><span class="version">PROTOTYPE</span></a>
+      <nav class="tab-rail">
+        <a href="index.html">· overview</a>
+        <a href="paywall.html">paywall</a>
+        <a href="leaderboard.html" class="active"><span class="tab-dot"></span>leaderboard · 排行榜</a>
+        <a href="guidelines.html">guidelines</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <div class="eyebrow-once"><span class="en">leaderboard</span><span class="zh">贡献者排行榜</span></div>
+
+    <!-- HERO — only glass card on this page -->
+    <section class="glass-thick hero">
+      <div>
+        <h1>本周贡献者排行</h1>
+        <p class="sub">
+          分数 = 批准词条数 × 10 + 连击天数 × 5。每 5 分钟刷新一次，周日 23:59 结算。
+        </p>
+        <div class="segbar">
+          <button class="on">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><circle cx="17" cy="7" r="4"/></svg>
+            小组
+          </button>
+          <button>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            全球
+          </button>
+          <button>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            月榜
+          </button>
+        </div>
+      </div>
+
+      <div class="countdown">
+        <div class="label">本周结算倒计时</div>
+        <div class="time">04<span class="dim">d</span> 07<span class="dim">h</span> 23<span class="dim">m</span></div>
+        <div class="reset-note">周日 23:59 重置 · 奖励自动发放</div>
+      </div>
+
+      <!-- PODIUM is part of hero -->
+      <div class="podium" style="grid-column: 1 / -1">
+        <div class="slot p-2">
+          <span class="rank-n">02</span>
+          <div class="avatar" style="background:linear-gradient(135deg,#E89B94,#E5382B)">M</div>
+          <div class="name">Marco</div>
+          <div class="title">梗百科编辑</div>
+          <div class="score">2,310</div>
+          <div class="score-lab">weekly · 点</div>
+        </div>
+
+        <div class="slot p-1">
+          <div class="crown-wrap">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4l4 5 6-5 6 5 4-5v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2z"/><circle cx="12" cy="14" r="1.5"/></svg>
+          </div>
+          <span class="rank-n">01</span>
+          <div class="avatar" style="background:linear-gradient(135deg,#5B7FE8,#3E5FBF)">L</div>
+          <div class="name">Lina Chen</div>
+          <div class="title">legend · 梗神</div>
+          <div class="score">2,840</div>
+          <div class="score-lab">weekly · 点</div>
+        </div>
+
+        <div class="slot p-3">
+          <span class="rank-n">03</span>
+          <div class="avatar" style="background:linear-gradient(135deg,#C9AFFE,#7D6EA3)">Z</div>
+          <div class="name">Zoe</div>
+          <div class="title">多模态先锋</div>
+          <div class="score">1,920</div>
+          <div class="score-lab">weekly · 点</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- REWARD STRIP -->
+    <div class="reward">
+      <span class="label">Top 1 奖励</span>
+      <span class="divider"></span>
+      <span class="items">
+        <strong>本周梗王</strong> 称号 &middot; <strong>100 次</strong> 翻译额度 &middot; 个人资料金边框 <strong>7 天</strong>
+      </span>
+    </div>
+
+    <!-- TABLE — solid surface, no glass -->
+    <div class="table-wrap">
+      <div class="table-head">
+        <span class="num">Rank</span>
+        <span>Contributor</span>
+        <span class="score">Score</span>
+        <span class="trend">Δ week</span>
+      </div>
+
+      <div class="tr me">
+        <span class="n">04</span>
+        <div class="who">
+          <span class="ava" style="background:linear-gradient(135deg,#5B7FE8,#3E5FBF)">CZ</span>
+          <div>
+            <div class="nm">蔡泽伟<span class="me-tag">ME</span></div>
+            <div class="tt">梗百科编辑 · 7 天连击</div>
+          </div>
+        </div>
+        <div class="score-cell">
+          <div class="num">1,240</div>
+          <div class="meta">23 contribs</div>
+        </div>
+        <div class="trend-cell trend-up">+2</div>
+      </div>
+
+      <div class="tr">
+        <span class="n">05</span>
+        <div class="who">
+          <span class="ava" style="background:linear-gradient(135deg,#C9AFFE,#7D6EA3)">K</span>
+          <div>
+            <div class="nm">Kenji</div>
+            <div class="tt">周打卡达人</div>
+          </div>
+        </div>
+        <div class="score-cell">
+          <div class="num">1,080</div>
+          <div class="meta">19 contribs</div>
+        </div>
+        <div class="trend-cell trend-down">−1</div>
+      </div>
+
+      <div class="tr">
+        <span class="n">06</span>
+        <div class="who">
+          <span class="ava" style="background:linear-gradient(135deg,#FFD166,#E5A533)">P</span>
+          <div>
+            <div class="nm">Priya</div>
+            <div class="tt">文化观察员</div>
+          </div>
+        </div>
+        <div class="score-cell">
+          <div class="num">920</div>
+          <div class="meta">16 contribs</div>
+        </div>
+        <div class="trend-cell trend-flat">—</div>
+      </div>
+
+      <div class="tr">
+        <span class="n">07</span>
+        <div class="who">
+          <span class="ava" style="background:linear-gradient(135deg,#7DB96A,#4C8F3B)">R</span>
+          <div>
+            <div class="nm">Ryan</div>
+            <div class="tt">梗学徒</div>
+          </div>
+        </div>
+        <div class="score-cell">
+          <div class="num">760</div>
+          <div class="meta">14 contribs</div>
+        </div>
+        <div class="trend-cell trend-up">+5</div>
+      </div>
+
+      <div class="tr">
+        <span class="n">08</span>
+        <div class="who">
+          <span class="ava" style="background:linear-gradient(135deg,#89A3F0,#5B7FE8)">J</span>
+          <div>
+            <div class="nm">James</div>
+            <div class="tt">文化观察员</div>
+          </div>
+        </div>
+        <div class="score-cell">
+          <div class="num">680</div>
+          <div class="meta">12 contribs</div>
+        </div>
+        <div class="trend-cell trend-up">+1</div>
+      </div>
+
+      <div class="tr">
+        <span class="n">09</span>
+        <div class="who">
+          <span class="ava" style="background:linear-gradient(135deg,#E8C375,#C9940F)">A</span>
+          <div>
+            <div class="nm">Ayaka</div>
+            <div class="tt">梗学徒</div>
+          </div>
+        </div>
+        <div class="score-cell">
+          <div class="num">540</div>
+          <div class="meta">10 contribs</div>
+        </div>
+        <div class="trend-cell trend-down">−2</div>
+      </div>
+
+      <div class="tr">
+        <span class="n">10</span>
+        <div class="who">
+          <span class="ava" style="background:linear-gradient(135deg,#FFB4A2,#E8715C)">D</span>
+          <div>
+            <div class="nm">Diego</div>
+            <div class="tt">梗学徒</div>
+          </div>
+        </div>
+        <div class="score-cell">
+          <div class="num">420</div>
+          <div class="meta">8 contribs</div>
+        </div>
+        <div class="trend-cell trend-flat">—</div>
+      </div>
+
+      <div class="table-foot">
+        <span>榜单每 5 分钟刷新一次</span>
+        <a href="#" class="more">查看完整 100 名 →</a>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

@@ -13,13 +13,34 @@
   --bg-mid: #E8EEFC;
   --bg-deep: #DDE5F7;
   --blue-accent: #5B7FE8;
+  --blue-accent-deep: #3E5FBF;
   --blue-glow: #89A3F0;
   --blue-soft: #B8C8F0;
 
-  /* Ink */
+  /* Ink ramp — strengthened 2026-04-21. Old 58/38 rendered too pale once
+     text stacked on glass cards; body/muted/subtle give a coherent 4-step
+     scale that survives liquid-glass backdrops. */
   --ink: #0A0E1A;
-  --ink-soft: rgba(10, 14, 26, 0.58);
-  --ink-subtle: rgba(10, 14, 26, 0.38);
+  --ink-body: rgba(10, 14, 26, 0.88);    /* primary body — almost solid */
+  --ink-soft: rgba(10, 14, 26, 0.78);     /* secondary body */
+  --ink-muted: rgba(10, 14, 26, 0.68);    /* tertiary / subtitle */
+  --ink-subtle: rgba(10, 14, 26, 0.55);   /* caption — still readable */
+  --ink-hairline: rgba(10, 14, 26, 0.12);
+  --ink-rule: rgba(10, 14, 26, 0.18);     /* stronger divider for data */
+
+  /* Semantic status colors — used everywhere (toasts, danger, buttons) */
+  --red-warn: #E5382B;                    /* iOS system-red tier */
+  --red-deep: #B81F14;                    /* hover/active */
+  --red-soft: rgba(229, 56, 43, 0.08);
+  --green-ok: #2F6317;
+  --amber: #8A5D0E;
+
+  /* Surface tokens — solid white cards for data/lists/admin (opposite of
+     glass which is for hero/main cards). */
+  --surface-solid: rgba(255, 255, 255, 0.92);
+  --surface-solid-hover: rgba(255, 255, 255, 1);
+  --border-solid: rgba(10, 14, 26, 0.10);
+  --border-solid-strong: rgba(10, 14, 26, 0.14);
 }
 
 /* Font utility classes — applied via className, not global body override.
@@ -90,6 +111,7 @@
 }
 
 .glass-thick {
+  position: relative;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.78) 0%, rgba(255, 255, 255, 0.5) 100%),
               radial-gradient(circle at 85% 15%, rgba(137, 163, 240, 0.32) 0%, transparent 60%),
               radial-gradient(circle at 15% 90%, rgba(184, 200, 240, 0.25) 0%, transparent 65%);
@@ -102,6 +124,25 @@
     0 24px 60px rgba(91, 127, 232, 0.18),
     0 8px 20px rgba(91, 127, 232, 0.1),
     0 2px 6px rgba(10, 14, 26, 0.05);
+}
+
+/* Specular highlight — subtle top-left gloss. Must sit BEHIND content
+   (z-index: 0) and mix gently instead of bleaching text. Before this fix
+   (2026-04-21) the overlay was turning H1 into fake gradient-text. */
+.glass-thick::after {
+  content: "";
+  position: absolute;
+  inset: 0 55% auto 0;
+  height: 38%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0) 75%);
+  pointer-events: none;
+  z-index: 0;
+  mix-blend-mode: soft-light;
+}
+.glass-thick > * {
+  position: relative;
+  z-index: 1;
 }
 
 .glass-chip {
@@ -124,4 +165,82 @@
   background: var(--blue-accent);
   box-shadow: 0 0 6px rgba(91, 127, 232, 0.8), 0 0 12px rgba(91, 127, 232, 0.3);
   display: inline-block;
+}
+
+/* ============================================================
+   Solid surface — for data, lists, admin. Opaque white on the
+   ambient bg (no backdrop-filter, no white-on-white border halo).
+   Complements .glass-thick which is for hero/main cards only.
+   ============================================================ */
+.surface {
+  background: var(--surface-solid);
+  border: 1px solid var(--border-solid);
+  border-radius: 18px;
+  box-shadow:
+    0 1px 2px rgba(10, 14, 26, 0.04),
+    0 4px 14px rgba(10, 14, 26, 0.04);
+}
+.surface-strong {
+  background: var(--surface-solid);
+  border: 1px solid var(--border-solid-strong);
+  border-radius: 18px;
+}
+
+/* Hairline rule — for in-card row separators */
+.rule {
+  border: 0;
+  border-top: 1px solid var(--ink-hairline);
+  margin: 0;
+}
+.rule-strong { border-top: 1px solid var(--ink-rule); }
+
+/* Typography ramp — direct-use helpers */
+.t-h1 {
+  font-family: "Clash Display", system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 28px;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  line-height: 1.15;
+}
+.t-h2 {
+  font-family: "Clash Display", system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  line-height: 1.3;
+}
+.t-body {
+  font-family: "Noto Serif SC", serif;
+  font-size: 14px;
+  color: var(--ink-body);
+  line-height: 1.75;
+}
+.t-caption {
+  font-family: "Noto Serif SC", serif;
+  font-size: 12.5px;
+  color: var(--ink-muted);
+  line-height: 1.6;
+}
+/* Support copy — the "mid-priority" voice. Used for agreements, rewards
+   rules, saved-at timestamps, payment guarantees, onboarding step
+   descriptions. Sans-serif bold at 500 so it doesn't fade on glass. */
+.t-info {
+  font-family: "Noto Sans SC", system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-body);
+  line-height: 1.75;
+  letter-spacing: 0.01em;
+}
+.t-info strong { font-weight: 700; color: var(--ink); }
+/* Strong mono — for table heads and data meta that must claim attention */
+.t-mono-strong {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  font-weight: 800;
 }

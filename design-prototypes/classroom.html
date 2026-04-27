@@ -1,0 +1,919 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Classroom · MemeFlow Prototype</title>
+<link rel="preconnect" href="https://api.fontshare.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&f[]=satoshi@400,500,600,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Serif+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_shared.css">
+<style>
+  /* ───────── LIVE BAR (always on top, single row) ───────── */
+  .live-bar {
+    padding: 14px 18px 14px 20px;
+    display: flex; align-items: center; gap: 14px;
+    margin-bottom: 16px;
+  }
+  .live-bar .status {
+    display: inline-flex; align-items: center; gap: 10px;
+    flex: 1; min-width: 0;
+  }
+  .live-bar .live-dot {
+    width: 10px; height: 10px; border-radius: 9999px;
+    background: #4C8F3B;
+    box-shadow: 0 0 10px rgba(76,143,59,0.75);
+    animation: pulse 1.5s infinite;
+    flex-shrink: 0;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.45 } }
+  .live-bar .state-en {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-weight: 700;
+    font-size: 16px; color: var(--green-ok);
+    letter-spacing: -0.01em;
+  }
+  .live-bar .state-zh {
+    font-family: "Noto Sans SC", system-ui, sans-serif;
+    font-weight: 500;
+    font-size: 13px; color: var(--ink-body);
+    letter-spacing: 0.01em;
+  }
+  .live-bar .timer {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 15px; font-weight: 700;
+    color: var(--ink);
+    padding: 0 14px;
+    border-left: 1px solid var(--ink-rule);
+    border-right: 1px solid var(--ink-rule);
+    letter-spacing: 0.04em;
+  }
+  .live-bar button.ghost {
+    padding: 10px 16px;
+    border-radius: 11px;
+    border: 1px solid var(--border-solid-strong);
+    background: rgba(255,255,255,0.85);
+    font-family: "Noto Sans SC", system-ui, sans-serif;
+    font-size: 13px; font-weight: 700;
+    color: var(--ink);
+    cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+    letter-spacing: 0.02em;
+  }
+  .live-bar button.ghost:hover { background: rgba(255,255,255,0.85); }
+  .live-bar button.stop {
+    padding: 10px 16px;
+    border-radius: 12px;
+    background: var(--ink); color: #fff;
+    border: 0; cursor: pointer;
+    font-weight: 700; font-size: 13px;
+    display: inline-flex; align-items: center; gap: 6px;
+    box-shadow: 0 4px 12px rgba(10,14,26,0.25);
+  }
+  .live-bar button.stop:hover { background: #1a2440; }
+
+  /* ───────── CONFIG STRIP — three stacked rows inside a compact card ───── */
+  .config-card {
+    padding: 18px 22px 20px;
+    margin-bottom: 20px;
+    background: #FFFFFF;
+    border: 1px solid var(--border-solid);
+    border-radius: 14px;
+  }
+  .cfg-row {
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 0;
+  }
+  .cfg-row + .cfg-row { border-top: 1px solid var(--ink-hairline); }
+  .cfg-row .label {
+    flex: 0 0 110px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    font-weight: 800;
+    letter-spacing: 0.2em;
+    color: var(--ink-soft);
+  }
+  .cfg-row .label .zh {
+    display: block;
+    font-family: "Noto Sans SC", sans-serif;
+    text-transform: none;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    color: var(--ink-body);
+    margin-top: 4px;
+  }
+  .cfg-row .chips {
+    flex: 1; min-width: 0;
+    display: flex; flex-wrap: wrap; gap: 6px;
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px;
+    border-radius: 9999px;
+    background: rgba(255,255,255,0.55);
+    border: 1px solid rgba(255,255,255,0.75);
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px;
+    color: rgba(10,14,26,0.7);
+    cursor: pointer;
+    transition: color .15s, background .15s, transform .12s;
+  }
+  .pill:hover { color: var(--ink); transform: translateY(-1px); }
+  .pill.on {
+    background: var(--ink);
+    color: #fff;
+    border-color: var(--ink);
+    box-shadow: 0 3px 8px rgba(10,14,26,0.22);
+  }
+  .pill.en { font-family: "Clash Display", system-ui, sans-serif; font-style: italic; letter-spacing: -0.01em; }
+  .pill .dot {
+    width: 4px; height: 4px; border-radius: 9999px;
+    background: var(--blue-accent);
+  }
+  .pill.on .dot { background: #fff; box-shadow: 0 0 6px rgba(255,255,255,0.8); }
+  .more-btn {
+    background: transparent; border: 0; cursor: pointer;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 12px;
+    color: var(--blue-accent);
+    padding: 6px 8px;
+  }
+
+  /* ───────── TRANSCRIPT STREAM ───────── */
+  .stream-wrap { position: relative; margin-bottom: 92px; }
+  .stream {
+    padding: 26px 28px 120px 40px;
+    min-height: 420px;
+    max-height: 62vh;
+    overflow-y: auto;
+    position: relative;
+  }
+  /* a thin vertical rule on the left replaces the old header label */
+  .stream::before {
+    content: "";
+    position: absolute;
+    top: 32px; bottom: 32px; left: 20px;
+    width: 2px;
+    background: linear-gradient(180deg, rgba(91,127,232,0.45), rgba(91,127,232,0.05));
+    border-radius: 2px;
+  }
+
+  .line { padding: 14px 0; }
+  .line + .line { border-top: 1px dashed rgba(10,14,26,0.07); }
+  .line .en {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-size: 13px; line-height: 1.5;
+    color: rgba(10,14,26,0.48);
+    margin: 0 0 6px;
+  }
+  .line .zh {
+    font-family: "Noto Serif SC", serif;
+    font-size: 17px; line-height: 1.8;
+    color: var(--ink);
+    margin: 0;
+  }
+  .line.final .zh { color: rgba(10,14,26,0.78); }
+  .line.live .zh {
+    color: var(--blue-accent);
+    font-weight: 600;
+  }
+  .line.live .cursor {
+    display: inline-block;
+    width: 8px; height: 18px;
+    margin-left: 6px;
+    background: var(--blue-accent);
+    vertical-align: -3px;
+    animation: blink 1s infinite;
+  }
+  @keyframes blink { 0%,100% {opacity: 1} 50% {opacity: 0.15} }
+
+  /* QA bubble — sits inline with the transcript */
+  .qa {
+    margin: 18px -6px;
+    padding: 16px 18px;
+    background: linear-gradient(135deg, rgba(91,127,232,0.12), rgba(137,163,240,0.06));
+    border: 1px solid rgba(91,127,232,0.2);
+    border-radius: 18px;
+  }
+  .qa-row { display: flex; gap: 12px; align-items: flex-start; }
+  .qa-row + .qa-row {
+    margin-top: 10px; padding-top: 12px;
+    border-top: 1px dashed rgba(91,127,232,0.22);
+  }
+  .qa .role {
+    flex-shrink: 0;
+    padding: 3px 9px;
+    border-radius: 7px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+    display: inline-flex; align-items: center; gap: 5px;
+    margin-top: 2px;
+  }
+  .qa .role.you { background: var(--ink); color: #fff; }
+  .qa .role.ai {
+    background: #fff; color: var(--blue-accent);
+    border: 1px solid rgba(91,127,232,0.3);
+  }
+  .qa .text {
+    flex: 1; min-width: 0;
+    font-family: "Noto Serif SC", serif;
+    font-size: 14.5px; line-height: 1.85;
+    color: var(--ink);
+  }
+  .qa .text strong { color: var(--blue-accent); font-weight: 600; }
+
+  /* Fade mask for the transcript's bottom edge — keeps ask-bar readable */
+  .stream-fade {
+    pointer-events: none;
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 90px;
+    background: linear-gradient(180deg, rgba(244,247,255,0) 0%, rgba(244,247,255,0.9) 70%, #F4F7FF 100%);
+    border-radius: 0 0 28px 28px;
+  }
+
+  /* ───────── ASK BAR — floats over the transcript's bottom ───────── */
+  .ask-dock {
+    position: sticky;
+    bottom: 20px;
+    z-index: 5;
+    margin-top: -80px; /* overlap the fade mask */
+  }
+  .ask-bar {
+    padding: 10px 12px 10px 16px;
+    display: flex; gap: 10px; align-items: center;
+    border-radius: 22px;
+  }
+  .ask-bar .spark { color: var(--blue-accent); flex-shrink: 0; }
+  .ask-bar input {
+    flex: 1;
+    background: transparent; border: 0; outline: none;
+    font-family: "Noto Serif SC", serif; font-size: 14px; color: var(--ink);
+    padding: 6px 0;
+  }
+  .ask-bar input::placeholder {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; color: rgba(10,14,26,0.45);
+  }
+  .ask-bar .send {
+    background: var(--ink); color: #fff;
+    border: 0; padding: 10px 18px;
+    border-radius: 14px;
+    font-weight: 700; font-size: 13px;
+    letter-spacing: -0.005em;
+    cursor: pointer;
+    display: inline-flex; gap: 6px; align-items: center;
+    box-shadow: 0 4px 12px rgba(10,14,26,0.25);
+  }
+
+  /* Tiny notes chip floating top-right of the transcript — the "live notes"
+     surface gets promoted to a peekable chip instead of a separate card */
+  .notes-chip {
+    position: absolute;
+    top: 16px; right: 18px;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px;
+    border-radius: 9999px;
+    background: rgba(255,255,255,0.7);
+    border: 1px solid rgba(255,255,255,0.85);
+    backdrop-filter: blur(20px);
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-size: 12px;
+    color: rgba(10,14,26,0.6);
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(91,127,232,0.08);
+  }
+  .notes-chip:hover { color: var(--blue-accent); }
+  .notes-chip .count {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px;
+    color: var(--blue-accent);
+    background: rgba(91,127,232,0.1);
+    padding: 1px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.05em;
+  }
+
+  /* Paragraph-mode line — ONE english paragraph + ONE chinese paragraph.
+     Different from realtime mode which alternates per sentence. */
+  .line.paragraph .en {
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  .line.paragraph .zh {
+    font-size: 16.5px;
+    line-height: 1.9;
+  }
+  .line.paragraph {
+    padding: 18px 0 20px;
+  }
+  /* Small mode badge so you can tell which rendering this is */
+  .line .mode-tag {
+    display: inline-block;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 9px; font-weight: 700;
+    letter-spacing: 0.15em; text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 5px;
+    background: rgba(91,127,232,0.1);
+    color: var(--blue-accent);
+    margin-bottom: 8px;
+  }
+  .line.realtime-style .mode-tag {
+    background: rgba(232,180,60,0.18);
+    color: #8A5D0E;
+  }
+
+  /* ───────── Live notes panel (auto-refreshing structured notes) ─────── */
+  .notes-panel {
+    padding: 20px 24px; margin-top: 20px;
+    background: #FFFFFF;
+    border: 1px solid var(--border-solid);
+    border-radius: 14px;
+  }
+  .notes-panel .head {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 14px;
+  }
+  .notes-panel h4 {
+    margin: 0;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 15px; font-weight: 500;
+    color: rgba(10,14,26,0.65);
+  }
+  .notes-panel .auto-pill {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px; letter-spacing: 0.15em;
+    color: var(--blue-accent);
+    background: rgba(91,127,232,0.1);
+    padding: 3px 8px; border-radius: 6px;
+  }
+  .notes-panel .refresh-time {
+    margin-left: auto;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px;
+    color: rgba(10,14,26,0.45);
+  }
+  .notes-panel ul {
+    margin: 0; padding-left: 18px;
+    font-family: "Noto Serif SC", serif;
+    font-size: 14px; line-height: 1.95;
+    color: rgba(10,14,26,0.78);
+  }
+  .notes-panel ul strong { color: var(--blue-accent); font-weight: 600; }
+  .notes-panel .save-row {
+    margin-top: 14px; padding-top: 14px;
+    border-top: 1px solid var(--ink-hairline);
+    display: flex; gap: 8px;
+  }
+
+  /* ───────── Extra states demo section ───────── */
+  .states {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px dashed rgba(10,14,26,0.12);
+  }
+  .states-head {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 0 6px;
+    margin-bottom: 14px;
+  }
+  .states-head::before {
+    content: "";
+    width: 16px; height: 1px; background: rgba(10,14,26,0.35);
+    transform: translateY(-4px);
+  }
+  .states-head .en {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 13px;
+    color: rgba(10,14,26,0.58);
+  }
+  .states-head .zh {
+    font-family: "Noto Sans SC", sans-serif;
+    font-weight: 300; font-size: 11px; letter-spacing: 0.15em;
+    color: rgba(10,14,26,0.42);
+  }
+  .states-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 720px) { .states-grid { grid-template-columns: 1fr; } }
+  .state-card {
+    padding: 18px 20px;
+    background: #FFFFFF;
+    border: 1px solid var(--border-solid);
+    border-radius: 14px;
+  }
+  .state-card .st-title {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-weight: 600; font-size: 14px;
+    color: rgba(10,14,26,0.75);
+    margin-bottom: 4px;
+  }
+  .state-card .st-sub {
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px;
+    color: rgba(10,14,26,0.7);
+    margin-bottom: 14px;
+    line-height: 1.7;
+  }
+  .state-card .st-body { padding-top: 10px; }
+
+  /* Paused mini live-bar */
+  .mini-live {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.55);
+    border: 1px solid rgba(255,255,255,0.7);
+    border-radius: 14px;
+  }
+  .mini-live .dot-amber { width: 8px; height: 8px; border-radius: 9999px; background: #E8C375; }
+  .mini-live .dot-green { width: 8px; height: 8px; border-radius: 9999px; background: #4C8F3B; box-shadow: 0 0 8px rgba(76,143,59,0.6); animation: pulse 1.5s infinite; }
+  .mini-live .dot-red { width: 8px; height: 8px; border-radius: 9999px; background: var(--red-warn); }
+  .mini-live .dot-grey { width: 8px; height: 8px; border-radius: 9999px; background: rgba(10,14,26,0.2); }
+  .mini-live .label {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-weight: 600;
+    font-size: 13px;
+  }
+  .mini-live .sub {
+    font-family: "Noto Serif SC", serif;
+    font-size: 11.5px;
+    color: rgba(10,14,26,0.58);
+    margin-left: auto;
+  }
+
+  .reconnect-btn {
+    margin-top: 10px;
+    width: 100%;
+    padding: 10px; border-radius: 12px;
+    border: 0;
+    background: var(--red-warn);
+    color: #fff;
+    font-weight: 700; font-size: 13px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    box-shadow: 0 4px 12px rgba(229,56,43,0.3);
+  }
+
+  .empty-hint {
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px;
+    line-height: 1.85;
+    color: rgba(10,14,26,0.58);
+    padding: 20px 0 4px;
+    text-align: center;
+  }
+  .empty-hint em {
+    color: var(--blue-accent);
+    font-style: italic;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 600;
+  }
+
+  /* Compliance modal — shown inline here as a preview card */
+  .compliance {
+    margin-top: 48px;
+    padding: 28px 32px;
+    background: #FFFFFF;
+    border: 1px solid var(--border-solid);
+    border-left: 3px solid var(--red-warn);
+    border-radius: 16px;
+  }
+  .compliance .c-head {
+    display: flex; align-items: center; gap: 12px;
+    margin-bottom: 16px;
+  }
+  .compliance .c-icon {
+    width: 36px; height: 36px;
+    border-radius: 11px;
+    background: rgba(229,56,43,0.12);
+    color: var(--red-warn);
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .compliance h3 {
+    margin: 0;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 600; font-size: 20px;
+    letter-spacing: -0.02em;
+  }
+  .compliance h3 .zh {
+    display: block;
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px; font-weight: 500;
+    color: rgba(10,14,26,0.65);
+    margin-top: 2px;
+  }
+  .compliance ul {
+    margin: 0 0 20px; padding-left: 18px;
+    font-family: "Noto Serif SC", serif;
+    font-size: 13.5px; line-height: 1.9;
+    color: rgba(10,14,26,0.78);
+  }
+  .compliance ul strong { color: var(--red-warn); }
+  .compliance .c-actions {
+    display: flex; gap: 10px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(229,56,43,0.15);
+  }
+  .compliance .c-accept {
+    flex: 1;
+    padding: 12px; border-radius: 12px;
+    background: var(--ink); color: #fff;
+    border: 0;
+    font-weight: 700; font-size: 14px;
+    cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    box-shadow: 0 4px 12px rgba(10,14,26,0.22);
+  }
+  .compliance .c-decline {
+    padding: 12px 18px; border-radius: 12px;
+    background: transparent;
+    border: 1px solid rgba(10,14,26,0.15);
+    color: rgba(10,14,26,0.65);
+    cursor: pointer;
+    font-size: 13px; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" style="text-decoration:none;color:inherit"><span class="brand">MemeFlow</span><span class="version">PROTOTYPE</span></a>
+      <nav class="tab-rail">
+        <a href="index.html">· overview</a>
+        <a href="review.html">review · 复习</a>
+        <a href="classroom.html" class="active"><span class="tab-dot"></span>classroom · 课堂</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <div class="eyebrow"><span class="en">classroom live</span><span class="zh">课堂同传</span></div>
+
+    <!-- LIVE STATUS BAR — single row, always on top -->
+    <div class="glass-thick live-bar">
+      <div class="status">
+        <span class="live-dot"></span>
+        <span class="state-en">Listening</span>
+        <span class="state-zh">· 正在监听 · 金融</span>
+      </div>
+      <span class="timer">04:23</span>
+      <button class="ghost" title="暂停">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>
+        pause
+      </button>
+      <button class="stop">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+        结束并保存
+      </button>
+    </div>
+
+    <!-- CONFIG CARD — three rows: source / mode / course -->
+    <div class="config-card">
+      <div class="cfg-row">
+        <div class="label">audio<span class="zh">声音来源</span></div>
+        <div class="chips">
+          <span class="pill en">mic · 麦克风</span>
+          <span class="pill en on"><span class="dot"></span>tab audio · 浏览器标签</span>
+        </div>
+      </div>
+
+      <div class="cfg-row">
+        <div class="label">mode<span class="zh">翻译模式</span></div>
+        <div class="chips">
+          <span class="pill on" id="mode-paragraph" onclick="setMode('paragraph')"><span class="dot"></span>整段翻译</span>
+          <span class="pill" id="mode-realtime" onclick="setMode('realtime')">实时翻译</span>
+          <span id="mode-hint" style="margin-left:auto;font-family:'Noto Serif SC',serif;font-size:11px;color:rgba(10,14,26,0.6);align-self:center">
+            几句英文攒成一段再翻，中文更顺 · 延迟几秒
+          </span>
+        </div>
+      </div>
+
+      <div class="cfg-row">
+        <div class="label">course<span class="zh">课程</span></div>
+        <div class="chips">
+          <span class="pill on"><span class="dot"></span>金融</span>
+          <span class="pill">经济学</span>
+          <span class="pill">会计</span>
+          <span class="pill">数据科学</span>
+          <span class="pill">法律</span>
+          <button class="more-btn">+ 6 more →</button>
+          <button class="more-btn" style="color:rgba(10,14,26,0.5)" onclick="toggleCustom()">其他…</button>
+        </div>
+      </div>
+
+      <!-- Custom course input — only when "其他…" is active -->
+      <div class="cfg-row" id="custom-course-row" style="display:none">
+        <div class="label">custom<span class="zh">自定义</span></div>
+        <div class="chips" style="flex-direction:column;align-items:stretch">
+          <input type="text" placeholder="比如：营销学、海洋生物、古典音乐史"
+            style="width:100%;padding:10px 14px;border:1px solid rgba(255,255,255,0.7);background:rgba(255,255,255,0.6);border-radius:12px;outline:none;font-family:'Noto Serif SC',serif;font-size:14px;color:var(--ink)">
+          <p style="margin:6px 2px 0;font-family:'Noto Serif SC',serif;font-size:11px;color:rgba(10,14,26,0.55)">
+            AI 会按这门课的场景翻译专业术语。会记住你上次选的。
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- TRANSCRIPT STREAM + floating ask dock -->
+    <div class="stream-wrap">
+      <div class="glass-thick stream" id="stream">
+
+        <!-- ============ PARAGRAPH MODE (currently selected) ============
+             liveSession 攒够一段（N 句英文）才让 Gemini 一次性翻。
+             渲染：一条"英文整段"+ 一条"中文整段"，不再一句一换。 -->
+        <div id="paragraph-stream">
+          <div class="line paragraph final">
+            <span class="mode-tag">paragraph · 整段翻译</span>
+            <p class="en">"Alright, let's start with the basic capital asset pricing model. CAPM gives you the expected return of an asset based on its beta. The basic idea is that investors demand compensation for taking on risk above and beyond what's available from a risk-free asset."</p>
+            <p class="zh">好，我们先从最基础的资本资产定价模型开始讲。CAPM 这个模型告诉你，一项资产该有多少预期回报率，取决于它的贝塔值。背后的直觉是：投资者承担的风险超过无风险资产，就必须得到相应的补偿。</p>
+          </div>
+
+          <div class="qa">
+            <div class="qa-row">
+              <span class="role you">YOU</span>
+              <p class="text">老师刚才说的 beta 到底是啥意思？</p>
+            </div>
+            <div class="qa-row">
+              <span class="role ai">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="m12 3 1.912 5.813 5.813 1.912-5.813 1.912L12 18l-1.912-5.813L3 10.725l5.813-1.912z"/></svg>
+                AI
+              </span>
+              <p class="text">
+                根据已经讲过的内容：beta（β）是衡量<strong>一只股票相对整体市场的波动性</strong>。
+                β = 1 表示和市场同步动；β &gt; 1 表示比市场更激烈（例如 1.5 意味着市场涨 10% 它涨 15%）；
+                β &lt; 1 表示更稳。CAPM 公式里 β 乘以市场风险溢价，再加无风险利率，就是你该期望拿到的回报。
+              </p>
+            </div>
+          </div>
+
+          <div class="line paragraph final">
+            <span class="mode-tag">paragraph · 整段翻译</span>
+            <p class="en">"The formula itself is simple: expected return equals the risk-free rate plus beta times the market risk premium. So if the risk-free rate is four percent, beta is one point two, and the market premium is six percent, your expected return would be eleven point two percent."</p>
+            <p class="zh">公式本身很简单：预期回报率 = 无风险利率 + 贝塔 × 市场风险溢价。所以如果无风险利率是 4%、贝塔是 1.2、市场溢价是 6%，那么预期回报率就是 11.2%。</p>
+          </div>
+
+          <div class="line paragraph live">
+            <span class="mode-tag">paragraph · 正在攒句</span>
+            <p class="en" style="color:rgba(10,14,26,0.4)">"Now, one of the big assumptions behind CAPM is that investors are rational and markets are efficient, which in practice often doesn't hold..."</p>
+            <p class="zh" style="font-style:italic;color:rgba(91,127,232,0.55)">
+              翻译中<span class="cursor"></span>
+              <span style="font-family:'Noto Sans SC',sans-serif;font-size:11px;font-weight:300;color:rgba(10,14,26,0.42);font-style:normal;margin-left:8px">还在收集这一段的剩余句子，完整翻译将稍后整段替换</span>
+            </p>
+          </div>
+        </div>
+
+        <!-- ============ REALTIME MODE (hidden unless switched) ============
+             liveSession 每句英文讲完立刻翻一次，1:1 配对。
+             渲染：英文一句、中文一句，交替出现；延迟最低但中文"碎"。 -->
+        <div id="realtime-stream" style="display:none">
+          <div class="line final realtime-style">
+            <span class="mode-tag">realtime · 实时</span>
+            <p class="en">"Alright, let's start with the basic capital asset pricing model."</p>
+            <p class="zh">好，我们先从最基本的资本资产定价模型讲起。</p>
+          </div>
+          <div class="line final realtime-style">
+            <span class="mode-tag">realtime · 实时</span>
+            <p class="en">"CAPM gives you the expected return of an asset based on its beta."</p>
+            <p class="zh">CAPM 根据资产的贝塔值给出它的预期回报率。</p>
+          </div>
+          <div class="line final realtime-style">
+            <span class="mode-tag">realtime · 实时</span>
+            <p class="en">"The basic idea is that investors demand compensation for taking on risk."</p>
+            <p class="zh">基本思路是投资者会要求为所承担的风险获得补偿。</p>
+          </div>
+
+          <div class="qa">
+            <div class="qa-row">
+              <span class="role you">YOU</span>
+              <p class="text">老师刚才说的 beta 到底是啥意思？</p>
+            </div>
+            <div class="qa-row">
+              <span class="role ai">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor"><path d="m12 3 1.912 5.813 5.813 1.912-5.813 1.912L12 18l-1.912-5.813L3 10.725l5.813-1.912z"/></svg>
+                AI
+              </span>
+              <p class="text">
+                根据已经讲过的内容：beta（β）是衡量<strong>一只股票相对整体市场的波动性</strong>。
+                β = 1 表示和市场同步动；β &gt; 1 更激烈；β &lt; 1 更稳。
+              </p>
+            </div>
+          </div>
+
+          <div class="line final realtime-style">
+            <span class="mode-tag">realtime · 实时</span>
+            <p class="en">"The formula is expected return equals risk-free rate plus beta times the market risk premium."</p>
+            <p class="zh">公式是：预期回报率 = 无风险利率 + 贝塔 × 市场风险溢价。</p>
+          </div>
+          <div class="line final realtime-style">
+            <span class="mode-tag">realtime · 实时</span>
+            <p class="en">"So if the risk-free rate is 4%, beta is 1.2, and market premium is 6%..."</p>
+            <p class="zh">所以如果无风险利率是 4%，贝塔是 1.2，市场溢价是 6%……</p>
+          </div>
+          <div class="line realtime-style live">
+            <span class="mode-tag">realtime · 正在翻</span>
+            <p class="en">"...your expected return would be eleven point two percent."</p>
+            <p class="zh">……你的预期回报率就是 11.2%<span class="cursor"></span></p>
+          </div>
+        </div>
+
+        <div class="stream-fade"></div>
+      </div>
+
+      <!-- ASK DOCK — floats over the transcript's bottom -->
+      <div class="ask-dock">
+        <div class="glass-thick ask-bar">
+          <svg class="spark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m12 3 1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275z"/>
+          </svg>
+          <input placeholder="问 AI 任何问题…（如：CAPM 为啥实务里经常不准？）">
+          <button class="send">
+            ask AI
+            <svg width="12" height="12" viewBox="0 0 14 14" fill="none"><path d="M3 7h8m0 0L7.5 3.5M11 7l-3.5 3.5" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LIVE NOTES PANEL — auto-refreshing structured notes every 45s -->
+    <div class="notes-panel">
+      <div class="head">
+        <h4>— live notes · 实时笔记</h4>
+        <span class="auto-pill">AUTO · 每 45 秒刷新</span>
+        <span class="refresh-time">updated 00:12 ago</span>
+      </div>
+      <ul>
+        <li><strong>CAPM 核心公式</strong>：E(R) = Rf + β × (Rm − Rf)，即无风险利率 + 贝塔 × 市场风险溢价。</li>
+        <li><strong>贝塔 β 的含义</strong>：衡量个股相对市场整体的波动程度；β = 1 与市场同步；&gt; 1 更激烈；&lt; 1 更稳健。</li>
+        <li><strong>老师的数值例子</strong>：Rf = 4%, β = 1.2, 市场溢价 = 6% → 预期回报率 11.2%。</li>
+        <li>接下来要讲：CAPM 的三大假设，以及它在实务中常被挑战的原因。</li>
+      </ul>
+      <div class="save-row">
+        <button class="btn-ghost" style="padding:8px 14px;font-size:12px">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/></svg>
+          保存到笔记
+        </button>
+        <button class="btn-ghost" style="padding:8px 14px;font-size:12px">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+          导出 PDF
+        </button>
+        <span style="margin-left:auto;font-family:'Noto Serif SC',serif;font-size:11px;color:rgba(10,14,26,0.45);align-self:center">
+          停止录音后会自动保存完整笔记
+        </span>
+      </div>
+    </div>
+
+    <!-- ======== STATES PREVIEW — 其他运行期状态演示 ======== -->
+    <section class="states">
+      <div class="states-head">
+        <span class="en">other states</span>
+        <span class="zh">其他运行期状态 · 设计师预览区</span>
+      </div>
+
+      <div class="states-grid">
+        <!-- State 1: idle / 未开始 -->
+        <div class="state-card">
+          <div class="st-title">— idle · 第一次打开 / 未开始</div>
+          <div class="st-sub">用户还没点"开始"，字幕区留白 + 引导</div>
+          <div class="st-body">
+            <div class="mini-live">
+              <span class="dot-grey"></span>
+              <span class="label" style="color:rgba(10,14,26,0.55)">Not started</span>
+              <span class="sub">未开始</span>
+            </div>
+            <p class="empty-hint">
+              点 <em>开始</em> 后字幕会出现在这里。<br>
+              上课中可以随时在底部<em>问 AI</em>任何问题。
+            </p>
+          </div>
+        </div>
+
+        <!-- State 2: paused / 暂停 -->
+        <div class="state-card">
+          <div class="st-title">— paused · 暂停</div>
+          <div class="st-sub">连接保持热，暂不送音频（适合中场/走动）</div>
+          <div class="st-body">
+            <div class="mini-live">
+              <span class="dot-amber"></span>
+              <span class="label" style="color:#8A5D0E">Paused</span>
+              <span class="sub">点 resume 继续 · 02:14 已录</span>
+            </div>
+            <button class="btn-ink" style="margin-top:10px;width:100%;padding:10px;font-size:13px">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              继续 · resume
+            </button>
+          </div>
+        </div>
+
+        <!-- State 3: connecting -->
+        <div class="state-card">
+          <div class="st-title">— connecting · 连接中</div>
+          <div class="st-sub">正在取 token、开 WebSocket</div>
+          <div class="st-body">
+            <div class="mini-live">
+              <span class="dot-amber" style="animation:pulse 1.2s infinite"></span>
+              <span class="label" style="color:#8A5D0E">Connecting…</span>
+              <span class="sub">正在连接语音服务器</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- State 4: error + manual reconnect -->
+        <div class="state-card">
+          <div class="st-title">— stuck · 线路卡住</div>
+          <div class="st-sub">用户在讲但 30s 没收到新字幕，给一个手动兜底</div>
+          <div class="st-body">
+            <div class="mini-live">
+              <span class="dot-green"></span>
+              <span class="label" style="color:#4C8F3B">Listening</span>
+              <span class="sub">但 30s 无新字幕</span>
+            </div>
+            <button class="reconnect-btn">
+              <span style="width:6px;height:6px;border-radius:9999px;background:#fff;animation:pulse 1s infinite"></span>
+              线路卡住？点这里重连
+            </button>
+          </div>
+        </div>
+
+        <!-- State 5: error -->
+        <div class="state-card" style="grid-column: 1 / -1; border-color: rgba(229,56,43,0.3)">
+          <div class="st-title" style="color:var(--red-warn)">— error · 启动失败</div>
+          <div class="st-sub">权限被拒 / token 失败 / 浏览器不支持等</div>
+          <div class="st-body">
+            <div class="mini-live" style="background:rgba(229,56,43,0.06);border-color:rgba(229,56,43,0.2)">
+              <span class="dot-red"></span>
+              <span class="label" style="color:var(--red-warn)">Error</span>
+              <span class="sub" style="font-family:'Noto Serif SC',serif;color:rgba(10,14,26,0.7)">
+                权限被拒 · 请在浏览器设置里允许 MemeFlow 使用麦克风后重试
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======== COMPLIANCE MODAL — 首次使用强制确认 ======== -->
+    <section class="compliance">
+      <div class="c-head">
+        <div class="c-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </div>
+        <h3>
+          Before you start · 首次使用须知
+          <span class="zh">开启同传前必须读完并同意</span>
+        </h3>
+      </div>
+      <ul>
+        <li><strong>音频会上传到 Google 服务器</strong>处理。语音识别（Deepgram）和翻译（Gemini）都需要联网，不是本地运行。</li>
+        <li>MemeFlow <strong>不会长期保存</strong>你的原始音频。字幕文本会保存在你的账号下方便你复习。</li>
+        <li>请确认你<strong>有权</strong>把这节课/这个视频的音频送到外部服务器做处理——课程录制、版权内容、机密会议请谨慎使用。</li>
+        <li>每个会话的字幕都会写到 <code>classSessions/{sessionId}</code> 集合下，只有你自己能看。</li>
+      </ul>
+      <div class="c-actions">
+        <button class="c-decline">先不用，返回</button>
+        <button class="c-accept">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          我已阅读并同意，开始使用
+        </button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    function setMode(mode) {
+      const p = document.getElementById('mode-paragraph');
+      const r = document.getElementById('mode-realtime');
+      const ps = document.getElementById('paragraph-stream');
+      const rs = document.getElementById('realtime-stream');
+      const hint = document.getElementById('mode-hint');
+      if (mode === 'paragraph') {
+        p.classList.add('on');
+        r.classList.remove('on');
+        ps.style.display = '';
+        rs.style.display = 'none';
+        hint.textContent = '几句英文攒成一段再翻，中文更顺 · 延迟几秒';
+      } else {
+        r.classList.add('on');
+        p.classList.remove('on');
+        ps.style.display = 'none';
+        rs.style.display = '';
+        hint.textContent = '每句话讲完立刻翻译 · 延迟最低，但中文会碎一些';
+      }
+    }
+    function toggleCustom() {
+      const row = document.getElementById('custom-course-row');
+      row.style.display = row.style.display === 'none' ? '' : 'none';
+    }
+  </script>
+</body>
+</html>

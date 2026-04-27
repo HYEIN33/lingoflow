@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle, Circle } from 'lucide-react';
+import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface OnboardingChecklistProps {
@@ -13,11 +13,12 @@ interface ChecklistItem {
   labelEn: string;
 }
 
+// 顺序对齐 user.html 原型 checklist: search → translate → save → contribute → review
 const CHECKLIST_ITEMS: ChecklistItem[] = [
   { key: 'search_slang', labelZh: '搜索一个梗', labelEn: 'Search a slang' },
   { key: 'translate_word', labelZh: '翻译一个单词', labelEn: 'Translate a word' },
-  { key: 'contribute_entry', labelZh: '贡献一个词条', labelEn: 'Contribute an entry' },
   { key: 'save_wordbook', labelZh: '保存到单词本', labelEn: 'Save to wordbook' },
+  { key: 'contribute_entry', labelZh: '贡献一个词条', labelEn: 'Contribute an entry' },
   { key: 'complete_review', labelZh: '完成一次复习', labelEn: 'Complete a review' },
 ];
 
@@ -70,29 +71,34 @@ export function OnboardingChecklist({ uiLang, onDismiss }: OnboardingChecklistPr
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -10 }}
-        className="mb-4 bg-gradient-to-br from-[#E8EEFC] to-[#DDE5F7] border border-[rgba(91,127,232,0.3)] rounded-2xl p-5 shadow-sm relative"
+        className="mb-4 border border-[rgba(91,127,232,0.3)] rounded-[18px] px-6 py-[22px] relative max-w-[480px] mx-auto"
+        style={{
+          background: 'linear-gradient(135deg, rgba(232,238,252,0.9), rgba(221,229,247,0.88))',
+        }}
       >
         <button
           onClick={() => {
             setDismissed(true);
             onDismiss();
           }}
-          className="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600 hover:bg-white/50 rounded-lg transition-colors"
+          className="absolute top-3 right-3 p-1 text-[var(--ink-subtle)] hover:text-[var(--ink)] hover:bg-white/60 rounded-lg transition-colors"
+          aria-label={uiLang === 'zh' ? '关闭' : 'Close'}
         >
           <X className="w-4 h-4" />
         </button>
 
         <div className="mb-3">
-          <h3 className="font-bold text-[#0A0E1A] text-sm">
-            {uiLang === 'zh' ? '新手任务' : 'Getting Started'}
+          <h3 className="font-display font-semibold text-[var(--ink)] text-[16px] tracking-[-0.02em] mb-1">
+            {uiLang === 'zh' ? '新手任务 · Getting Started' : 'Getting Started'}
           </h3>
-          <p className="text-xs text-[#5B7FE8] mt-0.5">
-            {completedCount}/{totalCount} {uiLang === 'zh' ? '已完成' : 'completed'}
-          </p>
+          <span className="font-display italic text-[12px] text-[var(--blue-accent)]">
+            {completedCount} / {totalCount} {uiLang === 'zh' ? '已完成' : 'completed'}
+          </span>
           {/* Progress bar */}
-          <div className="mt-2 h-1.5 bg-[rgba(91,127,232,0.1)] rounded-full overflow-hidden">
+          <div className="mt-2.5 mb-3.5 h-[6px] bg-[rgba(91,127,232,0.15)] rounded-full overflow-hidden">
             <motion.div
-              className="h-full bg-[#5B7FE8] rounded-full"
+              className="h-full rounded-full"
+              style={{ background: 'linear-gradient(90deg, #5B7FE8, #0A0E1A)' }}
               initial={{ width: 0 }}
               animate={{ width: `${(completedCount / totalCount) * 100}%` }}
               transition={{ duration: 0.5 }}
@@ -100,17 +106,28 @@ export function OnboardingChecklist({ uiLang, onDismiss }: OnboardingChecklistPr
           </div>
         </div>
 
-        <ul className="space-y-2">
+        <ul className="list-none p-0 m-0">
           {CHECKLIST_ITEMS.map((item) => {
             const done = !!checklist[item.key];
             return (
-              <li key={item.key} className="flex items-center gap-2.5">
-                {done ? (
-                  <CheckCircle className="w-4 h-4 text-[#5B7FE8] shrink-0" />
-                ) : (
-                  <Circle className="w-4 h-4 text-[rgba(91,127,232,0.4)] shrink-0" />
-                )}
-                <span className={`text-sm ${done ? 'text-[rgba(91,127,232,0.5)] line-through' : 'text-[#0A0E1A]'}`}>
+              <li
+                key={item.key}
+                className="flex items-center gap-2.5 py-[9px] font-zh-sans text-[14px] font-medium tracking-[0.01em]"
+              >
+                <span
+                  className={`w-[18px] h-[18px] shrink-0 rounded-full inline-flex items-center justify-center ${
+                    done
+                      ? 'bg-[var(--blue-accent)] text-white'
+                      : 'border-[1.5px] border-[rgba(91,127,232,0.35)]'
+                  }`}
+                >
+                  {done && (
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                </span>
+                <span className={done ? 'text-[rgba(91,127,232,0.55)] line-through' : 'text-[var(--ink)]'}>
                   {uiLang === 'zh' ? item.labelZh : item.labelEn}
                 </span>
               </li>

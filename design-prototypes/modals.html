@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Modals · MemeFlow Prototype</title>
+<link rel="preconnect" href="https://api.fontshare.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&f[]=satoshi@400,500,600,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Serif+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_shared.css">
+<style>
+  .section-head {
+    display: flex; align-items: baseline; gap: 12px;
+    margin: 40px 0 12px;
+    padding: 0 6px;
+  }
+  .section-head:first-of-type { margin-top: 18px; }
+  .section-head::before {
+    content: ""; width: 16px; height: 1px;
+    background: rgba(10,14,26,0.35);
+    transform: translateY(-4px);
+  }
+  .section-head .en {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 13px;
+    color: rgba(10,14,26,0.58);
+  }
+  .section-head .zh {
+    font-family: "Noto Sans SC", sans-serif;
+    font-weight: 300; font-size: 11px; letter-spacing: 0.15em;
+    color: rgba(10,14,26,0.42);
+  }
+  .demo-note {
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px; color: rgba(10,14,26,0.62);
+    line-height: 1.8;
+    padding: 0 8px 10px;
+  }
+  .modal-wrap { display: flex; justify-content: center; }
+
+  /* ========== CLASS NOTES MODAL ========== */
+  .notes-modal {
+    max-width: 640px; width: 100%;
+    padding: 0;
+    overflow: hidden;
+  }
+  .notes-head {
+    padding: 20px 26px;
+    display: flex; align-items: center; gap: 14px;
+    border-bottom: 1px solid var(--ink-hairline);
+  }
+  .notes-head .icon {
+    width: 38px; height: 38px; border-radius: 12px;
+    background: rgba(91,127,232,0.12);
+    color: var(--blue-accent);
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .notes-head h2 {
+    margin: 0 0 2px;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 700; font-size: 18px;
+    letter-spacing: -0.02em;
+  }
+  .notes-head .sub {
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px; color: rgba(10,14,26,0.68);
+    margin-top: 3px;
+  }
+  .notes-head .x {
+    margin-left: auto;
+    width: 34px; height: 34px;
+    background: transparent; border: 0; cursor: pointer;
+    color: rgba(10,14,26,0.45);
+    border-radius: 9px;
+  }
+
+  .notes-folders {
+    padding: 14px 26px;
+    display: flex; gap: 8px; flex-wrap: wrap;
+    border-bottom: 1px solid var(--ink-hairline);
+  }
+  .folder-chip {
+    padding: 6px 12px;
+    border-radius: 9999px;
+    background: rgba(255,255,255,0.6);
+    border: 1px solid rgba(255,255,255,0.7);
+    font-family: "Noto Serif SC", serif;
+    font-size: 12.5px;
+    color: rgba(10,14,26,0.7);
+    display: inline-flex; align-items: center; gap: 5px;
+    cursor: pointer;
+  }
+  .folder-chip.on {
+    background: var(--ink); color: #fff; border-color: var(--ink);
+  }
+  .folder-chip .add-icon { width: 12px; height: 12px; }
+
+  .sessions-list {
+    max-height: 360px; overflow-y: auto;
+    padding: 8px 14px;
+  }
+  .session-item {
+    padding: 14px 16px;
+    border-radius: 14px;
+    display: flex; gap: 14px; align-items: flex-start;
+    cursor: pointer;
+  }
+  .session-item:hover { background: rgba(91,127,232,0.05); }
+  .session-item + .session-item { border-top: 1px solid var(--ink-hairline); border-radius: 0; padding-top: 14px; margin-top: 0; }
+
+  .session-item .mode-pill {
+    flex-shrink: 0;
+    padding: 4px 8px;
+    border-radius: 7px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 9px; font-weight: 800; letter-spacing: 0.12em;
+    color: var(--blue-accent);
+    background: rgba(91,127,232,0.12);
+    margin-top: 2px;
+  }
+  .session-item .body { flex: 1; min-width: 0; }
+  .session-item h4 {
+    margin: 0 0 4px;
+    font-family: "Noto Serif SC", serif;
+    font-weight: 600; font-size: 14.5px;
+    color: var(--ink);
+  }
+  .session-item .excerpt {
+    font-family: "Noto Serif SC", serif;
+    font-size: 12.5px;
+    color: rgba(10,14,26,0.6);
+    line-height: 1.6;
+    margin: 0 0 6px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .session-item .time {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10.5px;
+    color: rgba(10,14,26,0.45);
+  }
+  .session-item .actions {
+    display: flex; gap: 4px;
+    opacity: 0.7;
+    flex-shrink: 0;
+  }
+  .session-item .actions button {
+    width: 28px; height: 28px;
+    background: transparent; border: 0; cursor: pointer;
+    color: rgba(10,14,26,0.4);
+    border-radius: 8px;
+  }
+  .session-item .actions button:hover { color: var(--ink); background: rgba(10,14,26,0.06); }
+  .session-item .actions button.del:hover { color: var(--red-warn); background: rgba(229,56,43,0.08); }
+
+  /* Detail view of a saved session */
+  .session-detail {
+    max-width: 680px; width: 100%;
+    padding: 0;
+    overflow: hidden;
+  }
+  .session-detail .d-head {
+    padding: 18px 26px;
+    border-bottom: 1px solid var(--ink-hairline);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .session-detail .back-btn {
+    background: transparent; border: 0; cursor: pointer;
+    color: var(--blue-accent);
+    display: inline-flex; align-items: center; gap: 4px;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 13px;
+    padding: 4px 6px;
+  }
+  .session-detail h2 {
+    margin: 0;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 700; font-size: 18px;
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .session-detail .rename {
+    background: transparent; border: 0; cursor: pointer;
+    color: rgba(10,14,26,0.35); padding: 4px;
+  }
+  .session-detail .rename:hover { color: var(--blue-accent); }
+
+  .session-detail .meta-row {
+    padding: 10px 26px;
+    display: flex; gap: 14px; flex-wrap: wrap;
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px;
+    color: rgba(10,14,26,0.7);
+    border-bottom: 1px solid var(--ink-hairline);
+    background: rgba(10,14,26,0.02);
+  }
+  .session-detail .meta-row strong { color: var(--ink); font-weight: 700; }
+
+  .session-detail .transcript {
+    padding: 20px 26px;
+    max-height: 320px;
+    overflow-y: auto;
+    font-family: "Noto Serif SC", serif;
+    font-size: 13.5px; line-height: 1.95;
+    color: rgba(10,14,26,0.78);
+  }
+  .session-detail .transcript p + p { margin-top: 10px; }
+  .session-detail .transcript .en-line {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-size: 12px;
+    color: rgba(10,14,26,0.48);
+    margin: 0 0 2px;
+  }
+  .session-detail .summary {
+    padding: 16px 26px 20px;
+    border-top: 1px solid var(--ink-hairline);
+    background: linear-gradient(135deg, rgba(91,127,232,0.06), transparent);
+  }
+  .session-detail .summary h3 {
+    margin: 0 0 8px;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-size: 14px; font-weight: 600;
+    color: var(--blue-accent);
+  }
+  .session-detail .summary ul {
+    margin: 0; padding-left: 18px;
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px; line-height: 1.9;
+    color: rgba(10,14,26,0.78);
+  }
+  .session-detail .d-foot {
+    padding: 14px 26px;
+    border-top: 1px solid var(--ink-hairline);
+    display: flex; gap: 10px;
+  }
+
+  /* ========== DELETE CONFIRM ========== */
+  .confirm-modal {
+    max-width: 420px; width: 100%;
+    padding: 28px 30px;
+    text-align: center;
+  }
+  .confirm-modal .warn-icon {
+    width: 56px; height: 56px; border-radius: 17px;
+    margin: 0 auto 18px;
+    background: rgba(229,56,43,0.12);
+    color: var(--red-warn);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .confirm-modal h3 {
+    margin: 0 0 8px;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 700; font-size: 20px;
+    letter-spacing: -0.02em;
+  }
+  .confirm-modal h3 em { font-style: italic; color: var(--red-warn); }
+  .confirm-modal p {
+    margin: 0 0 20px;
+    font-family: "Noto Serif SC", serif;
+    font-size: 13.5px; line-height: 1.85;
+    color: rgba(10,14,26,0.68);
+  }
+  .confirm-modal p strong { color: var(--ink); font-weight: 700; }
+  .confirm-modal .actions {
+    display: flex; gap: 10px;
+    padding-top: 14px;
+    border-top: 1px solid var(--ink-hairline);
+  }
+  .btn-danger {
+    flex: 1;
+    padding: 12px; border-radius: 13px;
+    background: var(--red-warn);
+    color: #fff; border: 0; cursor: pointer;
+    font-family: "Noto Serif SC", serif;
+    font-weight: 700; font-size: 13.5px;
+    box-shadow: 0 4px 12px rgba(229,56,43,0.3);
+  }
+  .btn-danger:hover { background: #B81F14; }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" style="text-decoration:none;color:inherit"><span class="brand">MemeFlow</span><span class="version">PROTOTYPE</span></a>
+      <nav class="tab-rail">
+        <a href="index.html">· overview</a>
+        <a href="guidelines.html">guidelines</a>
+        <a href="modals.html" class="active"><span class="tab-dot"></span>modals · 弹窗</a>
+        <a href="admin.html">admin</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <div class="eyebrow"><span class="en">modals</span><span class="zh">弹窗合集 · 课堂笔记 / 删除确认</span></div>
+
+    <!-- ========== CLASS NOTES MODAL ========== -->
+    <div class="section-head"><span class="en">class notes — list view</span><span class="zh">我的笔记（课堂同传结课后）· 列表</span></div>
+    <div class="demo-note">课堂 tab 左上角 "我的笔记" 按钮打开。列出所有已保存的课堂会话，支持按文件夹分组。</div>
+    <div class="modal-wrap">
+      <div class="glass-thick notes-modal">
+        <div class="notes-head">
+          <div class="icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          </div>
+          <div>
+            <h2>我的笔记 · Class Notes</h2>
+            <div class="sub">共 12 节课 · 本周新增 3 节</div>
+          </div>
+          <button class="x" title="关闭">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 6-12 12"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="notes-folders">
+          <span class="folder-chip on">全部 · 12</span>
+          <span class="folder-chip">金融 · 5</span>
+          <span class="folder-chip">经济学 · 3</span>
+          <span class="folder-chip">哲学 · 2</span>
+          <span class="folder-chip" style="border-style:dashed;color:rgba(10,14,26,0.5)">
+            <svg class="add-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            新建
+          </span>
+        </div>
+
+        <div class="sessions-list">
+          <div class="session-item">
+            <span class="mode-pill">TAB · 整段</span>
+            <div class="body">
+              <h4>资本资产定价模型（CAPM）导论</h4>
+              <p class="excerpt">"Alright, let's start with the basic capital asset pricing model. CAPM gives you the expected return of an asset based on its beta..."</p>
+              <div class="time">今天 14:23 · 录制 52 分钟 · 金融</div>
+            </div>
+            <div class="actions">
+              <button title="重命名"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></button>
+              <button title="移动到文件夹"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+              <button class="del" title="删除"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+            </div>
+          </div>
+
+          <div class="session-item">
+            <span class="mode-pill">MIC · 实时</span>
+            <div class="body">
+              <h4>康德《纯粹理性批判》导读 · 先验综合判断</h4>
+              <p class="excerpt">"Today we will discuss Kant's concept of a priori synthetic judgments, which he argues is the foundation of all genuine scientific knowledge..."</p>
+              <div class="time">昨天 10:15 · 录制 1 时 48 分钟 · 哲学</div>
+            </div>
+            <div class="actions">
+              <button title="重命名"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></button>
+              <button title="移动"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+              <button class="del" title="删除"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+            </div>
+          </div>
+
+          <div class="session-item">
+            <span class="mode-pill">TAB · 整段</span>
+            <div class="body">
+              <h4>宏观经济学 · IS-LM 模型</h4>
+              <p class="excerpt">"The IS-LM model shows the interaction between the goods market and the money market..."</p>
+              <div class="time">2026-04-19 · 录制 45 分钟 · 经济学</div>
+            </div>
+            <div class="actions">
+              <button title="重命名"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></button>
+              <button title="移动"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+              <button class="del" title="删除"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CLASS NOTES DETAIL VIEW -->
+    <div class="section-head"><span class="en">class notes — detail view</span><span class="zh">点任一课进入的详情（完整双语字幕 + AI 总结）</span></div>
+    <div class="modal-wrap">
+      <div class="glass-thick session-detail">
+        <div class="d-head">
+          <button class="back-btn">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            返回列表
+          </button>
+          <h2>资本资产定价模型（CAPM）导论</h2>
+          <button class="rename" title="重命名">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>
+          </button>
+        </div>
+
+        <div class="meta-row">
+          <span><strong>今天 14:23</strong></span>
+          <span>&middot; 52 分钟</span>
+          <span>&middot; 浏览器标签音频</span>
+          <span>&middot; 整段翻译</span>
+          <span>&middot; 金融</span>
+        </div>
+
+        <div class="transcript">
+          <p class="en-line">"Alright, let's start with the basic capital asset pricing model. CAPM gives you the expected return of an asset based on its beta."</p>
+          <p>好，我们先从最基础的资本资产定价模型开始讲。CAPM 根据资产的贝塔值给出它的预期回报率。</p>
+
+          <p class="en-line">"The basic idea is that investors demand compensation for taking on risk above and beyond what's available from a risk-free asset."</p>
+          <p>背后的直觉是：投资者承担的风险超过无风险资产，就必须得到相应的补偿。</p>
+
+          <p class="en-line">"The formula itself is simple: expected return equals the risk-free rate plus beta times the market risk premium."</p>
+          <p>公式本身很简单：预期回报率 = 无风险利率 + 贝塔 × 市场风险溢价。</p>
+
+          <p class="en-line">"So if the risk-free rate is four percent, beta is one point two, and the market premium is six percent, your expected return would be eleven point two percent."</p>
+          <p>所以如果无风险利率是 4%、贝塔是 1.2、市场溢价是 6%，那么预期回报率就是 11.2%。</p>
+        </div>
+
+        <div class="summary">
+          <h3>— AI 笔记 · 老师讲的核心</h3>
+          <ul>
+            <li><strong>CAPM 核心公式</strong>：E(R) = Rf + β × (Rm − Rf)</li>
+            <li><strong>贝塔的含义</strong>：衡量个股相对市场整体的波动程度；β = 1 与市场同步；&gt; 1 更激烈；&lt; 1 更稳健</li>
+            <li><strong>数值例子</strong>：Rf = 4%, β = 1.2, 市场溢价 = 6% → 预期回报率 11.2%</li>
+            <li><strong>Q&A（3 次）</strong>：你问了 beta 的含义、CAPM 的三大假设、实务中的局限</li>
+          </ul>
+        </div>
+
+        <div class="d-foot">
+          <button class="btn-ghost" style="padding:10px 16px;font-size:12.5px">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            导出 PDF
+          </button>
+          <button class="btn-ghost" style="padding:10px 16px;font-size:12.5px">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+            分享给同学
+          </button>
+          <button class="btn-ghost" style="margin-left:auto;padding:10px 16px;font-size:12.5px;color:var(--red-warn);border-color:rgba(229,56,43,0.25)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+            删除这节课
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== DELETE CONFIRMS ========== -->
+    <div class="section-head"><span class="en">delete confirm</span><span class="zh">危险操作二次确认 · shadcn AlertDialog 样式</span></div>
+
+    <div class="modal-wrap">
+      <div class="glass-thick confirm-modal">
+        <div class="warn-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+        </div>
+        <h3>确定要<em>删除</em>这个单词吗？</h3>
+        <p>
+          你将删除 <strong>mitigate</strong>（收藏于 2026-04-10）。<br>
+          这个词的<strong>复习进度、例句收藏、AI 聊天记录</strong>都会一并清除，无法恢复。
+        </p>
+        <div class="actions">
+          <button class="btn-ghost" style="flex:1;padding:12px;font-size:13.5px">取消</button>
+          <button class="btn-danger">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+            永久删除
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-head"><span class="en">delete folder confirm</span><span class="zh">删除文件夹（要迁移里面的词）</span></div>
+    <div class="modal-wrap">
+      <div class="glass-thick confirm-modal" style="max-width:460px">
+        <div class="warn-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        </div>
+        <h3>删除文件夹「<em>学术 · essays</em>」？</h3>
+        <p>
+          这个文件夹里有 <strong>89 个单词</strong>。你可以选择：<br>
+          <span style="display:inline-block;margin-top:10px;font-size:12px;color:rgba(10,14,26,0.6)">
+            删除文件夹不会删除里面的单词，它们会被移到「未分类」。
+          </span>
+        </p>
+        <div class="actions">
+          <button class="btn-ghost" style="flex:1;padding:12px;font-size:13.5px">取消</button>
+          <button class="btn-danger">删除文件夹</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-head"><span class="en">delete own entry confirm</span><span class="zh">删除自己贡献的梗词条（会影响社区）</span></div>
+    <div class="modal-wrap">
+      <div class="glass-thick confirm-modal" style="max-width:460px">
+        <div class="warn-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <h3>撤回你对 <em>rizz</em> 的解释？</h3>
+        <p>
+          这条解释已获 <strong>412 个赞</strong>、<strong>3 条评论</strong>。撤回后：<br>
+          • 该解释从梗百科消失<br>
+          • 你失去对应的 <strong>贡献分（+287 points）</strong><br>
+          • 评论和点赞记录保留但不可见
+        </p>
+        <div class="actions">
+          <button class="btn-ghost" style="flex:1;padding:12px;font-size:13.5px">算了，保留</button>
+          <button class="btn-danger">撤回解释</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

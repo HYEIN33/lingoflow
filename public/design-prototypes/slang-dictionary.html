@@ -1,0 +1,953 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Slang Dictionary · MemeFlow Prototype</title>
+<link rel="preconnect" href="https://api.fontshare.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&f[]=satoshi@400,500,600,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&family=Noto+Serif+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="_shared.css">
+<style>
+  /* ───────── Daily Challenge bar ───────── */
+  .daily {
+    padding: 14px 18px;
+    display: flex; align-items: center; gap: 14px;
+    margin-bottom: 16px;
+    cursor: pointer;
+    border: 1.5px solid rgba(91,127,232,0.35);
+    background-image:
+      linear-gradient(135deg, rgba(255,255,255,0.8), rgba(255,255,255,0.55)),
+      radial-gradient(circle at 90% 0%, rgba(137,163,240,0.4), transparent 65%);
+  }
+  .daily .icon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, #5B7FE8, #89A3F0);
+    border-radius: 12px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #fff;
+    box-shadow: 0 4px 10px rgba(91,127,232,0.35);
+    flex-shrink: 0;
+  }
+  .daily .title-en {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-weight: 600; font-size: 14px;
+    color: var(--blue-accent);
+  }
+  .daily .title-zh {
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px; color: rgba(10,14,26,0.78);
+  }
+  .daily .cta {
+    margin-left: auto;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 13px;
+    color: var(--blue-accent);
+  }
+
+  /* ───────── Search ───────── */
+  .search-row {
+    padding: 12px 16px;
+    display: flex; gap: 10px; align-items: center;
+    margin-bottom: 14px;
+    position: relative;
+    background: #FFFFFF;
+    border: 1px solid var(--border-solid);
+    border-radius: 14px;
+  }
+  .search-row:focus-within {
+    border-color: var(--blue-accent);
+    box-shadow: 0 0 0 3px rgba(91,127,232,0.15);
+  }
+  .search-row input {
+    flex: 1;
+    background: transparent; border: 0; outline: none;
+    font-family: "Noto Serif SC", serif;
+    font-size: 15px; color: var(--ink);
+  }
+  .search-row input::placeholder {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; color: rgba(10,14,26,0.38);
+  }
+  .search-row .clear {
+    background: transparent; border: 0; cursor: pointer;
+    color: rgba(10,14,26,0.35);
+    padding: 4px;
+  }
+  .search-row .clear:hover { color: var(--red-warn); }
+  .search-dropdown {
+    position: absolute;
+    left: 0; right: 0; top: 100%;
+    margin-top: 6px;
+    background: #fff;
+    border: 1px solid rgba(10,14,26,0.08);
+    border-radius: 18px;
+    box-shadow: 0 12px 36px rgba(91,127,232,0.18);
+    overflow: hidden;
+    z-index: 20;
+  }
+  .search-dropdown .head {
+    padding: 10px 16px;
+    background: rgba(244,247,255,0.8);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: rgba(10,14,26,0.5);
+    border-bottom: 1px solid var(--ink-hairline);
+  }
+  .search-dropdown .item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(10,14,26,0.04);
+    cursor: pointer;
+  }
+  .search-dropdown .item:last-child { border-bottom: 0; }
+  .search-dropdown .item:hover { background: rgba(91,127,232,0.06); }
+  .search-dropdown .item .term {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 600; font-size: 15px;
+  }
+  .search-dropdown .item .tm {
+    font-family: "Noto Serif SC", serif;
+    font-size: 12.5px; color: rgba(10,14,26,0.68);
+    margin-top: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 280px;
+  }
+  .search-dropdown .item .up {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px; color: rgba(10,14,26,0.4);
+    flex-shrink: 0; padding-left: 10px;
+  }
+
+  /* ───────── Trending ranked list ───────── */
+  .trending {
+    padding: 16px 18px 12px;
+    margin-bottom: 14px;
+    background: #FFFFFF;
+    border: 1px solid var(--border-solid);
+    border-radius: 14px;
+  }
+  .trending .head {
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer;
+  }
+  .trending .head h4 {
+    margin: 0;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 14px; font-weight: 500;
+    color: rgba(10,14,26,0.7);
+  }
+  .trending .head h4 .zh {
+    font-family: "Noto Sans SC", sans-serif;
+    font-weight: 300; font-size: 11px; letter-spacing: 0.12em;
+    color: rgba(10,14,26,0.45);
+    margin-left: 8px;
+  }
+  .trending ul { list-style: none; margin: 10px 0 4px; padding: 0; }
+  .trending li {
+    display: flex; align-items: center; gap: 12px;
+    padding: 6px 8px;
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .trending li:hover { background: rgba(91,127,232,0.07); }
+  .trending li .rank {
+    width: 24px; height: 24px; border-radius: 7px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 700; font-size: 11px;
+    flex-shrink: 0;
+  }
+  .trending li:nth-child(1) .rank { background: var(--ink); color: #fff; }
+  .trending li:nth-child(2) .rank { background: rgba(91,127,232,0.18); color: var(--blue-accent); }
+  .trending li:nth-child(3) .rank { background: rgba(91,127,232,0.1); color: var(--blue-accent); }
+  .trending li:nth-child(n+4) .rank { background: rgba(10,14,26,0.05); color: rgba(10,14,26,0.55); }
+  .trending li .t {
+    flex: 1;
+    font-family: "Noto Serif SC", serif; font-weight: 500; font-size: 14px;
+  }
+  .trending li .c {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 11px; color: rgba(10,14,26,0.45);
+  }
+
+  /* ───────── Browse chips ───────── */
+  .browse-wrap {
+    padding: 16px 18px 14px;
+    margin-bottom: 14px;
+    background: #FFFFFF;
+    border: 1px solid var(--border-solid);
+    border-radius: 14px;
+  }
+  .browse-wrap h4 {
+    margin: 0 0 10px;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 14px; font-weight: 500;
+    color: rgba(10,14,26,0.7);
+  }
+  .browse-wrap h4 .zh {
+    font-family: "Noto Sans SC", sans-serif;
+    font-weight: 300; font-size: 11px; letter-spacing: 0.12em;
+    color: rgba(10,14,26,0.45);
+    margin-left: 8px;
+  }
+  .browse-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .browse-chips .chip {
+    padding: 6px 12px;
+    border-radius: 9999px;
+    background: rgba(10,14,26,0.04);
+    border: 1px solid var(--ink-hairline);
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px; color: var(--ink-body);
+    cursor: pointer;
+    transition: color .12s, border-color .12s, background .12s;
+  }
+  .browse-chips .chip:hover {
+    color: var(--blue-accent);
+    border-color: rgba(91,127,232,0.4);
+    background: rgba(91,127,232,0.08);
+  }
+
+  .guide-link {
+    margin: 0 8px 24px;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 13px; color: var(--blue-accent);
+    display: inline-block; cursor: pointer;
+  }
+
+  /* ───────── Detail view: term header + meaning cards ───────── */
+  .detail-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 16px;
+    margin: 28px 0 18px;
+  }
+  .detail-head h1 {
+    margin: 0;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 700; font-size: 44px;
+    letter-spacing: -0.03em;
+  }
+  .detail-head h1 em { font-style: italic; color: var(--blue-accent); font-weight: 500; }
+  .detail-head .meta {
+    font-family: "Noto Sans SC", sans-serif;
+    font-weight: 300; font-size: 11px; letter-spacing: 0.12em;
+    color: rgba(10,14,26,0.5);
+    margin-top: 6px;
+  }
+  .detail-head .add-btn {
+    padding: 8px 14px;
+    border-radius: 12px;
+    background: rgba(91,127,232,0.12);
+    border: 1px solid rgba(91,127,232,0.3);
+    color: var(--blue-accent);
+    font-weight: 700; font-size: 13px;
+    font-family: "Noto Serif SC", serif;
+    cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    flex-shrink: 0;
+  }
+  .detail-head .add-btn:hover { background: rgba(91,127,232,0.2); }
+
+  .meaning-card { padding: 22px 24px; margin-bottom: 14px; }
+  .meaning-card .author-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .meaning-card .author {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .meaning-card .avatar {
+    width: 32px; height: 32px; border-radius: 9999px;
+    background: linear-gradient(135deg, #89A3F0, #5B7FE8);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #fff;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-size: 13px; font-weight: 600;
+    flex-shrink: 0;
+  }
+  .meaning-card .author-name {
+    font-family: "Noto Serif SC", serif; font-weight: 600; font-size: 14px;
+  }
+  .meaning-card .author-title {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 11px;
+    color: var(--blue-accent);
+  }
+  .ai-score {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 10px;
+    background: rgba(76,143,59,0.12);
+    border: 1px solid rgba(76,143,59,0.28);
+    border-radius: 8px;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+    color: #2F6317;
+  }
+  .meaning-text {
+    font-family: "Noto Serif SC", serif;
+    font-size: 15px; line-height: 1.85;
+    color: var(--ink);
+    margin: 0 0 14px;
+  }
+  .media {
+    margin-bottom: 14px;
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid var(--ink-hairline);
+    background: rgba(10,14,26,0.03);
+    aspect-ratio: 16 / 9;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 13px;
+    color: rgba(10,14,26,0.5);
+    background-image: linear-gradient(135deg, rgba(137,163,240,0.18), rgba(229,56,43,0.08));
+  }
+  .media.video::before {
+    content: "▶";
+    font-size: 38px;
+    color: var(--blue-accent);
+    text-shadow: 0 2px 8px rgba(10,14,26,0.2);
+  }
+  .example-box {
+    padding: 12px 16px;
+    background: rgba(10,14,26,0.03);
+    border: 1px solid var(--ink-hairline);
+    border-radius: 12px;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic;
+    font-size: 14px; line-height: 1.55;
+    color: rgba(10,14,26,0.75);
+    margin-bottom: 14px;
+  }
+  .action-bar {
+    display: flex; align-items: center; gap: 6px;
+    padding-top: 14px;
+    border-top: 1px solid var(--ink-hairline);
+  }
+  .act {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 12px;
+    border-radius: 10px;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    font-size: 13px;
+    color: rgba(10,14,26,0.58);
+    transition: background .15s, color .15s;
+  }
+  .act:hover { background: rgba(91,127,232,0.08); color: var(--blue-accent); }
+  .act.upvoted { background: rgba(91,127,232,0.12); color: var(--blue-accent); font-weight: 600; }
+  .act.flag:hover { color: var(--red-warn); background: rgba(229,56,43,0.08); }
+  .act.tts {
+    margin-left: auto;
+    position: relative;
+  }
+  .act.tts .user-dot {
+    position: absolute;
+    top: 5px; right: 8px;
+    width: 8px; height: 8px; border-radius: 9999px;
+    background: var(--blue-accent);
+    box-shadow: 0 0 0 1.5px #fff;
+  }
+  /* Comment section inside meaning card */
+  .comments {
+    margin-top: 14px; padding-top: 14px;
+    border-top: 1px solid var(--ink-hairline);
+  }
+  .comments .label {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: rgba(10,14,26,0.5);
+    margin-bottom: 10px;
+  }
+  .comment {
+    display: flex; gap: 10px;
+    padding: 8px 0;
+  }
+  .comment .mini-av {
+    width: 22px; height: 22px; border-radius: 9999px;
+    background: rgba(10,14,26,0.08);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: rgba(10,14,26,0.6);
+    font-size: 10px; font-weight: 700; flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .comment .cbody {
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px; line-height: 1.65; color: rgba(10,14,26,0.82);
+  }
+  .comment .cbody .name { font-weight: 600; color: var(--ink); margin-right: 6px; }
+  .comment .cbody .time { color: rgba(10,14,26,0.4); font-size: 11px; margin-left: 4px; font-family: "JetBrains Mono", ui-monospace, monospace; }
+  .comment-input {
+    display: flex; gap: 8px; margin-top: 10px;
+    padding: 8px 12px;
+    background: rgba(255,255,255,0.6);
+    border: 1px solid rgba(255,255,255,0.7);
+    border-radius: 12px;
+  }
+  .comment-input input {
+    flex: 1; background: transparent; border: 0; outline: none;
+    font-size: 13px;
+    font-family: "Noto Serif SC", serif;
+  }
+  .comment-input input::placeholder {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; color: rgba(10,14,26,0.4);
+  }
+  .comment-input button {
+    background: var(--ink); color: #fff;
+    border: 0; padding: 6px 14px;
+    border-radius: 9px;
+    font-size: 12px; font-weight: 700;
+    cursor: pointer;
+  }
+
+  /* Report menu — shown open on one card so you can see it */
+  .report-pop {
+    position: absolute;
+    bottom: 100%;
+    left: 40px;
+    margin-bottom: 6px;
+    padding: 12px;
+    background: #fff;
+    border: 1px solid rgba(10,14,26,0.08);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(10,14,26,0.12);
+    width: 200px;
+    z-index: 10;
+  }
+  .report-pop .lbl {
+    font-size: 11px; color: rgba(10,14,26,0.6); margin-bottom: 6px; font-weight: 600;
+  }
+  .report-pop select {
+    width: 100%; padding: 6px 8px; font-size: 12px;
+    border: 1px solid rgba(10,14,26,0.1); border-radius: 8px;
+    background: #fff; outline: none;
+    margin-bottom: 8px;
+  }
+  .report-pop .row { display: flex; gap: 6px; }
+  .report-pop .row button {
+    flex: 1; padding: 6px 8px; font-size: 11px; font-weight: 700;
+    border-radius: 8px; cursor: pointer; border: 1px solid;
+  }
+  .report-pop .cancel { background: #fff; color: rgba(10,14,26,0.6); border-color: rgba(10,14,26,0.15); }
+  .report-pop .submit { background: var(--red-warn); color: #fff; border-color: var(--red-warn); }
+
+  /* ───────── Add-meaning form ───────── */
+  .add-form { padding: 24px 26px; margin-bottom: 24px; border: 1.5px solid rgba(91,127,232,0.25); }
+  .add-form h3 {
+    margin: 0 0 14px;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-weight: 600; font-size: 20px;
+    letter-spacing: -0.02em;
+  }
+  .add-form h3 em { font-style: italic; color: var(--blue-accent); }
+  .example-ref {
+    padding: 14px 16px;
+    background: rgba(91,127,232,0.08);
+    border: 1px solid rgba(91,127,232,0.22);
+    border-radius: 14px;
+    margin-bottom: 18px;
+  }
+  .example-ref .title {
+    font-weight: 700; color: var(--blue-accent);
+    font-size: 13px; margin-bottom: 8px;
+    font-family: "Noto Serif SC", serif;
+  }
+  .example-ref .mini {
+    background: rgba(255,255,255,0.6);
+    border-radius: 9px;
+    padding: 10px 12px;
+    font-family: "Noto Serif SC", serif;
+    font-size: 12px; line-height: 1.8;
+    color: rgba(10,14,26,0.78);
+  }
+  .example-ref .mini strong { color: var(--ink); font-weight: 700; }
+  .example-ref .hint {
+    margin-top: 6px;
+    font-size: 11px; color: rgba(10,14,26,0.5);
+    font-family: "Noto Serif SC", serif;
+  }
+  .field { margin-bottom: 14px; }
+  .field .row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .field label {
+    font-family: "Noto Serif SC", serif;
+    font-weight: 600; font-size: 13px;
+    color: rgba(10,14,26,0.75);
+  }
+  .field .ai-trigger {
+    background: transparent; border: 0; cursor: pointer;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 12px; font-weight: 600;
+    color: var(--blue-accent);
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .field textarea {
+    width: 100%;
+    min-height: 90px;
+    padding: 12px 14px;
+    border: 1px solid rgba(255,255,255,0.7);
+    background: rgba(255,255,255,0.55);
+    border-radius: 12px;
+    outline: none;
+    resize: vertical;
+    font-family: "Noto Serif SC", serif;
+    font-size: 14px; line-height: 1.7;
+    color: var(--ink);
+  }
+  .field textarea:focus { box-shadow: 0 0 0 2px rgba(91,127,232,0.35); }
+  .field textarea::placeholder {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; color: rgba(10,14,26,0.38);
+  }
+  .field .note {
+    margin-top: 4px;
+    font-family: "Noto Serif SC", serif;
+    font-size: 11px; color: rgba(10,14,26,0.5);
+  }
+  .ai-suggest {
+    margin-top: 8px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: rgba(91,127,232,0.08);
+    border: 1px solid rgba(91,127,232,0.3);
+    display: flex; gap: 10px; cursor: pointer;
+  }
+  .ai-suggest:hover { background: rgba(91,127,232,0.14); }
+  .ai-suggest .label {
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-weight: 600; font-size: 11px;
+    color: var(--blue-accent);
+    margin-bottom: 4px;
+  }
+  .ai-suggest .body {
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px; line-height: 1.7; color: rgba(10,14,26,0.8);
+  }
+  .ai-suggest .adopt {
+    margin-left: auto; flex-shrink: 0;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 10px;
+    color: var(--blue-accent);
+    align-self: flex-end;
+  }
+
+  .field-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  @media (max-width: 560px) { .field-grid { grid-template-columns: 1fr; } }
+  .field select {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid rgba(255,255,255,0.7);
+    background: rgba(255,255,255,0.55);
+    border-radius: 12px;
+    outline: none;
+    font-family: "Noto Serif SC", serif;
+    font-size: 14px;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .upload-row {
+    display: flex; gap: 8px; flex-wrap: wrap;
+  }
+  .upload-btn {
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.6);
+    border: 1px dashed rgba(10,14,26,0.2);
+    border-radius: 12px;
+    cursor: pointer;
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px; color: rgba(10,14,26,0.68);
+    display: inline-flex; align-items: center; gap: 7px;
+    flex: 1; justify-content: center;
+  }
+  .upload-btn:hover {
+    border-color: var(--blue-accent); color: var(--blue-accent);
+    background: rgba(91,127,232,0.05);
+  }
+  .submit-row {
+    display: flex; gap: 10px; align-items: center;
+    margin-top: 20px;
+    padding-top: 18px;
+    border-top: 1px solid var(--ink-hairline);
+  }
+  .btn-cancel {
+    padding: 12px 20px; border-radius: 13px;
+    background: transparent; border: 1px solid rgba(10,14,26,0.15);
+    color: rgba(10,14,26,0.7); cursor: pointer;
+    font-size: 13px; font-weight: 600;
+    font-family: "Noto Serif SC", serif;
+  }
+  .btn-submit {
+    margin-left: auto;
+    padding: 12px 26px; border-radius: 13px;
+    background: var(--ink); color: #fff;
+    border: 0; cursor: pointer;
+    font-size: 14px; font-weight: 700;
+    font-family: "Noto Serif SC", serif;
+    box-shadow: 0 4px 12px rgba(10,14,26,0.22);
+    display: inline-flex; gap: 6px; align-items: center;
+  }
+
+  /* Guidelines panel */
+  .guidelines-panel {
+    padding: 18px 22px; margin-bottom: 14px;
+    background: rgba(91,127,232,0.04);
+    border: 1px solid var(--border-solid);
+    border-left: 3px solid var(--blue-accent);
+    border-radius: 12px;
+  }
+  .guidelines-panel h5 {
+    margin: 0 0 8px;
+    font-family: "Clash Display", system-ui, sans-serif;
+    font-style: italic; font-size: 14px; font-weight: 600;
+    color: rgba(10,14,26,0.75);
+  }
+  .guidelines-panel ul {
+    margin: 0; padding-left: 18px;
+    font-family: "Noto Serif SC", serif;
+    font-size: 13px; line-height: 1.85; color: rgba(10,14,26,0.72);
+  }
+  .guidelines-panel ul strong { color: var(--blue-accent); }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a href="index.html" style="text-decoration:none;color:inherit"><span class="brand">MemeFlow</span><span class="version">PROTOTYPE</span></a>
+      <nav class="tab-rail">
+        <a href="index.html">· overview</a>
+        <a href="grammar.html">grammar · 语法</a>
+        <a href="slang-dictionary.html" class="active"><span class="tab-dot"></span>slang · 梗百科</a>
+        <a href="wordbook.html">wordbook · 单词本</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <div class="eyebrow"><span class="en">slang dictionary</span><span class="zh">梗百科</span></div>
+
+    <!-- 1. DAILY CHALLENGE BAR -->
+    <div class="glass-thick daily">
+      <span class="icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+      </span>
+      <div>
+        <div class="title-en">— daily challenge</div>
+        <div class="title-zh">每日挑战 · 今天是 "delulu" — 点击查看释义</div>
+      </div>
+      <span class="cta">展开揭晓 →</span>
+    </div>
+
+    <!-- 2. SEARCH WITH LIVE DROPDOWN -->
+    <div class="search-row">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:rgba(10,14,26,0.5);flex-shrink:0">
+        <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
+      </svg>
+      <input placeholder="搜索网络热词、梗…" value="riz">
+      <button class="clear" title="清除">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m18 6-12 12"/><path d="m6 6 12 12"/></svg>
+      </button>
+      <button class="btn-ink" style="padding:8px 18px;font-size:13px">搜索</button>
+
+      <!-- Live typeahead dropdown (rendered open so you can preview) -->
+      <div class="search-dropdown">
+        <div class="head">找到 3 个相关词条</div>
+        <div class="item">
+          <div>
+            <div class="term">rizz</div>
+            <div class="tm">魅力、勾搭异性的能力，由 charisma 简化而来…</div>
+          </div>
+          <span class="up">▲ 412</span>
+        </div>
+        <div class="item">
+          <div>
+            <div class="term">rizzler</div>
+            <div class="tm">会来事儿的人，rizz 的衍生名词…</div>
+          </div>
+          <span class="up">▲ 67</span>
+        </div>
+        <div class="item">
+          <div>
+            <div class="term">unspoken rizz</div>
+            <div class="tm">不用说话就自带魅力，最高阶的 rizz…</div>
+          </div>
+          <span class="up">▲ 41</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. TRENDING LIST -->
+    <div class="trending">
+      <div class="head">
+        <h4>— trending this week <span class="zh">大家都在搜</span></h4>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="color:rgba(10,14,26,0.4)"><path d="m18 15-6-6-6 6"/></svg>
+      </div>
+      <ul>
+        <li><span class="rank">1</span><span class="t">rizz</span><span class="c">412 次</span></li>
+        <li><span class="rank">2</span><span class="t">delulu</span><span class="c">287 次</span></li>
+        <li><span class="rank">3</span><span class="t">bussin</span><span class="c">189 次</span></li>
+        <li><span class="rank">4</span><span class="t">yyds</span><span class="c">156 次</span></li>
+        <li><span class="rank">5</span><span class="t">skibidi</span><span class="c">98 次</span></li>
+      </ul>
+    </div>
+
+    <!-- 4. BROWSE CHIPS -->
+    <div class="browse-wrap">
+      <h4>— browse entries <span class="zh">浏览词条</span></h4>
+      <div class="browse-chips">
+        <span class="chip">yolo</span><span class="chip">slay</span><span class="chip">no cap</span>
+        <span class="chip">fanum tax</span><span class="chip">gyatt</span><span class="chip">sigma</span>
+        <span class="chip">mid</span><span class="chip">cope</span><span class="chip">based</span>
+        <span class="chip">cringe</span><span class="chip">L</span><span class="chip">W</span>
+        <span class="chip">yap</span><span class="chip">goated</span><span class="chip">ate</span>
+        <span class="chip">ick</span><span class="chip">sus</span><span class="chip">simp</span>
+        <span class="chip">vibe check</span><span class="chip">bet</span><span class="chip">lowkey</span>
+      </div>
+    </div>
+
+    <!-- Guidelines link -->
+    <a class="guide-link">— view contribution guidelines · 查看贡献准则</a>
+
+    <!-- Guidelines panel (expanded) -->
+    <div class="guidelines-panel">
+      <h5>— how to write a good entry · 投稿准则</h5>
+      <ul>
+        <li><strong>写清楚来源</strong>：这个词从哪来？（论坛、TikTok、游戏、电影…）</li>
+        <li><strong>说明使用场景</strong>：什么情况下用？对谁用？正式场合能用吗？</li>
+        <li><strong>附一个自然的例句</strong>：像跟朋友解释一样，不要生搬英汉词典的口气。</li>
+        <li><strong>别搬运</strong>：AI 会检测重复或抄袭，质量评分会被下调甚至被拒。</li>
+        <li><strong>举报机制</strong>：看到有问题的词条可以举报（重复/色情/歧视/不准确）。</li>
+      </ul>
+    </div>
+
+    <!-- 5. DETAIL VIEW — user selected "rizz", now sees community meanings -->
+    <div class="detail-head">
+      <div>
+        <h1><em>rizz</em></h1>
+        <div class="meta">3 meanings · 768 upvotes · 最新于 2 天前</div>
+      </div>
+      <button class="add-btn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        补充解释
+      </button>
+    </div>
+
+    <!-- MEANING CARD 1 — with media + user voice -->
+    <article class="glass-thick meaning-card">
+      <div class="author-row">
+        <div class="author">
+          <span class="avatar">L</span>
+          <div>
+            <div class="author-name">Lina Chen</div>
+            <div class="author-title">资深梗研究员 · Senior Slang Nerd</div>
+          </div>
+        </div>
+        <span class="ai-score">AI 评分 · 94</span>
+      </div>
+
+      <p class="meaning-text">
+        "charisma" 的简化俚语，2021 年由 Twitch 主播 Kai Cenat 带火。作名词指"魅力/勾搭异性的能力"，作动词（rizz up sb）指"搭讪/撩"。
+        2023 年被牛津词典选为"年度词汇"。搭配 W rizz（牛逼的把妹技巧）/ L rizz（没本事）/ unspoken rizz（不说话也带气场）最常见。
+      </p>
+
+      <div class="media video"></div>
+
+      <div class="example-box">"Bro has unspoken rizz — he didn't even say hi, and three girls lined up."</div>
+
+      <div class="action-bar" style="position:relative">
+        <button class="act upvoted">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M7 10v12h10l4-10-4-2V4a2 2 0 0 0-2-2h-3L7 10z"/></svg>
+          412
+        </button>
+        <button class="act flag" title="举报">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V4M4 4h14l-4 5 4 5H4"/></svg>
+          举报
+        </button>
+        <button class="act" title="分享">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+          分享
+        </button>
+        <button class="act tts" title="朗读（作者录音）">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15 9a5 5 0 0 1 0 6"/><path d="M19.7 5.3a9 9 0 0 1 0 13.4"/></svg>
+          <span class="user-dot" title="作者的录音"></span>
+        </button>
+      </div>
+
+      <!-- Comments -->
+      <div class="comments">
+        <div class="label">comments (3)</div>
+        <div class="comment">
+          <span class="mini-av">M</span>
+          <div class="cbody">
+            <span class="name">Marco</span>"unspoken rizz" 翻译成 "无声气场" 是不是更贴？<span class="time">3h ago</span>
+          </div>
+        </div>
+        <div class="comment">
+          <span class="mini-av">Z</span>
+          <div class="cbody">
+            <span class="name">Zoe</span>我听到的语境更多是"会撩"，偏搭讪技巧那一面。<span class="time">1d ago</span>
+          </div>
+        </div>
+        <div class="comment">
+          <span class="mini-av">K</span>
+          <div class="cbody">
+            <span class="name">Kenji</span>赞同 Lina，这个词的核心是"气场"不是"撩"。<span class="time">2d ago</span>
+          </div>
+        </div>
+        <div class="comment-input">
+          <input placeholder="写一条评论…">
+          <button>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+      </div>
+    </article>
+
+    <!-- MEANING CARD 2 — with open report menu -->
+    <article class="glass-thick meaning-card">
+      <div class="author-row">
+        <div class="author">
+          <span class="avatar" style="background:linear-gradient(135deg,#E89B94,#E5382B)">P</span>
+          <div>
+            <div class="author-name">Priya</div>
+            <div class="author-title">K-pop 粉圈观察者</div>
+          </div>
+        </div>
+        <span class="ai-score" style="background:rgba(232,180,60,0.14);border-color:rgba(232,180,60,0.35);color:#8A5D0E">AI 评分 · 76</span>
+      </div>
+
+      <p class="meaning-text">
+        在 K-pop 粉圈里 rizz 被用来形容偶像"对镜头有电"——比起直白的 charisma，rizz 带点幽默自嘲的距离感，表示"他这种气场连粉丝都酥了"。
+      </p>
+      <div class="example-box">"The way he winked at the camera — full rizz, no notes."</div>
+
+      <div class="action-bar" style="position:relative">
+        <button class="act">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12h10l4-10-4-2V4a2 2 0 0 0-2-2h-3L7 10z"/></svg>
+          189
+        </button>
+        <button class="act flag" title="举报" style="background:rgba(229,56,43,0.08);color:var(--red-warn)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22V4M4 4h14l-4 5 4 5H4"/></svg>
+          举报
+        </button>
+        <!-- report popover rendered open -->
+        <div class="report-pop">
+          <div class="lbl">举报原因</div>
+          <select>
+            <option>重复词条</option>
+            <option>色情/暴力内容</option>
+            <option>歧视/仇恨言论</option>
+            <option>释义不准确</option>
+            <option>恶意刷赞</option>
+          </select>
+          <div class="row">
+            <button class="cancel">取消</button>
+            <button class="submit">提交</button>
+          </div>
+        </div>
+        <button class="act" title="分享">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+          分享
+        </button>
+        <button class="act tts" title="AI 朗读">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15 9a5 5 0 0 1 0 6"/></svg>
+        </button>
+      </div>
+    </article>
+
+    <!-- 6. ADD MEANING FORM — rendered open -->
+    <form class="glass-thick add-form">
+      <h3>补充 <em>rizz</em> 的解释</h3>
+
+      <div class="example-ref">
+        <div class="title">参考示例</div>
+        <div class="mini">
+          <div><strong>词条：</strong>yyds</div>
+          <div><strong>含义：</strong>"永远的神"拼音首字母缩写，源自电竞圈，表达极致推崇。</div>
+          <div><strong>例句：</strong>这家面馆的味道真的 YYDS，每次路过都要吃。</div>
+        </div>
+        <div class="hint">写清楚来源、使用场景，像跟朋友解释一样自然就好。</div>
+      </div>
+
+      <div class="field">
+        <div class="row">
+          <label>含义 · meaning</label>
+          <button type="button" class="ai-trigger">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 3 2 5 5 2-5 2-2 5-2-5-5-2 5-2z" transform="translate(7 2)"/></svg>
+            帮我写一条 · AI draft
+          </button>
+        </div>
+        <textarea placeholder="例：源自 Twitch 直播间的口头禅，后来在 TikTok 扩散，用来夸一个人有气场或会搭讪…">Twitch 主播 Kai Cenat 的直播口头禅，2021 年起用来表达「会来事儿、特有气场」。和中文的「会撩」不完全对应——rizz 更强调不开口就自带的那种化学反应</textarea>
+
+        <!-- AI suggestion popover rendered so you can see it -->
+        <div class="ai-suggest">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--blue-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:3px"><path d="m12 3 1.912 5.813a2 2 0 0 0 1.275 1.275L21 12l-5.813 1.912a2 2 0 0 0-1.275 1.275L12 21l-1.912-5.813a2 2 0 0 0-1.275-1.275L3 12l5.813-1.912a2 2 0 0 0 1.275-1.275z"/></svg>
+          <div style="flex:1;min-width:0">
+            <div class="label">AI 建议</div>
+            <div class="body">"charisma" 的缩写变体，2021 起在 Twitch/TikTok 走红。作名词：魅力、气场；作动词 rizz up：搭讪/撩。2023 被牛津选为年度词汇。常见搭配 W rizz / L rizz / unspoken rizz。</div>
+          </div>
+          <span class="adopt">点击采纳 →</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <div class="row">
+          <label>例句 · example</label>
+          <button type="button" class="ai-trigger">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 3 2 5 5 2-5 2-2 5-2-5-5-2 5-2z" transform="translate(7 2)"/></svg>
+            AI 帮我写例句
+          </button>
+        </div>
+        <textarea style="min-height:70px" placeholder="例：Bro has rizz，他就看了一眼全场都静了。"></textarea>
+        <div class="note">选填。如果不提供例句，审核优先级和质量评分会降低。</div>
+      </div>
+
+      <div class="field-grid">
+        <div class="field">
+          <label style="display:block;margin-bottom:6px">AI 播报语音</label>
+          <select>
+            <option>Kore (Female)</option>
+            <option>Puck (Male)</option>
+            <option>Charon (Male)</option>
+            <option>Fenrir (Male)</option>
+            <option>Zephyr (Female)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label style="display:block;margin-bottom:6px">附件 · 图片 / 视频 / 录音</label>
+          <div class="upload-row">
+            <label class="upload-btn">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>
+              图片 / GIF
+            </label>
+            <label class="upload-btn">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg>
+              视频
+            </label>
+            <label class="upload-btn">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/></svg>
+              自己的录音
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="submit-row">
+        <button type="button" class="btn-cancel">取消</button>
+        <button type="submit" class="btn-submit">
+          提交词条 · submit
+          <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M3 7h8m0 0L7.5 3.5M11 7l-3.5 3.5" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </form>
+  </main>
+</body>
+</html>

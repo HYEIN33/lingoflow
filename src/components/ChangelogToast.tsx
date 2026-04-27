@@ -70,8 +70,8 @@ export default function ChangelogToast({ currentVersion }: ChangelogToastProps) 
             <h3 className="font-bold text-base mb-2 leading-tight">{latest.title}</h3>
             <ul className="space-y-1 mb-3">
               {latest.changes.slice(0, 3).map((c, i) => (
-                <li key={i} className="text-xs text-[rgba(91,127,232,0.2)] leading-relaxed flex gap-1.5">
-                  <span className="text-[rgba(91,127,232,0.45)] shrink-0">·</span>
+                <li key={i} className="text-xs text-white/90 leading-relaxed flex gap-1.5">
+                  <span className="text-white/60 shrink-0">·</span>
                   <span>{c}</span>
                 </li>
               ))}
