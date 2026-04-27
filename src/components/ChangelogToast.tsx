@@ -55,23 +55,46 @@ export default function ChangelogToast({ currentVersion }: ChangelogToastProps) 
     if (!latest.isMajor) return;
 
     // Case 4: major update since last visit → pop toast.
+    // Liquid-glass styling (PR #7 — 2026-04-27): white-translucent bg +
+    // backdrop-blur to match the rest of the app's white-blue ambient,
+    // dark ink text. Replaces the previous deep-blue→black gradient
+    // which felt foreign against the F4F7FF ambient background.
     const toastId = toast.custom(
       (t) => (
-        <div className="bg-gradient-to-br from-[#5B7FE8] to-[#0A0E1A] text-white rounded-2xl shadow-2xl px-5 py-4 max-w-sm flex items-start gap-3">
-          <div className="bg-white/20 p-2 rounded-xl backdrop-blur-md shrink-0">
+        <div
+          className="rounded-2xl px-5 py-4 max-w-sm flex items-start gap-3 border border-white/85 shadow-[0_18px_48px_rgba(91,127,232,0.18),0_2px_8px_rgba(10,14,26,0.06)]"
+          style={{
+            background: 'linear-gradient(135deg, rgba(255,255,255,0.92) 0%, rgba(244,247,255,0.85) 100%)',
+            backdropFilter: 'blur(40px) saturate(160%)',
+            WebkitBackdropFilter: 'blur(40px) saturate(160%)',
+          }}
+        >
+          <div
+            className="p-2 rounded-xl shrink-0 text-white"
+            style={{
+              background: 'linear-gradient(135deg, #5B7FE8, #89A3F0)',
+              boxShadow: '0 4px 10px rgba(91,127,232,0.3)',
+            }}
+          >
             <Sparkles className="w-5 h-5" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-black uppercase tracking-widest bg-white/20 px-2 py-0.5 rounded-md">
+              <span
+                className="font-mono-meta text-[10px] font-bold tracking-[0.15em] uppercase px-2 py-0.5 rounded-md"
+                style={{
+                  background: 'rgba(91,127,232,0.12)',
+                  color: 'var(--blue-accent)',
+                }}
+              >
                 v{latest.version} 来了
               </span>
             </div>
-            <h3 className="font-bold text-base mb-2 leading-tight">{latest.title}</h3>
+            <h3 className="font-bold text-base mb-2 leading-tight text-[var(--ink)]">{latest.title}</h3>
             <ul className="space-y-1 mb-3">
               {latest.changes.slice(0, 3).map((c, i) => (
-                <li key={i} className="text-xs text-white/90 leading-relaxed flex gap-1.5">
-                  <span className="text-white/60 shrink-0">·</span>
+                <li key={i} className="text-xs leading-relaxed flex gap-1.5 text-[var(--ink-soft)]">
+                  <span className="shrink-0 text-[var(--blue-accent)]">·</span>
                   <span>{c}</span>
                 </li>
               ))}
@@ -81,7 +104,11 @@ export default function ChangelogToast({ currentVersion }: ChangelogToastProps) 
                 writeLastSeen(currentVersion);
                 toast.dismiss(t);
               }}
-              className="text-xs font-bold bg-white text-[#5B7FE8] px-3 py-1.5 rounded-lg hover:bg-[rgba(91,127,232,0.08)] transition-colors"
+              className="text-xs font-bold px-3 py-1.5 rounded-lg transition-colors text-white border-0 cursor-pointer"
+              style={{
+                background: 'var(--blue-accent)',
+                boxShadow: '0 2px 8px rgba(91,127,232,0.3)',
+              }}
             >
               知道了
             </button>
@@ -91,7 +118,7 @@ export default function ChangelogToast({ currentVersion }: ChangelogToastProps) 
               writeLastSeen(currentVersion);
               toast.dismiss(t);
             }}
-            className="text-white/60 hover:text-white transition-colors shrink-0"
+            className="text-[var(--ink-subtle)] hover:text-[var(--ink)] transition-colors shrink-0 bg-transparent border-0 cursor-pointer p-0"
             aria-label="关闭"
           >
             <X className="w-4 h-4" />
