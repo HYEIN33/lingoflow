@@ -1049,9 +1049,23 @@ ${englishParagraph}`;
     if (handle.isPaused()) {
       handle.resume();
       setPaused(false);
+      // 恢复时再"封口"一次：把任何残留的 unfinalized line 锁住，让恢复
+      // 后的第一段新转录建一个全新 line，不会覆盖暂停前的内容。
+      setStream((prev) => prev.map((it) =>
+        it.kind === 'line' && !it.finalized && it.transcription.trim()
+          ? { ...it, finalized: true }
+          : it
+      ));
     } else {
       handle.pause();
       setPaused(true);
+      // 暂停时把当前所有 unfinalized line 封口——避免恢复后新 interim
+      // 把暂停前那段 interim 直接覆盖掉（用户报"音频转文字又开始覆盖"）。
+      setStream((prev) => prev.map((it) =>
+        it.kind === 'line' && !it.finalized && it.transcription.trim()
+          ? { ...it, finalized: true }
+          : it
+      ));
     }
   };
 

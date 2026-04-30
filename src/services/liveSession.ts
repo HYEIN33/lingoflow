@@ -1021,6 +1021,14 @@ ${englishParagraph}`;
   return {
     pause() {
       paused = true;
+      // 用户按暂停 → 立即翻译当前已攒的 batch（收尾后再暂停）。
+      // 否则用户暂停时 batch 里残留的英文会一直挂到恢复或停止才翻译，
+      // 用户看不到"暂停前那段"的翻译，体验割裂。
+      cancelDelayedFlush();
+      cancelIdleFlush();
+      if (pendingBatch.length > 0) {
+        void flushBatch();
+      }
     },
     resume() {
       paused = false;
