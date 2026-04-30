@@ -625,16 +625,25 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
     const courseHint = activeCourse
       ? ` The class subject is: ${activeCourse}. Translate technical terms in that subject's convention; keep well-known English initialisms (e.g. CAPM, GDP, DNA) untranslated.`
       : '';
-    const prompt = `You are translating a live classroom lecture from English to Chinese for a Chinese international student.${courseHint}
+    const prompt = `You are a faithful simultaneous interpreter translating live English speech into Chinese for a Chinese international student.${courseHint}
 
-The input below is a continuous paragraph of spoken English from a live lecture (transcribed by a speech model, so it may contain repetitions or filler). Produce a SINGLE natural, fluent Chinese paragraph that reads as if a Chinese teacher re-explained the same material. Do not mirror every word — clean up repetitions, smooth broken phrasing, and group related sentences into flowing Chinese prose.
+The input below is a continuous paragraph of spoken English (transcribed by a speech model, so it may contain repetitions or filler). Produce a SINGLE faithful Chinese translation paragraph that preserves the speaker's voice and perspective.
 
-Rules:
+CRITICAL — PRESERVE PERSON AND PERSPECTIVE:
+- This is interpretation, NOT summarization or rewriting. Do NOT shift to third-person narration.
+- "I" must become "我", NOT "他/她/老师/讲师/作者". If the speaker says "I love dancing", translate as "我喜欢跳舞", NEVER as "她说她喜欢跳舞" or "讲师说自己喜欢跳舞".
+- "you" / "you guys" / "y'all" must become "你/你们/大家" addressed directly, NOT "听众/学生/观众".
+- "we" must become "我们", NOT "大家".
+- If a third party is being quoted (e.g. "Julia tells us..."), keep the quote as direct first-person Chinese ("朱莉娅说：'我...'") matching how it was uttered, instead of paraphrasing it as third-person.
+- Do NOT add framing words like "讲师认为", "她表示", "据他所说" unless those words appear literally in the English source.
+
+OTHER RULES:
 - Output is ONE Chinese paragraph. PURE CHINESE ONLY — no English words, no parenthetical English glosses, no Latin characters anywhere.
-- This is critical: do NOT write things like 新雪（fresh powder） or "可理解性输入（comprehensive input）" — the user has the English source displayed alongside, so embedded English in the Chinese is redundant and visually noisy.
-- The ONLY exception: well-known initialisms that are normally untranslated even by Chinese teachers — CAPM, GDP, DNA, AI, HTTP, API, CEO. These can stay as-is, but never wrap them in parentheses with a Chinese version.
-- Keep the teaching register (spoken Chinese, 口语化, not stiff written Chinese).
-- Do not add commentary about the quality of the transcription.
+- Do NOT write things like 新雪（fresh powder） or "可理解性输入（comprehensive input）". The user has the English source displayed alongside, so embedded English is redundant.
+- Exception: well-known initialisms that even Chinese speakers leave untranslated — CAPM, GDP, DNA, AI, HTTP, API, CEO. Leave these as-is, no parentheses.
+- Keep natural spoken Chinese (口语化), not stiff written Chinese.
+- Clean up obvious filler words (um, uh, like, you know) and stutters, but do NOT paraphrase content or "smooth out" the speaker's meaning. Stay faithful to what was said.
+- Do not add commentary about transcription quality.
 
 English paragraph:
 ${englishParagraph}`;
@@ -2040,13 +2049,13 @@ ${englishParagraph}`;
                         : 'paragraph · 整段翻译'}
                     </span>
                     {showOriginal && item.transcription && (
-                      <p className="font-display italic text-[13px] leading-[1.5] text-[rgba(10,14,26,0.48)] m-0 mb-1.5">
+                      <p className="font-body-en text-[14px] leading-[1.5] text-[rgba(10,14,26,0.48)] m-0 mb-1.5">
                         "{item.transcription}"
                       </p>
                     )}
                     {isFailed ? (
                       <div className="flex items-center gap-3 mt-1">
-                        <p className="font-zh-serif text-[14px] leading-[1.6] m-0 text-[var(--red-warn)]">
+                        <p className="font-zh-sans text-[14px] leading-[1.6] m-0 text-[var(--red-warn)]">
                           ⚠️ {uiLang === 'zh' ? '翻译失败，可点重试' : 'Translation failed'}
                         </p>
                         <button
@@ -2058,7 +2067,7 @@ ${englishParagraph}`;
                         </button>
                       </div>
                     ) : (
-                      <p className="font-zh-serif text-[17px] leading-[1.8] m-0 text-[rgba(10,14,26,0.78)]">
+                      <p className="font-zh-sans text-[17px] leading-[1.8] m-0 text-[rgba(10,14,26,0.78)]">
                         {item.translation}
                       </p>
                     )}
@@ -2082,11 +2091,11 @@ ${englishParagraph}`;
                       paragraph · 整段翻译
                     </span>
                     {showOriginal && joinedEnglish && (
-                      <p className="font-display italic text-[13px] leading-[1.5] text-[rgba(10,14,26,0.48)] m-0 mb-1.5">
+                      <p className="font-body-en text-[14px] leading-[1.5] text-[rgba(10,14,26,0.48)] m-0 mb-1.5">
                         "{joinedEnglish}"
                       </p>
                     )}
-                    <p className="font-zh-serif text-[17px] leading-[1.8] m-0 text-[var(--blue-accent)] font-semibold italic">
+                    <p className="font-zh-sans text-[17px] leading-[1.8] m-0 text-[var(--blue-accent)] font-semibold">
                       {uiLang === 'zh' ? '翻译中' : 'translating'}
                       <span className="inline-block w-2 h-[18px] align-[-3px] ml-1.5 bg-[var(--blue-accent)] animate-pulse" />
                     </p>
@@ -2110,7 +2119,7 @@ ${englishParagraph}`;
                     paragraph · 正在攒句
                   </span>
                   {showOriginal && joinedEnglish ? (
-                    <p className="font-display italic text-[13px] leading-[1.5] text-[rgba(10,14,26,0.6)] m-0">
+                    <p className="font-body-en text-[14px] leading-[1.5] text-[rgba(10,14,26,0.6)] m-0">
                       "{joinedEnglish}"
                       <span className="inline-block w-1.5 h-[14px] align-[-2px] ml-1 bg-[#8A5D0E] animate-pulse" />
                     </p>
@@ -2118,7 +2127,7 @@ ${englishParagraph}`;
                     // showOriginal=false: don't render anything but the
                     // label so the user knows we're listening. Inline
                     // pulse cursor so it doesn't feel frozen.
-                    <p className="font-zh-serif text-[14px] leading-[1.6] m-0 text-[var(--ink-muted)] italic">
+                    <p className="font-zh-sans text-[14px] leading-[1.6] m-0 text-[var(--ink-muted)]">
                       {uiLang === 'zh' ? '正在听…' : 'listening…'}
                       <span className="inline-block w-1.5 h-[14px] align-[-2px] ml-1 bg-[#8A5D0E] animate-pulse" />
                     </p>
@@ -2133,20 +2142,22 @@ ${englishParagraph}`;
               own "翻译中▍" cursor inside the bubble. Two indicators
               looked like a bug to users. */}
         </div>
-        {/* "↓ N 新内容" jump-to-latest pill (PR3 — 2026-04-27).
-            Shows when user has scrolled up away from bottom AND new
-            content has landed since. Click → smooth scroll to bottom +
-            re-engage auto-stick. Positioned absolute over the scroller
-            (above ask-AI dock), centered. */}
-        {!isAtBottom && unseenCount > 0 && (
+        {/* 跳到最新按钮（一键到底）。改成只要不在底部就显示——
+            有新内容时显示数字，没有新内容时显示"跳到最新"。这样用户
+            滚回去看历史时，永远能一键回到最新位置，不用手动滚。 */}
+        {!isAtBottom && (
           <button
             type="button"
             onClick={jumpToLatest}
-            aria-label={uiLang === 'zh' ? `跳到最新（${unseenCount} 条新内容）` : `Jump to latest (${unseenCount} new)`}
+            aria-label={uiLang === 'zh' ? (unseenCount > 0 ? `跳到最新（${unseenCount} 条新内容）` : '跳到最新') : (unseenCount > 0 ? `Jump to latest (${unseenCount} new)` : 'Jump to latest')}
             className="absolute left-1/2 -translate-x-1/2 bottom-2 z-20 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[var(--blue-accent)] text-white font-mono-meta text-[11px] font-semibold tracking-[0.05em] shadow-[0_4px_14px_rgba(91,127,232,0.4)] hover:bg-[var(--blue-accent-deep)] cursor-pointer border-0"
           >
             <span>↓</span>
-            <span>{uiLang === 'zh' ? `${unseenCount} 条新内容` : `${unseenCount} new`}</span>
+            <span>
+              {unseenCount > 0
+                ? (uiLang === 'zh' ? `${unseenCount} 条新内容` : `${unseenCount} new`)
+                : (uiLang === 'zh' ? '跳到最新' : 'Latest')}
+            </span>
           </button>
         )}
       </div>
