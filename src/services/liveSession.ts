@@ -441,16 +441,25 @@ export async function startLiveSession(
     const courseHint = opts.course
       ? ` The class subject is: ${opts.course}. Translate technical terms in that subject's convention; keep well-known English initialisms (e.g. CAPM, GDP, DNA) untranslated.`
       : '';
-    const prompt = `You are translating a live classroom lecture from English to Chinese for a Chinese international student.${courseHint}
+    const prompt = `You are a faithful simultaneous interpreter translating live English speech into Chinese for a Chinese international student.${courseHint}
 
-The input below is a continuous paragraph of spoken English from a live lecture (transcribed by a speech model, so it may contain repetitions or filler). Produce a SINGLE natural, fluent Chinese paragraph that reads as if a Chinese teacher re-explained the same material. Do not mirror every word — clean up repetitions, smooth broken phrasing, and group related sentences into flowing Chinese prose.
+The input below is a continuous paragraph of spoken English (transcribed by a speech model, so it may contain repetitions or filler). Produce a SINGLE faithful Chinese translation paragraph that preserves the speaker's voice and perspective.
 
-Rules:
+CRITICAL — PRESERVE PERSON AND PERSPECTIVE:
+- This is interpretation, NOT summarization or rewriting. Do NOT shift to third-person narration.
+- "I" must become "我", NOT "他/她/老师/讲师/作者". If the speaker says "I love dancing", translate as "我喜欢跳舞", NEVER as "她说她喜欢跳舞" or "讲师说自己喜欢跳舞".
+- "you" / "you guys" / "y'all" must become "你/你们/大家" addressed directly, NOT "听众/学生/观众".
+- "we" must become "我们", NOT "大家".
+- If a third party is being quoted (e.g. "Julia tells us..."), keep the quote as direct first-person Chinese ("朱莉娅说：'我...'") matching how it was uttered, instead of paraphrasing it as third-person.
+- Do NOT add framing words like "讲师认为", "她表示", "据他所说" unless those words appear literally in the English source.
+
+OTHER RULES:
 - Output is ONE Chinese paragraph. PURE CHINESE ONLY — no English words, no parenthetical English glosses, no Latin characters anywhere.
-- This is critical: do NOT write things like 新雪（fresh powder） or "可理解性输入（comprehensive input）" — the user has the English source displayed alongside, so embedded English in the Chinese is redundant and visually noisy.
-- The ONLY exception: well-known initialisms that are normally untranslated even by Chinese teachers — CAPM, GDP, DNA, AI, HTTP, API, CEO. These can stay as-is, but never wrap them in parentheses with a Chinese version.
-- Keep the teaching register (spoken Chinese, 口语化, not stiff written Chinese).
-- Do not add commentary about the quality of the transcription.
+- Do NOT write things like 新雪（fresh powder） or "可理解性输入（comprehensive input）". The user has the English source displayed alongside, so embedded English is redundant.
+- Exception: well-known initialisms that even Chinese speakers leave untranslated — CAPM, GDP, DNA, AI, HTTP, API, CEO. Leave these as-is, no parentheses.
+- Keep natural spoken Chinese (口语化), not stiff written Chinese.
+- Clean up obvious filler words (um, uh, like, you know) and stutters, but do NOT paraphrase content or "smooth out" the speaker's meaning. Stay faithful to what was said.
+- Do not add commentary about transcription quality.
 
 English paragraph:
 ${englishParagraph}`;
