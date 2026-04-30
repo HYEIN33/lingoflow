@@ -556,6 +556,14 @@ ${englishParagraph}`;
     if (idleFlushTimer) clearTimeout(idleFlushTimer);
     idleFlushTimer = setTimeout(() => {
       idleFlushTimer = null;
+      // 关键：idle-flush 触发时，把还没 commit 的 interim 文字也救回来，
+      // 否则那段 interim（is_final=false 但已显示给用户）会被丢弃，
+      // 导致英文出现"吞字"——上一段卡到某词为止，下一段开头接不上。
+      if (lastInterimText && lastInterimText.trim()) {
+        // eslint-disable-next-line no-console
+        console.info(`[live] idle-flush rescuing interim before flush: ${JSON.stringify(lastInterimText.slice(0, 60))}`);
+        commitFinalText(lastInterimText, 'rescued-interim', false);
+      }
       if (pendingBatch.length > 0) {
         // eslint-disable-next-line no-console
         console.info(`[live] idle-flush triggered after ${IDLE_FLUSH_MS}ms, batch chars=${countChars(pendingBatch)}, sentences=${pendingBatch.length}`);
