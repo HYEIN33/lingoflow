@@ -544,18 +544,21 @@ ${englishParagraph}`;
     }
   };
 
-  // 静默期兜底：只要有 final 文字进 batch，就 arm 一个 4 秒"无输入"watchdog。
-  // 4 秒内有新 final 就 reset；4 秒过去没动静就强制 flush（**不管字数**）。
-  // 估算：MIN_CHARS=40 ≈ 8-10 个英文词 ≈ 正常语速 4 秒。所以 4 秒静默
-  // 等于"用户应该攒到字数了但没攒到（说慢/停下了）"——直接翻译，避免最后
-  // 一段短句永远卡在 pending。
+  // 静默期兜底：只要有 final 文字进 batch，就 arm 一个 8 秒"无输入"watchdog。
+  // 8 秒内有新 final 就 reset；8 秒过去没动静就强制 flush（**不管字数**）。
+  //
+  // 为什么是 8 秒：4 秒太短——正常说话的句间换气/想词最多 4-5 秒，
+  // 4 秒触发会把整段切成一句一句。8 秒则覆盖到"用户真停下了"的场景
+  // （看屏幕、走神、做笔记），不会破坏正常节奏，又能兜短句。
   let idleFlushTimer: ReturnType<typeof setTimeout> | null = null;
-  const IDLE_FLUSH_MS = 4000;
+  const IDLE_FLUSH_MS = 8000;
   const armIdleFlush = () => {
     if (idleFlushTimer) clearTimeout(idleFlushTimer);
     idleFlushTimer = setTimeout(() => {
       idleFlushTimer = null;
       if (pendingBatch.length > 0) {
+        // eslint-disable-next-line no-console
+        console.info(`[live] idle-flush triggered after ${IDLE_FLUSH_MS}ms, batch chars=${countChars(pendingBatch)}, sentences=${pendingBatch.length}`);
         cancelDelayedFlush();
         void flushBatch();
       }
