@@ -797,8 +797,18 @@ ${englishParagraph}`;
         });
         connection = freshConn;
         attachHandlers(freshConn);
+        // 关键：重置所有 watchdog 时间戳，给新连接一个干净窗口期。
+        // 否则 healthTimer 用上一次连接的旧时间戳判断"卡住了"，新连接
+        // 还没收到首个 final 就被再次 forceReconnect → 1011 死循环。
+        const resetTs = Date.now();
+        lastPcmSentAt = resetTs;
+        lastNonEmptyTranscriptAt = resetTs;
+        lastNonEmptyFinalAt = resetTs;
+        emptyFinalStreak = 0;
+        consecutiveSendFailures = 0;
+        audioStuckForcedReconnect = false;
         // eslint-disable-next-line no-console
-        console.info('[live] auto-reconnect succeeded');
+        console.info('[live] auto-reconnect succeeded — watchdog timestamps reset');
         reconnecting = false;
         return;
       } catch (err) {
