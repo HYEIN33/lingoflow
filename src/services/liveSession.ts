@@ -56,9 +56,11 @@ export interface LiveSessionCallbacks {
   // Fires the moment a paragraph batch is dispatched to Gemini, before
   // the translate completes. UI uses this to snapshot which line ids
   // belong to this batchId — the equivalent of "marking the lines as
-  // claimed by batch X". Receives the batch's English sentence count so
-  // the UI can validate length when zh later returns.
-  onBatchOpen?: (batchId: string, sentenceCount: number) => void;
+  // claimed by batch X". Receives the batch's actual English sentence
+  // texts so the UI can match by content (not by position) — fixes the
+  // racing-claim bug where claim-by-count picked up stale finalized
+  // lines that didn't belong to this batch.
+  onBatchOpen?: (batchId: string, sentences: string[]) => void;
   /**
    * English transcription. isFinal=false → interim (keep replacing the
    * in-flight line), true → the segment is locked in and a translation
@@ -395,6 +397,7 @@ export async function startLiveSession(
 
   const flushBatch = async () => {
     if (pendingBatch.length === 0) return;
+    cancelIdleFlush();
     const batch = pendingBatch;
     pendingBatch = [];
     const batchId = `bx-${++batchIdCounter}`;
@@ -403,7 +406,7 @@ export async function startLiveSession(
     // Tell the UI "these N sentences are now mine" — the UI snapshots
     // which line ids belong to this batchId so the renderer can split
     // them into a sealed-group card with a divider after.
-    cb.onBatchOpen?.(batchId, batch.length);
+    cb.onBatchOpen?.(batchId, [...batch]);
     flushing = flushing
       .then(() => translateBatch(batch, batchId))
       .finally(() => { cb.onTranslationPending?.(false, key); });
@@ -541,6 +544,30 @@ ${englishParagraph}`;
     }
   };
 
+  // 静默期兜底：只要有 final 文字进 batch，就 arm 一个 4 秒"无输入"watchdog。
+  // 4 秒内有新 final 就 reset；4 秒过去没动静就强制 flush（**不管字数**）。
+  // 估算：MIN_CHARS=40 ≈ 8-10 个英文词 ≈ 正常语速 4 秒。所以 4 秒静默
+  // 等于"用户应该攒到字数了但没攒到（说慢/停下了）"——直接翻译，避免最后
+  // 一段短句永远卡在 pending。
+  let idleFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  const IDLE_FLUSH_MS = 4000;
+  const armIdleFlush = () => {
+    if (idleFlushTimer) clearTimeout(idleFlushTimer);
+    idleFlushTimer = setTimeout(() => {
+      idleFlushTimer = null;
+      if (pendingBatch.length > 0) {
+        cancelDelayedFlush();
+        void flushBatch();
+      }
+    }, IDLE_FLUSH_MS);
+  };
+  const cancelIdleFlush = () => {
+    if (idleFlushTimer) {
+      clearTimeout(idleFlushTimer);
+      idleFlushTimer = null;
+    }
+  };
+
   // commitFinalText: handle a "this is a real final" event from Deepgram.
   // Decision tree:
   //   1. char-cap exceeded (320+) → flush immediately, cancel any pending
@@ -571,11 +598,16 @@ ${englishParagraph}`;
 
     pendingBatch.push(text);
 
+    // 任何 final 内容进 batch → 重置 4 秒"无输入"兜底计时器（用户要的：
+    // 不管字数，到点没新输入就翻译）。
+    armIdleFlush();
+
     // Path 1: char-cap. Speaker on a roll — cancel any pending delayed
     // flush and ship now so the next paragraph isn't held hostage.
     const accumulatedChars = countChars(pendingBatch);
     if (accumulatedChars >= PARAGRAPH_CHAR_HARD_CAP) {
       cancelDelayedFlush();
+      cancelIdleFlush();
       void flushBatch();
       return;
     }
@@ -588,8 +620,7 @@ ${englishParagraph}`;
       return;
     }
 
-    // Path 3: speech_final=false. Just an interim final fragment.
-    // Don't touch the delayed-flush deadline.
+    // Path 3: speech_final=false. 让 idle watchdog 单独兜底。
   };
 
   const attachHandlers = (conn: ListenLiveClient) => {
@@ -1008,6 +1039,7 @@ ${englishParagraph}`;
       // Cancel any pending delayed-flush — user hit stop, we don't want
       // to wait 5s for the deadline to fire.
       cancelDelayedFlush();
+      cancelIdleFlush();
       // If there's a partially-assembled sentence still sitting in the
       // buffer (user hit stop mid-utterance), commit it to the batch
       // before flushing. Otherwise the last spoken sentence is lost.
