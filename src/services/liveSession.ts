@@ -881,6 +881,11 @@ ${englishParagraph}`;
   let audioStuckForcedReconnect = false; // per-session one-shot guard
   const healthTimer = setInterval(() => {
     if (userStopped || reconnecting) return;
+    // 暂停时 watchdog 不做"PCM 流断了 → reconnect"的判定。否则用户按
+    // 暂停后我们正常停发 PCM，watchdog 看到 8s 没 PCM 又触发 forcing
+    // reconnect → 1011 死循环。恢复时 lastPcmSentAt 已被同步刷新（见
+    // resume 路径），watchdog 不会拿暂停期间的旧时间戳错杀新连接。
+    if (paused) return;
     const t = mediaStream.getAudioTracks()[0];
     if (!t) return;
     if (t.readyState === 'ended') {
@@ -1062,6 +1067,13 @@ ${englishParagraph}`;
     },
     resume() {
       paused = false;
+      // 恢复时把 watchdog 的"上次 PCM 时间戳"刷新成现在。否则 watchdog
+      // 用暂停期间的旧时间戳判断"8s 没 PCM"再次 forceReconnect，把刚
+      // 恢复的连接关掉。
+      lastPcmSentAt = Date.now();
+      lastNonEmptyTranscriptAt = Date.now();
+      lastNonEmptyFinalAt = Date.now();
+      audioStuckForcedReconnect = false;
     },
     isPaused() {
       return paused;
