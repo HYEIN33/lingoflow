@@ -336,6 +336,9 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
   // lines", which raced and deleted user-visible paragraphs in the
   // PR2 concurrent path.
   const batchToLineIdsRef = useRef<Map<string, number[]>>(new Map());
+  // 30s 超时兜底：每个 batchId 配一个 timer，落 zh 时清；超时还没清就把
+  // sealed 卡翻成"翻译失败 ⚠️ 重试"，用户至少能点重试，不会永远盯着"翻译中"。
+  const batchTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   // Manual-reconnect visibility: show a "卡住了？重连" button when the
   // auto-recovery watchdog hasn't fired yet but the signal pattern looks
@@ -433,26 +436,66 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
   // batchId so when zh later returns we can merge into THOSE exact ids,
   // not "the first N un-translated lines" (which raced under concurrent
   // translates and deleted user-visible paragraphs).
-  const handleBatchOpen = (batchId: string, sentenceCount: number) => {
+  //
+  // 2026-04-30: claim by transcription text (not by position count). The
+  // old "claim first N un-sealed finalized lines" logic could mis-claim
+  // a stale leftover line whose previous batch had failed to clear it,
+  // causing the new batch's card to display the stale line's English
+  // while the actual new content sat orphaned in another sealed card
+  // that never received zh. Matching by exact transcription text avoids
+  // this entirely.
+  const handleBatchOpen = (batchId: string, sentences: string[]) => {
     setStream((prev) => {
-      // Walk forward, claim the first `sentenceCount` line items that
-      // are finalized AND not yet sealed by another batch AND not yet
-      // translated. Mark them sealedByBatch so the renderer can split
-      // them off into a "整段翻译" card with a divider AFTER (so new
-      // transcripts appear below in a fresh card).
+      const remaining = sentences.map((s) => s.trim()).filter(Boolean);
       const claimed: number[] = [];
       const next = prev.map((item) => {
         if (item.kind !== 'line') return item;
-        if (claimed.length >= sentenceCount) return item;
         if (!item.finalized) return item;
         if (item.translation) return item;
         if (item.sealedByBatch) return item;
+        const trimmed = (item.transcription || '').trim();
+        const idx = remaining.indexOf(trimmed);
+        if (idx === -1) return item;
+        remaining.splice(idx, 1);
         claimed.push(item.id);
         return { ...item, sealedByBatch: batchId };
       });
+      // Fallback: if we couldn't text-match all sentences (e.g. transcription
+      // was reformatted between commit and onBatchOpen), claim any remaining
+      // un-sealed finalized lines to fill the count. Prevents zero-claim
+      // batches from leaving sealed cards orphaned.
+      if (claimed.length < sentences.length) {
+        const need = sentences.length - claimed.length;
+        let still = need;
+        for (let i = 0; i < next.length && still > 0; i++) {
+          const item = next[i];
+          if (item.kind !== 'line') continue;
+          if (!item.finalized || item.translation || item.sealedByBatch) continue;
+          next[i] = { ...item, sealedByBatch: batchId };
+          claimed.push(item.id);
+          still -= 1;
+        }
+      }
       batchToLineIdsRef.current.set(batchId, claimed);
       return next;
     });
+    // 30s watchdog: if zh still hasn't landed, mark the sealed cards as
+    // failed so the user gets a Retry button instead of staring at "翻译中".
+    // Cleared automatically when applyTranslationBatch consumes the batchId.
+    const timeoutId = setTimeout(() => {
+      if (!batchToLineIdsRef.current.has(batchId)) return; // already settled
+      const ids = batchToLineIdsRef.current.get(batchId) || [];
+      batchToLineIdsRef.current.delete(batchId);
+      setStream((prev) => prev.map((it) => {
+        if (it.kind !== 'line') return it;
+        if (!ids.includes(it.id)) return it;
+        if (it.translation) return it;
+        return { ...it, translation: TRANSLATION_FAILED_ZH, failed: true, sealedByBatch: undefined };
+      }));
+      // eslint-disable-next-line no-console
+      console.warn(`[classroom] batch ${batchId} timed out after 30s — flipping ${ids.length} line(s) to failed state`);
+    }, 30000);
+    batchTimeoutsRef.current.set(batchId, timeoutId);
   };
 
   const applyTranslationBatch = (pairs: Array<{ en: string; zh: string; sentences: string[]; batchId: string }>) => {
@@ -465,6 +508,12 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
         // won't bump into these ids (they'll be 'translation' set,
         // which already excludes them in the claim walk above).
         batchToLineIdsRef.current.delete(pair.batchId);
+        // Clear the 30s watchdog timer for this batchId (success path).
+        const t = batchTimeoutsRef.current.get(pair.batchId);
+        if (t) {
+          clearTimeout(t);
+          batchTimeoutsRef.current.delete(pair.batchId);
+        }
 
         // Find the indices in the current stream that match the
         // claimed ids (positions may have shifted since onBatchOpen
@@ -1015,6 +1064,9 @@ ${englishParagraph}`;
     } finally {
       sessionRef.current = null;
       setPaused(false);
+      // 清掉所有 batch 超时 watchdog —— 会话结束就不再需要"30s 还没回就标失败"
+      for (const t of batchTimeoutsRef.current.values()) clearTimeout(t);
+      batchTimeoutsRef.current.clear();
     }
     // Persist the session so the user can find their notes later.
     // Best-effort; a save failure doesn't punish the UX — they still have
