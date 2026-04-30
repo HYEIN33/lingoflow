@@ -253,16 +253,9 @@ export default function TranslateTab({
               {inputText.length} / 2000
             </div>
             {/* Clear button — wipes the translation surface */}
-            {(inputText || translationResult) && (
-              <button
-                type="button"
-                onClick={() => { onClear(); setPreviousSearchWord(null); }}
-                className="absolute right-28 sm:right-32 top-1/2 -translate-y-1/2 p-1 text-[rgba(10,14,26,0.25)] hover:text-[#E5382B] transition-colors z-20"
-                aria-label="Clear"
-              >
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-              </button>
-            )}
+            {/* 之前用 absolute right-28/right-32 跟右侧按钮组重叠（按钮组
+                总宽 ~188px），改成放进右侧 flex 容器（line 281）的最左边
+                由 flex gap 自然撑开间距，不会跟翻译/语音/图片按钮挤一起。 */}
             <input
               ref={photoInputRef}
               type="file"
@@ -279,6 +272,19 @@ export default function TranslateTab({
               className="hidden"
             />
             <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-1 z-20">
+              {/* 清空按钮——之前 absolute right-28 会跟翻译按钮重叠，
+                  现在直接进 flex 容器左端，由 gap 控制间距，不会再叠。 */}
+              {(inputText || translationResult) && (
+                <button
+                  type="button"
+                  onClick={() => { onClear(); setPreviousSearchWord(null); }}
+                  className="w-9 h-9 rounded-full flex items-center justify-center text-[rgba(10,14,26,0.45)] hover:text-[#E5382B] hover:bg-[rgba(229,56,43,0.06)] transition-colors cursor-pointer"
+                  aria-label="Clear"
+                  title={uiLang === 'zh' ? '清空' : 'Clear'}
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                </button>
+              )}
               <div className="relative">
                 <button
                   type="button"

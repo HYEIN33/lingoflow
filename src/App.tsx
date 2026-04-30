@@ -897,7 +897,7 @@ export default function App() {
       {/* translate="no" + notranslate class: 防止沉浸式翻译 / Google Translate
           等扩展把品牌/导航当翻译目标，注入 wrapper 节点把布局推乱（曾导致
           tabs 横条与 logo 重叠）。 */}
-      <header translate="no" className="notranslate bg-white/50 backdrop-blur-xl border-b border-white/60 sticky top-0 z-10 shadow-[0_4px_20px_rgba(91,127,232,0.08)]">
+      <header translate="no" className="notranslate bg-white/85 backdrop-blur-xl border-b border-white/60 sticky top-0 z-30 shadow-[0_4px_20px_rgba(91,127,232,0.08)]">
         <div className="max-w-2xl mx-auto px-4 sm:px-6 h-16 sm:h-20 flex items-center justify-between">
           <div className="flex items-center gap-2 sm:gap-3">
             {/* App icon removed — brand name alone carries identity. */}
