@@ -587,9 +587,14 @@ export async function checkGrammar(text: string): Promise<GrammarCheckResult> {
 
   const contents = `Check the grammar of the following text. If there are errors, provide the corrected version and a detailed explanation in both English and Chinese. If there are no errors, set hasErrors to false.
 
+    IMPORTANT — Do NOT flag these as errors:
+    - Capitalization issues (e.g. lowercase "i", missing capital at sentence start, capitalization of proper nouns)
+    - Punctuation issues (missing periods, commas, apostrophes, quotation marks, etc.)
+    Only flag actual grammar issues — wrong tense, wrong word form, wrong agreement, wrong word choice, missing/extra words, sentence structure problems. If the only "issues" in the text are capitalization or punctuation, set hasErrors to false and return the text unchanged.
+
     Additionally, perform a 'Style Detection' (风格检测). If the text is too colloquial or informal, provide 'styleFeedback' (e.g., "你写的这句话偏口语，如果是正式场合建议改成…") and provide an 'academicSuggestion'.
 
-    Also, provide an array of specific 'edits', where each edit shows the 'originalText' that was wrong, the 'correctedText', and a brief 'explanation' (in Chinese) of why it was changed.
+    Also, provide an array of specific 'edits', where each edit shows the 'originalText' that was wrong, the 'correctedText', and a brief 'explanation' (in Chinese) of why it was changed. Do NOT include capitalization or punctuation edits.
 
     Text: "${text}"`;
   const config = {

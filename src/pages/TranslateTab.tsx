@@ -36,6 +36,7 @@ import { TranslationResult, SlangExplanationResult } from '../services/ai';
 import { cn } from '../lib/utils';
 import { Language, translations } from '../i18n';
 import { UserProfile } from '../App';
+import { UsageBadge } from '../components/UsageBadge';
 
 interface SearchHistoryItem {
   text: string;
@@ -225,6 +226,7 @@ export default function TranslateTab({
           <span className="font-zh-sans text-[11px] font-light tracking-[0.15em] text-[rgba(10,14,26,0.38)]">
             {uiLang === 'zh' ? '翻译' : ''}
           </span>
+          <UsageBadge bucket="translate" isPro={!!userProfile?.isPro} uiLang={uiLang} onUpgrade={() => onOpenPaywall('usage_badge')} className="ml-auto" />
         </div>
 
         <div className="glass-thick rounded-[28px] px-4 pt-4 pb-5 relative overflow-hidden">

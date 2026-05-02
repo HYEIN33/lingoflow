@@ -66,6 +66,8 @@ import { useTranslation } from './hooks/useTranslation';
 import { useWordbook } from './hooks/useWordbook';
 import { useReview } from './hooks/useReview';
 import { useSearchHistory } from './hooks/useSearchHistory';
+import type { Status as ClassroomStatus, StreamItem as ClassroomStreamItem } from './pages/ClassroomTab';
+import type { LiveSessionHandle } from './services/liveSession';
 
 // --- Error Handling ---
 export class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean, error: any }> {
@@ -643,6 +645,17 @@ export default function App() {
   const [aiInput, setAiInput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
 
+  // Classroom (live translation) state — hoisted out of ClassroomTab so it
+  // survives the user switching tabs. Without this, the lazy-loaded
+  // ClassroomTab unmounts on tab switch, the new mount starts with status
+  // 'idle', and the running LiveSession (audio capture + Deepgram socket)
+  // is orphaned with no UI showing it. See bugs/classroom-tab-switch-loses-status.
+  const [classroomStatus, setClassroomStatus] = useState<ClassroomStatus>('idle');
+  const [classroomStatusDetail, setClassroomStatusDetail] = useState<string>('');
+  const [classroomPaused, setClassroomPaused] = useState(false);
+  const [classroomStream, setClassroomStream] = useState<ClassroomStreamItem[]>([]);
+  const classroomSessionRef = useRef<LiveSessionHandle | null>(null);
+
   // --- Custom Hooks ---
   const { user, userProfile, setUserProfile, isAuthReady } = useAuth();
   const { speak, stopAllAudio, loadingAudioText } = useAudio();
@@ -1048,6 +1061,8 @@ export default function App() {
                 uiLang={uiLang}
                 onCheckGrammar={handleCheckGrammar}
                 onToggleListening={toggleListening}
+                userProfile={userProfile}
+                onOpenPaywall={(trigger) => { setPaymentTrigger(trigger); setShowPayment(true); }}
               />
             </div>
           ) : activeTab === 'review' ? (
@@ -1118,11 +1133,24 @@ export default function App() {
                   }}
                 />
               )}
-              <SlangDictionary uiLang={uiLang} initialSearchTerm={searchQuery} />
+              <SlangDictionary uiLang={uiLang} initialSearchTerm={searchQuery} userProfile={userProfile} onOpenPaywall={(trigger) => { setPaymentTrigger(trigger); setShowPayment(true); }} />
             </div>
           ) : activeTab === 'classroom' ? (
             <div>
-              <ClassroomTab uiLang={uiLang} isPro={!!userProfile?.isPro} />
+              <ClassroomTab
+                uiLang={uiLang}
+                isPro={!!userProfile?.isPro}
+                onOpenPaywall={(trigger) => { setPaymentTrigger(trigger); setShowPayment(true); }}
+                status={classroomStatus}
+                setStatus={setClassroomStatus}
+                statusDetail={classroomStatusDetail}
+                setStatusDetail={setClassroomStatusDetail}
+                paused={classroomPaused}
+                setPaused={setClassroomPaused}
+                stream={classroomStream}
+                setStream={setClassroomStream}
+                sessionRef={classroomSessionRef}
+              />
             </div>
           ) : activeTab === 'leaderboard' ? (
             <div>

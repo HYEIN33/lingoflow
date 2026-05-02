@@ -53,6 +53,7 @@ import LiveNotesPanel from '../components/LiveNotesPanel';
 import { generateLiveNotes, type LiveNotes } from '../services/ai';
 import { aiChat, translateSimple } from '../services/ai';
 import { cn } from '../lib/utils';
+import { UsageBadge } from '../components/UsageBadge';
 
 const COMPLIANCE_ACK_KEY = 'memeflow_classroom_compliance_ack';
 
@@ -80,7 +81,7 @@ const COURSE_PRESETS: Array<{ zh: string; en: string; terms: string[] }> = [
   { zh: '哲学', en: 'Philosophy', terms: ['epistemology', 'ontology', 'metaphysics', 'phenomenology', 'existentialism', 'dialectic', 'a priori', 'empiricism', 'utilitarianism', 'Nietzsche'] },
 ];
 
-type Status =
+export type Status =
   | 'idle'
   | 'requesting-token'
   | 'connecting'
@@ -93,7 +94,7 @@ type Status =
 //   - 'qa'    — an AI Q&A exchange the user typed into the chat bar
 // Rendering them in the same stream means the user sees their questions
 // in the context where they asked them, not in a separate chat panel.
-type StreamItem =
+export type StreamItem =
   | {
       kind: 'line';
       id: number;
@@ -191,7 +192,37 @@ function friendlyStartError(e: any, source: 'tab' | 'mic', lang: 'en' | 'zh'): s
     : `Start failed: ${msg || 'unknown error'}`;
 }
 
-export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' | 'zh'; isPro?: boolean }) {
+export default function ClassroomTab({
+  uiLang,
+  isPro = false,
+  onOpenPaywall,
+  status,
+  setStatus,
+  statusDetail,
+  setStatusDetail,
+  paused,
+  setPaused,
+  stream,
+  setStream,
+  sessionRef,
+}: {
+  uiLang: 'en' | 'zh';
+  isPro?: boolean;
+  onOpenPaywall?: (trigger: string) => void;
+  // Hoisted state — kept in App.tsx so a tab switch unmounting the tab
+  // body doesn't lose the running LiveSession. Without this, switching to
+  // another tab and back would show "未开始" while the audio + Deepgram
+  // socket continued running in the background.
+  status: Status;
+  setStatus: React.Dispatch<React.SetStateAction<Status>>;
+  statusDetail: string;
+  setStatusDetail: React.Dispatch<React.SetStateAction<string>>;
+  paused: boolean;
+  setPaused: React.Dispatch<React.SetStateAction<boolean>>;
+  stream: StreamItem[];
+  setStream: React.Dispatch<React.SetStateAction<StreamItem[]>>;
+  sessionRef: React.MutableRefObject<LiveSessionHandle | null>;
+}) {
   const [showCompliance, setShowCompliance] = useState<boolean>(
     () => typeof window !== 'undefined' && !localStorage.getItem(COMPLIANCE_ACK_KEY)
   );
@@ -217,11 +248,9 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
     try { localStorage.setItem(AUDIO_SOURCE_KEY, audioSource); } catch { /* quota / private mode */ }
   }, [audioSource]);
   const [mode] = useState<'tutorial' | 'lecture'>('tutorial'); // tutorial only in Spike
-  const [status, setStatus] = useState<Status>('idle');
-  const [statusDetail, setStatusDetail] = useState<string>('');
-  // paused mirrors the live session's pause state so the button label
-  // updates synchronously. Always reset in handleStart and handleStop.
-  const [paused, setPaused] = useState(false);
+  // status / statusDetail / paused are hoisted to App.tsx — see component
+  // signature above. This survives the user switching tabs (which unmounts
+  // ClassroomTab) without dropping the live session UI state.
   // Course selection — user picks a subject (e.g. "金融" / "计算机") and
   // we use that to (a) feed matching keyterms to Deepgram and (b) tell
   // Gemini the class context for better translation register. We keep
@@ -276,7 +305,7 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
   const liveNotesLastLenRef = useRef<number>(0);
   const liveNotesInFlightRef = useRef<boolean>(false);
 
-  const [stream, setStream] = useState<StreamItem[]>([]);
+  // stream is hoisted to App.tsx — see component signature.
   const [question, setQuestion] = useState('');
   const [isAsking, setIsAsking] = useState(false);
 
@@ -291,19 +320,9 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
   // (so the bilingual layout is no longer redundant — original gives
   // English-learning users real value). Persisted in localStorage so
   // the choice survives refreshes.
-  const SHOW_ORIGINAL_KEY = 'memeflow_classroom_show_original';
-  const [showOriginal, setShowOriginal] = useState<boolean>(() => {
-    try {
-      const v = localStorage.getItem(SHOW_ORIGINAL_KEY);
-      // Treat unset as default true; only explicit 'false' opts out.
-      return v === null ? true : v !== 'false';
-    } catch {
-      return true;
-    }
-  });
-  useEffect(() => {
-    try { localStorage.setItem(SHOW_ORIGINAL_KEY, String(showOriginal)); } catch { /* quota */ }
-  }, [showOriginal]);
+  // 字幕永远中英对照（2026-05-02 移除"只看中文/中英对照"切换）。
+  // 保留 showOriginal 这个名字让下方所有渲染逻辑无需改动，硬编码 true。
+  const showOriginal = true;
 
   // In-flight translation indicator — a Set of batch keys currently
   // translating. We render a "翻译中…" placeholder whenever the set is
@@ -321,7 +340,7 @@ export default function ClassroomTab({ uiLang, isPro = false }: { uiLang: 'en' |
     setShowAskHint(false);
   };
 
-  const sessionRef = useRef<LiveSessionHandle | null>(null);
+  // sessionRef is hoisted to App.tsx — see component signature.
   // Set to true while we're tearing down after an error — tells the
   // onStatusChange handler to ignore stop()'s tail 'stopped' event so
   // the red error banner doesn't get overwritten with "Stopped".
@@ -1402,6 +1421,7 @@ ${englishParagraph}`;
         <span className="font-zh-sans text-[11.5px] tracking-[0.12em] text-[var(--ink-subtle)]">
           {uiLang === 'zh' ? '课堂同传' : 'live interpretation'}
         </span>
+        <UsageBadge bucket="classroom" isPro={isPro} uiLang={uiLang} onUpgrade={() => onOpenPaywall?.('usage_badge')} className="ml-auto" />
       </div>
 
       {/* LIVE STATUS BAR — single row, always on top */}
@@ -1631,48 +1651,9 @@ ${englishParagraph}`;
             because realtime produced disjointed Chinese and we now always
             run paragraph mode. */}
 
-        {/* Row 2b: show-original toggle (added 2026-04-27 evening). Default
-            off = users see Chinese-only, the cleanest reading experience.
-            Power users studying English can flip it on to compare. */}
-        <div className="flex items-center gap-[14px] py-[10px] border-t border-[var(--ink-hairline)]">
-          <div className="shrink-0 w-[110px]">
-            <div className="font-mono-meta text-[10.5px] tracking-[0.2em] uppercase font-extrabold text-[var(--ink-soft)]">display</div>
-            <div className="font-zh-sans font-semibold text-[12px] text-[var(--ink-body)] tracking-[0.02em] mt-1">
-              {uiLang === 'zh' ? '字幕显示' : 'subtitles'}
-            </div>
-          </div>
-          <div className="flex-1 flex items-center gap-1.5 flex-wrap">
-            <button
-              onClick={() => setShowOriginal(false)}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-zh-serif text-[13px] border transition-colors",
-                !showOriginal
-                  ? "bg-[var(--ink)] text-white border-[var(--ink)] shadow-[0_3px_8px_rgba(10,14,26,0.22)]"
-                  : "bg-white/55 border-white/75 text-[rgba(10,14,26,0.7)] hover:text-[var(--ink)]"
-              )}
-            >
-              {!showOriginal && <span className="w-1 h-1 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />}
-              {uiLang === 'zh' ? '只看中文' : 'Chinese only'}
-            </button>
-            <button
-              onClick={() => setShowOriginal(true)}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-zh-serif text-[13px] border transition-colors",
-                showOriginal
-                  ? "bg-[var(--ink)] text-white border-[var(--ink)] shadow-[0_3px_8px_rgba(10,14,26,0.22)]"
-                  : "bg-white/55 border-white/75 text-[rgba(10,14,26,0.7)] hover:text-[var(--ink)]"
-              )}
-            >
-              {showOriginal && <span className="w-1 h-1 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />}
-              {uiLang === 'zh' ? '中英对照' : 'bilingual'}
-            </button>
-            <span className="ml-auto font-zh-serif text-[11px] text-[var(--ink-muted)] self-center">
-              {showOriginal
-                ? (uiLang === 'zh' ? '同时显示英文原文 · 适合学英语' : 'show English source')
-                : (uiLang === 'zh' ? '只看翻译 · 阅读更专注' : 'Chinese only · cleanest read')}
-            </span>
-          </div>
-        </div>
+        {/* 字幕显示切换（2026-05-02 移除）：之前提供"只看中文 / 中英对照"
+            两档让用户选；改为永远中英对照，UI 控件直接删掉。学英语场景
+            英文原文是核心价值，不该让用户折腾这个开关。 */}
 
         {/* Row 3 (collapsed): course summary — reduces the "wall of options"
             feeling for first-time users. One click expands the real picker. */}

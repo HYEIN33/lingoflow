@@ -4,6 +4,8 @@ import { motion } from 'motion/react';
 import { GrammarCheckResult } from '../services/ai';
 import { cn } from '../lib/utils';
 import { Language, translations } from '../i18n';
+import { UserProfile } from '../App';
+import { UsageBadge } from '../components/UsageBadge';
 
 interface GrammarPageProps {
   grammarInput: string;
@@ -14,12 +16,15 @@ interface GrammarPageProps {
   uiLang: Language;
   onCheckGrammar: (e?: React.FormEvent) => void;
   onToggleListening: () => void;
+  userProfile?: UserProfile | null;
+  onOpenPaywall?: (trigger: string) => void;
 }
 
 export default function GrammarPage(props: GrammarPageProps) {
   const {
     grammarInput, setGrammarInput, isCheckingGrammar, grammarResult,
-    isListening, uiLang, onCheckGrammar, onToggleListening
+    isListening, uiLang, onCheckGrammar, onToggleListening,
+    userProfile, onOpenPaywall
   } = props;
 
   const t = translations[uiLang];
@@ -65,6 +70,7 @@ export default function GrammarPage(props: GrammarPageProps) {
         {uiLang === 'zh' && (
           <span className="font-zh-sans text-[11.5px] tracking-[0.12em] text-[var(--ink-subtle)]">语法检查</span>
         )}
+        <UsageBadge bucket="grammar" isPro={!!userProfile?.isPro} uiLang={uiLang} onUpgrade={() => onOpenPaywall?.('usage_badge')} className="ml-auto" />
       </div>
 
       {/* Grammar Input — glass-thick card */}

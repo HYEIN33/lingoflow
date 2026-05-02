@@ -10,6 +10,7 @@ import { updateProfile } from 'firebase/auth';
 import { UserProfile as UserProfileType } from '../App';
 import AvatarCropperModal from './AvatarCropperModal';
 import OnboardingChecklistModal from './OnboardingChecklistModal';
+import UsageDashboard from './UsageDashboard';
 
 // Achievement Badge System — game-quality metallic medals
 // Reference: 3D Interactive Badge (dev.to), Genshin Impact achievement UI
@@ -525,6 +526,45 @@ export default function UserProfile({
   };
 
   const unlockedAchievements = ACHIEVEMENTS.filter(a => userProfile && a.condition(userProfile));
+
+  // ============================================================
+  // Admin 检测 — 决定要不要给用户显示 UsageDashboard 看板。
+  //
+  // 现状：admin 通过两种方式标记（CLAUDE.md / firestore.rules / functions
+  // 代码都印证了）：
+  //   1. Firebase Auth custom claim：`token.admin === true`
+  //   2. Firestore：`users/{uid}.role === 'admin'`
+  //
+  // 修后：UserProfile 启动时同时检查两者——userProfile 文档里的 role
+  // 字段（同步读，立刻可用）+ 异步拉一次 idTokenResult 看 token claim
+  // （firstpaint 后约 100ms 内补上）。任一为 true 就视为 admin。
+  //
+  // 不修后果：只看 role 会漏掉只用 custom claim 的早期 admin；只看
+  // claim 又会漏掉用 Firestore role 标记的 admin。两条腿走路最稳。
+  // ============================================================
+  const profileRole = (userProfile as unknown as { role?: string } | null)?.role;
+  const [hasAdminClaim, setHasAdminClaim] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    if (!user) {
+      setHasAdminClaim(false);
+      return;
+    }
+    user
+      .getIdTokenResult()
+      .then((res) => {
+        if (cancelled) return;
+        setHasAdminClaim(res.claims?.admin === true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setHasAdminClaim(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+  const isAdminUser = profileRole === 'admin' || hasAdminClaim;
 
   // 身份副标题 — 优先用已装备成就的中英文名；没装备就回退到"梗新人 / Slang Newbie"
   const profileTitle = equippedAchievement
@@ -1045,6 +1085,13 @@ export default function UserProfile({
       </div>
       {/* ============ END PROFILE MAIN CARD ============ */}
       </div>
+
+      {/* ============ USAGE DASHBOARD (admin-only) ============
+          只有 admin 能看到 6 个 bucket 的实时用量。判断规则：userProfile.role
+          === 'admin' 或 token.admin claim === true。普通用户什么都看不到。 */}
+      {isOwnProfile && isAdminUser && (
+        <UsageDashboard isPro={!!userProfile?.isPro} uiLang={uiLang} />
+      )}
 
       {/* ============ ONBOARDING CHECKLIST entry ============ */}
       {isOwnProfile && (
