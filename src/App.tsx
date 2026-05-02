@@ -971,14 +971,10 @@ export default function App() {
             items={tabs.map((t) => t.id)}
             strategy={horizontalListSortingStrategy}
           >
-            {/* sticky 紧贴 header 下方（header 高度 64px mobile / 80px desktop）。
-                以前不 sticky，滚下去再回来时 Tab 栏被滚出视野，看不见。
-                z-20 < header z-30 — 万一布局抖动 header 仍然盖住 tab 栏，
-                不会反过来。容器本身透明，让 glass-shell 自带的玻璃胶囊
-                单独成为视觉重心；滚动时下方内容会从 Tab 胶囊**两侧**擦过去，
-                由 header 的不透明背景在顶部挡住，不会跟 Tab 重叠。 */}
-            <div translate="no" className="notranslate sticky top-16 sm:top-20 z-20 pt-2 pb-4 mb-4">
-              <div className="relative">
+            {/* Tab 栏跟内容一起滚动（不 sticky）—— sticky 多次尝试都被
+                用户反馈"盖住组件 / 出白框 / 漂在 logo"，最简单的版本反而
+                最稳：跟着内容滚走，header 在顶部不透明能挡住其他内容。 */}
+            <div translate="no" className="notranslate relative mb-6 sm:mb-8">
               {/* Thick liquid-glass shell; active tab elevates on top of it
                   via .glass-pill-active (see src/index.css). The shell is
                   deliberately thinner/lighter than the active pill to push
@@ -997,7 +993,6 @@ export default function App() {
                 aria-hidden="true"
                 className="pointer-events-none absolute top-0 right-0 h-full w-8 rounded-r-[22px] bg-gradient-to-l from-[#F4F7FF]/70 to-transparent"
               />
-              </div>
             </div>
           </SortableContext>
         </DndContext>
