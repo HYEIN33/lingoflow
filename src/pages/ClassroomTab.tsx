@@ -53,7 +53,6 @@ import LiveNotesPanel from '../components/LiveNotesPanel';
 import { generateLiveNotes, type LiveNotes } from '../services/ai';
 import { aiChat, translateSimple } from '../services/ai';
 import { cn } from '../lib/utils';
-import { UsageBadge } from '../components/UsageBadge';
 
 const COMPLIANCE_ACK_KEY = 'memeflow_classroom_compliance_ack';
 
@@ -1421,7 +1420,6 @@ ${englishParagraph}`;
         <span className="font-zh-sans text-[11.5px] tracking-[0.12em] text-[var(--ink-subtle)]">
           {uiLang === 'zh' ? '课堂同传' : 'live interpretation'}
         </span>
-        <UsageBadge bucket="classroom" isPro={isPro} uiLang={uiLang} onUpgrade={() => onOpenPaywall?.('usage_badge')} className="ml-auto" />
       </div>
 
       {/* LIVE STATUS BAR — single row, always on top */}

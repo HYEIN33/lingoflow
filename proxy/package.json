@@ -1,0 +1,20 @@
+{
+  "name": "memeflow-deepgram-proxy",
+  "version": "0.1.0",
+  "description": "WebSocket relay between browser clients and Deepgram. Buffers audio across reconnects so users see zero dropped transcripts even on flaky home networks.",
+  "private": true,
+  "main": "src/server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "@deepgram/sdk": "^4.11.3",
+    "firebase-admin": "^13.8.0",
+    "ws": "^8.18.0"
+  }
+}

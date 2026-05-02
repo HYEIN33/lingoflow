@@ -10,7 +10,6 @@ import { updateProfile } from 'firebase/auth';
 import { UserProfile as UserProfileType } from '../App';
 import AvatarCropperModal from './AvatarCropperModal';
 import OnboardingChecklistModal from './OnboardingChecklistModal';
-import UsageDashboard from './UsageDashboard';
 
 // Achievement Badge System — game-quality metallic medals
 // Reference: 3D Interactive Badge (dev.to), Genshin Impact achievement UI
@@ -564,7 +563,10 @@ export default function UserProfile({
       cancelled = true;
     };
   }, [user]);
+  // admin 检测保留 —— 未来可能给 admin 加专属面板/工具入口。当前没人用。
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const isAdminUser = profileRole === 'admin' || hasAdminClaim;
+  void isAdminUser; // suppress unused warning
 
   // 身份副标题 — 优先用已装备成就的中英文名；没装备就回退到"梗新人 / Slang Newbie"
   const profileTitle = equippedAchievement
@@ -1086,12 +1088,8 @@ export default function UserProfile({
       {/* ============ END PROFILE MAIN CARD ============ */}
       </div>
 
-      {/* ============ USAGE DASHBOARD (admin-only) ============
-          只有 admin 能看到 6 个 bucket 的实时用量。判断规则：userProfile.role
-          === 'admin' 或 token.admin claim === true。普通用户什么都看不到。 */}
-      {isOwnProfile && isAdminUser && (
-        <UsageDashboard isPro={!!userProfile?.isPro} uiLang={uiLang} />
-      )}
+      {/* 0.4.1：用量看板搬到独立页面 /usage 了，所有用户（不止 admin）都
+          能从 header 上的 Gauge 图标进入。这里不再显示。 */}
 
       {/* ============ ONBOARDING CHECKLIST entry ============ */}
       {isOwnProfile && (

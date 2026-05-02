@@ -22,7 +22,6 @@ const syncContributionStatsFn = httpsCallable<
 import { UserProfile } from '../App';
 import { DailyChallenge } from './DailyChallenge';
 import { markOnboardingStep } from './OnboardingChecklist';
-import { UsageBadge } from './UsageBadge';
 
 interface Slang {
   id: string;
@@ -1146,7 +1145,6 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
         <span className="inline-block w-4 h-px bg-[rgba(10,14,26,0.35)]"></span>
         <span className="font-display italic text-[13px] text-[rgba(10,14,26,0.58)]">slang dictionary</span>
         <span className="font-zh-sans text-[11px] font-light tracking-[0.15em] text-[rgba(10,14,26,0.38)]">梗百科</span>
-        <UsageBadge bucket="slang" isPro={!!userProfile?.isPro} uiLang={uiLang} onUpgrade={() => onOpenPaywall?.('usage_badge')} className="ml-auto" />
       </div>
       {/* Toast notification */}
       <AnimatePresence>
