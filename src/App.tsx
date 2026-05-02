@@ -872,7 +872,7 @@ export default function App() {
 
   return (
     <div
-      className="min-h-screen pb-24 relative overflow-hidden"
+      className="min-h-screen pb-24 relative"
       style={{
         // White-blue ambient gradient (replaces the blue-via-indigo-to-purple
         // SaaS default). Multiple radial blue blobs over a vertical white-blue
@@ -886,9 +886,13 @@ export default function App() {
           'linear-gradient(180deg, #F4F7FF 0%, #E8EEFC 45%, #DDE5F7 100%)',
       }}
     >
-      {/* Decorative blobs — same blue family, no purple */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#89A3F0]/25 rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#B8C8F0]/30 rounded-full blur-3xl pointer-events-none"></div>
+      {/* 装饰 blob 隔离在独立层，自己 overflow-hidden 剪掉超出部分；主容器
+          不再 overflow-hidden（之前那个会让所有子孙 sticky 失效，包括
+          header 和 Tab 栏，导致滚动时 Tab 跑到 logo 上）。 */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-[#89A3F0]/25 rounded-full blur-3xl"></div>
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-[#B8C8F0]/30 rounded-full blur-3xl"></div>
+      </div>
 
       {/* Pops the "v0.2.0 is here" toast once per release for returning users */}
       <ChangelogToast currentVersion={APP_VERSION} />
