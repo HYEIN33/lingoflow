@@ -22,6 +22,7 @@ const syncContributionStatsFn = httpsCallable<
 import { UserProfile } from '../App';
 import { DailyChallenge } from './DailyChallenge';
 import { markOnboardingStep } from './OnboardingChecklist';
+import { UsageBadge } from './UsageBadge';
 
 interface Slang {
   id: string;
@@ -176,7 +177,7 @@ const REPORT_REASONS = [
   { value: 'other', labelZh: '其他', labelEn: 'Other' },
 ];
 
-export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 'zh', initialSearchTerm?: string }) {
+export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpenPaywall }: { uiLang: 'en' | 'zh', initialSearchTerm?: string, userProfile?: UserProfile | null, onOpenPaywall?: (trigger: string) => void }) {
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
   const [currentSlang, setCurrentSlang] = useState<Slang | null>(null);
   const [meanings, setMeanings] = useState<SlangMeaning[]>([]);
@@ -854,12 +855,26 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
 
       // Create slang if it doesn't exist
       if (!slangId) {
-        const slangRef = await addDoc(collection(db, 'slangs'), {
-          term: termToUse,
-          createdAt: serverTimestamp()
-        });
-        slangId = slangRef.id;
-        setCurrentSlang({ id: slangId, term: termToUse, createdAt: new Date() });
+        try {
+          const slangRef = await addDoc(collection(db, 'slangs'), {
+            term: termToUse,
+            createdAt: serverTimestamp()
+          });
+          slangId = slangRef.id;
+          setCurrentSlang({ id: slangId, term: termToUse, createdAt: new Date() });
+        } catch (e: any) {
+          console.error('[SlangDictionary] addDoc(slangs) failed', { code: e?.code, message: e?.message, term: termToUse });
+          Sentry.captureException(e, {
+            tags: { component: 'SlangDictionary', op: 'addDoc.slangs' },
+            extra: { term: termToUse, errorCode: e?.code, errorMessage: e?.message },
+          });
+          const detail = e?.code === 'permission-denied'
+            ? `创建词条 "${termToUse}" 被拒（slangs 集合 rule 检查未通过）`
+            : (e?.message || '未知错误');
+          toast.error(`提交失败（创建词条阶段）：${detail}`);
+          setIsSubmitting(false);
+          return;
+        }
       }
 
       // Get current user data for denormalization
@@ -893,7 +908,110 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
       if (mediaInfo?.url) meaningDoc.mediaUrl = mediaInfo.url;
       if (mediaInfo?.type) meaningDoc.mediaType = mediaInfo.type;
       if (userAudioUrl) meaningDoc.userAudioUrl = userAudioUrl;
-      await addDoc(collection(db, 'slang_meanings'), meaningDoc);
+
+      // 前置字段健康检查 — 在 Firestore 拒绝之前先给用户友好提示，
+      // 避免那个一脸懵的 "Missing or insufficient permissions"。
+      // 跟 firestore.rules 里 isValidSlangMeaning 的检查项一一对应。
+      const issues: string[] = [];
+      if (!meaningDoc.slangId || typeof meaningDoc.slangId !== 'string') issues.push('slangId 缺失或类型错误');
+      if (!meaningDoc.meaning || typeof meaningDoc.meaning !== 'string') issues.push('释义为空');
+      else if (meaningDoc.meaning.length >= 1000) issues.push(`释义太长（${meaningDoc.meaning.length} > 1000 字符）`);
+      if (typeof meaningDoc.example !== 'string') issues.push('例句类型错误');
+      else if (meaningDoc.example.length >= 1000) issues.push(`例句太长（${meaningDoc.example.length} > 1000 字符）`);
+      if (meaningDoc.authorId !== auth.currentUser?.uid) issues.push('authorId 不匹配当前用户');
+      if (typeof meaningDoc.upvotes !== 'number') issues.push('upvotes 类型错误');
+      if (!['approved', 'rejected', 'pending'].includes(meaningDoc.status)) issues.push(`status 非法值 "${meaningDoc.status}"`);
+      if (meaningDoc.voiceName && !['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'].includes(meaningDoc.voiceName)) {
+        issues.push(`voiceName 非法值 "${meaningDoc.voiceName}"`);
+      }
+      if (meaningDoc.mediaType && !['image', 'video', 'gif'].includes(meaningDoc.mediaType)) {
+        issues.push(`mediaType 非法值 "${meaningDoc.mediaType}"`);
+      }
+      if (issues.length > 0) {
+        const msg = `提交前检查发现问题：${issues.join('；')}`;
+        console.error('[SlangDictionary] pre-submit validation failed:', issues, meaningDoc);
+        toast.error(msg);
+        Sentry.captureMessage('Slang submit validation failed', {
+          level: 'warning',
+          tags: { component: 'SlangDictionary', op: 'preSubmitValidation' },
+          extra: { issues, meaningDoc },
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 强制刷新 auth token —— permission-denied 经常是 token 过期，rule
+      // 看到 request.auth.uid 为 null 直接拒。getIdToken(true) 会强制
+      // 重新拉取一个新 token。
+      try {
+        await auth.currentUser?.getIdToken(true);
+      } catch (tokenErr) {
+        console.warn('[SlangDictionary] token refresh failed:', tokenErr);
+      }
+
+      // 客户端镜像 firestore.rules 里 isValidSlangMeaning 的每一条检查。
+      // 任何条件不满足都直接 toast 出来，不再让用户看到迷之 permission-denied。
+      const ruleCheck: Array<{ rule: string; pass: boolean; actual?: any }> = [
+        { rule: 'slangId is string && size > 0', pass: typeof meaningDoc.slangId === 'string' && meaningDoc.slangId.length > 0, actual: meaningDoc.slangId },
+        { rule: 'meaning is string && size > 0 && size < 1000', pass: typeof meaningDoc.meaning === 'string' && meaningDoc.meaning.length > 0 && meaningDoc.meaning.length < 1000, actual: `${typeof meaningDoc.meaning} len=${meaningDoc.meaning?.length}` },
+        { rule: 'example is string && size < 1000', pass: typeof meaningDoc.example === 'string' && meaningDoc.example.length < 1000, actual: `${typeof meaningDoc.example} len=${meaningDoc.example?.length}` },
+        { rule: 'authorId == auth.uid', pass: meaningDoc.authorId === auth.currentUser?.uid, actual: `doc=${meaningDoc.authorId} auth=${auth.currentUser?.uid}` },
+        { rule: 'upvotes is number && == 0', pass: typeof meaningDoc.upvotes === 'number' && meaningDoc.upvotes === 0, actual: `${typeof meaningDoc.upvotes} val=${meaningDoc.upvotes}` },
+        { rule: "status in ['approved','rejected','pending']", pass: ['approved', 'rejected', 'pending'].includes(meaningDoc.status), actual: meaningDoc.status },
+        { rule: "voiceName in [Puck/Charon/Kore/Fenrir/Zephyr] OR absent", pass: !meaningDoc.voiceName || ['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr'].includes(meaningDoc.voiceName), actual: meaningDoc.voiceName },
+        { rule: 'authorName is string OR absent', pass: !('authorName' in meaningDoc) || typeof meaningDoc.authorName === 'string', actual: `${typeof meaningDoc.authorName}` },
+        { rule: 'authorTitle is string OR absent', pass: !('authorTitle' in meaningDoc) || typeof meaningDoc.authorTitle === 'string', actual: `${typeof meaningDoc.authorTitle}` },
+        { rule: 'qualityScore is number OR absent', pass: !('qualityScore' in meaningDoc) || typeof meaningDoc.qualityScore === 'number', actual: `${typeof meaningDoc.qualityScore} val=${meaningDoc.qualityScore}` },
+      ];
+      const failed = ruleCheck.filter((c) => !c.pass);
+      console.log('[SlangDictionary] rule check', { passed: ruleCheck.length - failed.length, failed: failed.length, details: ruleCheck });
+      if (failed.length > 0) {
+        const detail = failed.map((c) => `[${c.rule}] actual: ${JSON.stringify(c.actual)}`).join(' | ');
+        console.error('[SlangDictionary] rule check FAILED', failed, meaningDoc);
+        Sentry.captureMessage('SlangMeaning rule check failed', {
+          level: 'warning',
+          tags: { component: 'SlangDictionary', op: 'ruleMirror' },
+          extra: { failed, meaningDoc, authUid: auth.currentUser?.uid },
+        });
+        toast.error(`提交失败：${failed.length} 条规则不满足 — ${detail.slice(0, 300)}`, { duration: 15000 });
+        setIsSubmitting(false);
+        return;
+      }
+
+      try {
+        await addDoc(collection(db, 'slang_meanings'), meaningDoc);
+      } catch (e: any) {
+        // Firestore SDK 抛错时，把所有提交字段连同错误文案一起塞进
+        // Sentry + console，能定位到底是哪条 rule 拒的。
+        // 同时把当前 auth 状态也打出来——permission-denied 经常是
+        // token 问题不是 rule 问题。
+        console.error('[SlangDictionary] addDoc(slang_meanings) failed', {
+          code: e?.code,
+          message: e?.message,
+          payload: JSON.stringify(meaningDoc),
+          payloadKeys: Object.keys(meaningDoc),
+          authUid: auth.currentUser?.uid,
+          isAnonymous: auth.currentUser?.isAnonymous,
+          providerId: auth.currentUser?.providerData?.[0]?.providerId,
+        });
+        Sentry.captureException(e, {
+          tags: { component: 'SlangDictionary', op: 'addDoc.slang_meanings' },
+          extra: {
+            meaningDoc,
+            errorCode: e?.code,
+            errorMessage: e?.message,
+            authUid: auth.currentUser?.uid,
+            isAnonymous: auth.currentUser?.isAnonymous,
+          },
+        });
+        let detail = e?.message || '未知错误';
+        if (e?.code === 'permission-denied') {
+          detail = `权限被拒 (${meaningDoc.authorId === auth.currentUser?.uid ? 'authorId 匹配' : 'authorId 不匹配!'})。可能是登录已过期，请刷新页面重新登录后再试。`;
+        }
+        toast.error(`提交失败：${detail}`, { duration: 8000 });
+        setIsSubmitting(false);
+        return;
+      }
 
       // 用户统计字段分两路：
       //   - 客户端直写（在 isUserSelfUpdate 白名单里）：hasCompletedOnboarding /
@@ -969,12 +1087,24 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
     } catch (error: any) {
       console.error("Error submitting meaning:", error);
       const msg = error?.message || '';
+      const code = error?.code || '';
       if (msg.includes('不可用') || msg.includes('繁忙') || msg.includes('location')) {
         setSubmitError(uiLang === 'zh' ? 'AI 审核服务暂时不可用，请稍后重试' : 'AI review service temporarily unavailable');
+      } else if (code === 'permission-denied') {
+        // 把具体错误信息暴露出来，不再隐藏到一条通用 "提交失败"
+        const detailMsg = `提交失败：${error?.message || '权限被拒'} (code: ${code})`;
+        setSubmitError(detailMsg);
+      } else if (code) {
+        setSubmitError(`提交失败：${error?.message || error} (code: ${code})`);
       } else {
-        setSubmitError(uiLang === 'zh' ? '提交失败，请重试' : 'Failed to submit, please try again');
+        setSubmitError(uiLang === 'zh'
+          ? `提交失败：${error?.message || '未知错误'}`
+          : `Failed to submit: ${error?.message || 'unknown error'}`);
       }
-      Sentry.captureException(error, { tags: { component: 'SlangDictionary', op: 'slang.submit', collection: 'slang_meanings' } });
+      Sentry.captureException(error, {
+        tags: { component: 'SlangDictionary', op: 'slang.submit', collection: 'slang_meanings' },
+        extra: { code, message: msg, stack: error?.stack },
+      });
     } finally {
       setIsSubmitting(false);
       setIsUploading(false);
@@ -1016,6 +1146,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm }: { uiLang: 'en' | 
         <span className="inline-block w-4 h-px bg-[rgba(10,14,26,0.35)]"></span>
         <span className="font-display italic text-[13px] text-[rgba(10,14,26,0.58)]">slang dictionary</span>
         <span className="font-zh-sans text-[11px] font-light tracking-[0.15em] text-[rgba(10,14,26,0.38)]">梗百科</span>
+        <UsageBadge bucket="slang" isPro={!!userProfile?.isPro} uiLang={uiLang} onUpgrade={() => onOpenPaywall?.('usage_badge')} className="ml-auto" />
       </div>
       {/* Toast notification */}
       <AnimatePresence>
