@@ -5,7 +5,6 @@ import { GrammarCheckResult } from '../services/ai';
 import { cn } from '../lib/utils';
 import { Language, translations } from '../i18n';
 import { UserProfile } from '../App';
-import { UsageBadge } from '../components/UsageBadge';
 
 interface GrammarPageProps {
   grammarInput: string;
@@ -70,7 +69,6 @@ export default function GrammarPage(props: GrammarPageProps) {
         {uiLang === 'zh' && (
           <span className="font-zh-sans text-[11.5px] tracking-[0.12em] text-[var(--ink-subtle)]">语法检查</span>
         )}
-        <UsageBadge bucket="grammar" isPro={!!userProfile?.isPro} uiLang={uiLang} onUpgrade={() => onOpenPaywall?.('usage_badge')} className="ml-auto" />
       </div>
 
       {/* Grammar Input — glass-thick card */}

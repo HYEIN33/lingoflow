@@ -22,6 +22,15 @@
 import { createClient, LiveTranscriptionEvents, type ListenLiveClient } from '@deepgram/sdk';
 import { auth } from '../firebase';
 import { translateSimple } from './ai';
+import { ProxyLiveClient } from './proxyLiveClient';
+
+// 走 Cloud Run 代理（VITE_PROXY_WS_URL 配置了的话）还是浏览器直连
+// Deepgram。代理的好处见 proxyLiveClient.ts 头注释 —— 主要是断网/重连
+// 时不漏字。环境变量值是 wss://...run.app 形式（不带 path）。
+//
+// 留 fallback 开关 VITE_USE_PROXY=false 可以临时强制走旧路径，方便回滚。
+const PROXY_WS_URL = (import.meta.env.VITE_PROXY_WS_URL as string | undefined)?.trim() || '';
+const USE_PROXY = PROXY_WS_URL.length > 0 && import.meta.env.VITE_USE_PROXY !== 'false';
 
 type SessionStatus =
   | 'idle'
@@ -203,8 +212,13 @@ export async function startLiveSession(
   opts: LiveSessionOptions,
   cb: LiveSessionCallbacks
 ): Promise<LiveSessionHandle> {
-  cb.onStatusChange('requesting-token');
-  const accessToken = await mintDeepgramToken();
+  // 走代理时不需要拿 Deepgram 临时 token —— 代理服务器自己持有真 key。
+  // 浏览器只用 Firebase ID token 认证到代理那一跳。
+  let accessToken = '';
+  if (!USE_PROXY) {
+    cb.onStatusChange('requesting-token');
+    accessToken = await mintDeepgramToken();
+  }
 
   cb.onStatusChange('connecting');
   // eslint-disable-next-line no-console
@@ -259,13 +273,90 @@ export async function startLiveSession(
     liveOpts.keyterm = opts.keyterms.slice(0, 50); // hard cap to avoid URL bloat
   }
 
-  const deepgram = createClient({ accessToken });
-  let connection: ListenLiveClient | null = null;
+  // ConnectionLike: 把"直连 Deepgram SDK"和"通过代理"两种实现统一成
+  // 同一接口，下面所有事件挂载、send、close 代码都不用关心走的是哪一路。
+  type ConnectionLike = {
+    onTranscript: (h: (data: any) => void) => void;
+    onUtteranceEnd: (h: (data: any) => void) => void;
+    onSpeechStarted: (h: (data: any) => void) => void;
+    onClose: (h: (ev: any) => void) => void;
+    onError: (h: (err: any) => void) => void;
+    /** 仅直连模式有；代理模式 open 在 connect() 内部就 resolve 了 */
+    onOpen: (h: () => void) => void;
+    send: (data: ArrayBuffer) => void;
+    sendKeepAlive: () => void;
+    requestClose: () => void;
+  };
+
+  const buildDirectConnection = (): { conn: ConnectionLike; raw: ListenLiveClient } => {
+    const dg = createClient({ accessToken });
+    let raw: ListenLiveClient;
+    try {
+      raw = dg.listen.live(liveOpts);
+    } catch (e: any) {
+      throw new Error(`Deepgram 连接创建失败: ${e?.message || e}`);
+    }
+    const conn: ConnectionLike = {
+      onTranscript: (h) => raw.on(LiveTranscriptionEvents.Transcript, h),
+      onUtteranceEnd: (h) => raw.on(LiveTranscriptionEvents.UtteranceEnd, h),
+      onSpeechStarted: (h) => raw.on(LiveTranscriptionEvents.SpeechStarted, h),
+      onClose: (h) => raw.on(LiveTranscriptionEvents.Close, h),
+      onError: (h) => raw.on(LiveTranscriptionEvents.Error, h),
+      onOpen: (h) => raw.on(LiveTranscriptionEvents.Open, h),
+      send: (data) => { try { raw.send(data); } catch { /* upstream catches */ } },
+      sendKeepAlive: () => {
+        try { (raw as any).keepAlive?.(); } catch { /* nothing */ }
+        try { (raw as any).send?.(JSON.stringify({ type: 'KeepAlive' })); } catch { /* nothing */ }
+      },
+      requestClose: () => { try { raw.requestClose(); } catch { /* nothing */ } },
+    };
+    return { conn, raw };
+  };
+
+  const buildProxyConnection = (): { conn: ConnectionLike; raw: ProxyLiveClient } => {
+    const raw = new ProxyLiveClient({ proxyWsUrl: PROXY_WS_URL, liveOpts });
+    const conn: ConnectionLike = {
+      onTranscript: (h) => raw.on('transcript', h),
+      onUtteranceEnd: (h) => raw.on('utterance_end', h),
+      onSpeechStarted: (h) => raw.on('speech_started', h),
+      onClose: (h) => raw.on('close', h),
+      onError: (h) => raw.on('error', h),
+      onOpen: (h) => raw.on('open', h),
+      send: (data) => raw.send(data),
+      // 代理的 KeepAlive：浏览器到代理那段我们用空 JSON 帧；代理到 Deepgram
+      // 那段是代理服务器自己每 5s 发，浏览器不用管。
+      sendKeepAlive: () => raw.send(JSON.stringify({ type: 'KeepAlive' })),
+      requestClose: () => raw.requestClose(),
+    };
+    return { conn, raw };
+  };
+
+  let connection: ConnectionLike | null = null;
+  let rawClient: ListenLiveClient | ProxyLiveClient | null = null;
   try {
-    connection = deepgram.listen.live(liveOpts);
+    if (USE_PROXY) {
+      // eslint-disable-next-line no-console
+      console.info('[live] connecting via proxy:', PROXY_WS_URL);
+      const built = buildProxyConnection();
+      connection = built.conn;
+      rawClient = built.raw;
+      // 代理模式必须先 await connect() —— 它建立 WS 握手；事件订阅
+      // 一定要在 connect() 之前挂好（下面 attachHandlers），所以这里
+      // 我们先创建对象，事件挂载在后面的 attachHandlers 里完成；但
+      // 对外的"等待打开"逻辑（waitForOpen）需要 connect 先发起。
+      // 解决：先把 onOpen / onError / onClose 三个最小订阅挂上，再调
+      // connect()，然后让原有的 await Promise<void>(...) 继续等"open"。
+      await built.raw.connect();
+    } else {
+      // eslint-disable-next-line no-console
+      console.info('[live] connecting direct to Deepgram');
+      const built = buildDirectConnection();
+      connection = built.conn;
+      rawClient = built.raw;
+    }
   } catch (e: any) {
     mediaStream.getTracks().forEach((t) => t.stop());
-    throw new Error(`Deepgram 连接创建失败: ${e?.message || e}`);
+    throw new Error(e?.message || String(e));
   }
 
   let transcript = '';
@@ -290,44 +381,40 @@ export async function startLiveSession(
     throw new Error(`AudioWorklet init failed: ${e?.message || e} — 你的浏览器可能不支持（iOS 建议用 Safari 15+ 或 Chrome）`);
   }
 
-  // Wait for the Deepgram connection to open or error out. Hard 10 s cap.
+  // Wait for the connection to open or error out. Hard 10 s cap.
+  // 代理模式：connect() 已 await 完成，但 ProxyLiveClient 把"open"延迟
+  // 到后端发 proxy_status=live —— 那时候 Deepgram 才真就绪。所以两种
+  // 模式都一致地等 onOpen 触发。
   await new Promise<void>((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {
       if (!settled) {
         settled = true;
         try { connection?.requestClose(); } catch { /* nothing */ }
-        reject(new Error('Deepgram 连接超时 (10s) — 检查网络或稍后重试'));
+        reject(new Error('连接超时 (10s) — 检查网络或稍后重试'));
       }
     }, 10000);
-    connection!.on(LiveTranscriptionEvents.Open, () => {
+    connection!.onOpen(() => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       // eslint-disable-next-line no-console
-      console.info('[live] Deepgram connection open (waiting for first event before flipping UI to live)');
-      // Don't flip UI to 'live' here — wait until Deepgram sends its
-      // first event (any Transcript or SpeechStarted). That's the only
-      // true "server is hot and listening" signal. Holding the status
-      // at 'connecting' until then means users can't start talking
-      // into a half-primed pipeline. See on-event handler below for
-      // the actual flip. As a safety net, if no event arrives in 2s
-      // we flip anyway so the UI doesn't hang.
+      console.info('[live] connection open (waiting for first event before flipping UI to live)');
       resolve();
     });
-    connection!.on(LiveTranscriptionEvents.Error, (err: any) => {
+    connection!.onError((err: any) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       // eslint-disable-next-line no-console
-      console.error('[live] Deepgram error before open:', err);
-      reject(new Error(`Deepgram 连接失败: ${err?.message || 'unknown'}`));
+      console.error('[live] connection error before open:', err);
+      reject(new Error(`连接失败: ${err?.message || 'unknown'}`));
     });
-    connection!.on(LiveTranscriptionEvents.Close, () => {
+    connection!.onClose(() => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      reject(new Error('Deepgram 连接被拒绝 — token 可能过期或权限不足'));
+      reject(new Error('连接被拒绝 — 检查鉴权或网络'));
     });
   });
 
@@ -643,8 +730,8 @@ ${englishParagraph}`;
     // Path 3: speech_final=false. 让 idle watchdog 单独兜底。
   };
 
-  const attachHandlers = (conn: ListenLiveClient) => {
-    conn.on(LiveTranscriptionEvents.Transcript, (data: any) => {
+  const attachHandlers = (conn: ConnectionLike) => {
+    conn.onTranscript((data: any) => {
       flipToLiveOnce();
       transcriptEventCount += 1;
       const alt = data?.channel?.alternatives?.[0];
@@ -709,7 +796,7 @@ ${englishParagraph}`;
     // This is the safety-net flush trigger when speech_final never
     // fires for a paragraph (Deepgram says it should be rare but it
     // happens). Called whether or not we have pending synthetic finals.
-    conn.on(LiveTranscriptionEvents.UtteranceEnd, () => {
+    conn.onUtteranceEnd(() => {
       // eslint-disable-next-line no-console
       console.info(`[live] UtteranceEnd (pendingSynthetic=${pendingSyntheticFinal}, lastInterim=${JSON.stringify(lastInterimText.slice(0, 40))})`);
       if (pendingSyntheticFinal && lastInterimText) {
@@ -726,10 +813,10 @@ ${englishParagraph}`;
       }
     });
 
-    conn.on(LiveTranscriptionEvents.SpeechStarted, () => {
+    conn.onSpeechStarted(() => {
       flipToLiveOnce();
     });
-    conn.on(LiveTranscriptionEvents.Close, (ev: any) => {
+    conn.onClose((ev: any) => {
       // eslint-disable-next-line no-console
       console.warn('[live] Deepgram Close event', { code: ev?.code, reason: ev?.reason, userStopped });
       if (userStopped) {
@@ -745,16 +832,16 @@ ${englishParagraph}`;
       console.info('[live] auto-reconnecting after unexpected close…');
       void reconnect();
     });
-    conn.on(LiveTranscriptionEvents.Error, (err: any) => {
+    conn.onError((err: any) => {
       // eslint-disable-next-line no-console
-      console.error('[live] Deepgram runtime error:', err);
+      console.error('[live] connection runtime error:', err);
       // Errors during reconnect often precede Close — don't spam the UI.
       if (!userStopped) return;
-      cb.onStatusChange('error', err?.message || 'Deepgram error');
+      cb.onStatusChange('error', err?.message || 'connection error');
     });
   };
 
-  attachHandlers(connection);
+  attachHandlers(connection!);
 
   // Reconnect: mint a fresh token, reopen a new `listen.live` connection,
   // rebind worklet's send target, and keep batched translation + recent
@@ -798,22 +885,33 @@ ${englishParagraph}`;
       if (userStopped) { reconnecting = false; return; }
       await new Promise((r) => setTimeout(r, RECONNECT_DELAYS[attempt]));
       try {
-        const freshToken = await mintDeepgramToken();
-        const freshDg = createClient({ accessToken: freshToken });
-        const freshConn = freshDg.listen.live(liveOpts);
-        await new Promise<void>((resolve, reject) => {
-          const openTimer = setTimeout(() => reject(new Error('reconnect open timeout')), 10000);
-          freshConn.on(LiveTranscriptionEvents.Open, () => {
-            clearTimeout(openTimer);
-            resolve();
+        let fresh: ConnectionLike;
+        if (USE_PROXY) {
+          // 代理模式：复用同一鉴权流程（Firebase ID token 仍由
+          // ProxyLiveClient 内部重取一次最新值），开新 ws 重连代理。
+          // 代理那一头会自动跟 Deepgram 重新握手 + 把缓冲音频补送回去，
+          // 所以浏览器侧不需要做"重连补送"逻辑（缓冲都在代理那）。
+          const built = buildProxyConnection();
+          await built.raw.connect();
+          fresh = built.conn;
+          rawClient = built.raw;
+        } else {
+          // 直连模式：跟以前一样，重新签 token + 开 SDK 连接。
+          accessToken = await mintDeepgramToken();
+          const built = buildDirectConnection();
+          await new Promise<void>((resolve, reject) => {
+            const openTimer = setTimeout(() => reject(new Error('reconnect open timeout')), 10000);
+            built.conn.onOpen(() => { clearTimeout(openTimer); resolve(); });
+            built.conn.onError((e: any) => {
+              clearTimeout(openTimer);
+              reject(new Error(`reconnect error: ${e?.message || 'unknown'}`));
+            });
           });
-          freshConn.on(LiveTranscriptionEvents.Error, (e: any) => {
-            clearTimeout(openTimer);
-            reject(new Error(`reconnect error: ${e?.message || 'unknown'}`));
-          });
-        });
-        connection = freshConn;
-        attachHandlers(freshConn);
+          fresh = built.conn;
+          rawClient = built.raw;
+        }
+        connection = fresh;
+        attachHandlers(fresh);
         // 关键：重置所有 watchdog 时间戳，给新连接一个干净窗口期。
         // 否则 healthTimer 用上一次连接的旧时间戳判断"卡住了"，新连接
         // 还没收到首个 final 就被再次 forceReconnect → 1011 死循环。
@@ -1032,12 +1130,8 @@ ${englishParagraph}`;
     if (audioCtx.state === 'suspended') {
       audioCtx.resume().catch(() => { /* will retry next tick */ });
     }
-    try {
-      (connection as any).keepAlive?.();
-    } catch { /* ignore */ }
-    try {
-      (connection as any).send?.(JSON.stringify({ type: 'KeepAlive' }));
-    } catch { /* ignore */ }
+    // ConnectionLike 内部知道走代理还是直连，对应发不同形式的 keepalive
+    try { connection.sendKeepAlive(); } catch { /* ignore */ }
   }, 5000);
 
   // Tab visibility hook — when user switches back to this tab after

@@ -783,11 +783,13 @@ ${transcript}`;
       },
       required: ['title', 'overview', 'keyPoints'],
     },
-    // 取消思考——livenote 是摘要任务不需要 reasoning，pro 模型 full
+    // 思考强度调到 low —— livenote 是结构化摘要任务，pro 模型 full
     // thinking 在长 transcript 上会跑 60s+ 触发 Cloud Functions 502
-    // 超时。off 让 pro 走 non-thinking 路径，响应跟 flash 一样快但
-    // 仍然用 pro 模型自身的语言能力。下个 PR 做"让用户选思考强度"。
-    thinkingConfig: { thinkingLevel: 'off' },
+    // 超时。之前用 'off' 是错的——Gemini 3 系列只接受 low/medium/high/
+    // dynamic 这几个值，传 'off' 会被 API 直接 400 拒收（"Invalid value
+    // at generation_config.thinking_config.thinking"），导致 livenote
+    // 永远生成失败。low 给最少的思考预算 + 仍能产出像样的笔记结构。
+    thinkingConfig: { thinkingLevel: 'low' },
   };
   const raw = await geminiGenerate({ model, contents: prompt, config, bucket: 'classroom' });
   try {

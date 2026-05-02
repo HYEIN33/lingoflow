@@ -37,7 +37,8 @@ import {
   Zap,
   Trophy,
   UserCircle,
-  Headphones
+  Headphones,
+  Gauge,
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
@@ -55,6 +56,7 @@ import { cn } from './lib/utils';
 import { Language, translations } from './i18n';
 import { APP_VERSION, APP_ENV, IS_STAGING } from './version';
 import ChangelogBell from './components/ChangelogBell';
+import { useUsage } from './hooks/useUsage';
 import SettingsModal from './components/SettingsModal';
 import ChangelogToast from './components/ChangelogToast';
 import RateLimitModal, { RateLimitInfo } from './components/RateLimitModal';
@@ -273,6 +275,7 @@ const GrammarPage = lazy(() => import('./pages/GrammarPage'));
 const ReviewPage = lazy(() => import('./pages/ReviewPage'));
 const WordbookPage = lazy(() => import('./pages/WordbookPage'));
 const ClassroomTab = lazy(() => import('./pages/ClassroomTab'));
+const UsagePage = lazy(() => import('./pages/UsagePage'));
 
 function LazyFallback() {
   return (
@@ -566,7 +569,7 @@ export default function App() {
   // below once userProfile loads. If the user manually switches tabs before
   // profile load finishes, we respect their choice and skip the sync (see
   // userSwitchedTabRef).
-  const [activeTab, setActiveTabState] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile' | 'classroom'>('slang');
+  const [activeTab, setActiveTabState] = useState<'translate' | 'slang' | 'grammar' | 'review' | 'history' | 'leaderboard' | 'profile' | 'classroom' | 'usage'>('slang');
   const userSwitchedTabRef = useRef(false);
   const setActiveTab: typeof setActiveTabState = (value) => {
     userSwitchedTabRef.current = true;
@@ -659,6 +662,16 @@ export default function App() {
   // --- Custom Hooks ---
   const { user, userProfile, setUserProfile, isAuthReady } = useAuth();
   const { speak, stopAllAudio, loadingAudioText } = useAudio();
+
+  // 顶部用量图标根据"6 个桶里最高用量"变色 —— 用户瞥一眼就知道有没有
+  // 撞限风险。worstPctDay 是 0-1 之间的浮点：>=0.9 红 + 脉冲，>=0.7 黄。
+  const { worstPctDay } = useUsage(userProfile?.isPro ?? false);
+  const usagePctLabel = worstPctDay > 0 ? `${Math.round(worstPctDay * 100)}%` : '';
+  const usageDotColor =
+    worstPctDay >= 0.9 ? 'var(--red-warn)' :
+    worstPctDay >= 0.7 ? '#E8C375' :
+    'rgba(10,14,26,0.32)';
+  const usageIconAnimating = worstPctDay >= 0.9; // 仅 ≥90% 才轻微脉冲
 
   const onPaymentNeeded = (trigger: string) => {
     setPaymentTrigger(trigger);
@@ -919,18 +932,21 @@ export default function App() {
           <div className="flex items-center gap-2 sm:gap-3">
             {/* App icon removed — brand name alone carries identity. */}
             <span className="font-display text-xl sm:text-2xl font-semibold text-[#0A0E1A] tracking-tight">{t.appName}</span>
+            {/* PRO 徽章紧贴标题 —— 让 "MemeFlow Pro" 像一个完整品牌，不是
+                工具区里随便贴的一个标签。 */}
+            {userProfile?.isPro && (
+              <span className="px-2.5 py-0.5 bg-[#0A0E1A] text-white font-display font-semibold text-[10px] rounded-full uppercase tracking-[0.1em]">
+                {t.proBadge}
+              </span>
+            )}
+            {/* 铃铛跟在 PRO 右边 —— 用户希望"标题/PRO/通知"是一组。 */}
+            <ChangelogBell currentVersion={APP_VERSION} />
             <span
               className="hidden sm:inline text-[10px] font-mono-meta text-[rgba(10,14,26,0.38)] tabular-nums"
               title={`Environment: ${APP_ENV}`}
             >
               v{APP_VERSION}
             </span>
-            <ChangelogBell currentVersion={APP_VERSION} />
-            {userProfile?.isPro && (
-              <span className="ml-2 px-2.5 py-0.5 bg-[#0A0E1A] text-white font-display font-semibold text-[10px] rounded-full uppercase tracking-[0.1em]">
-                {t.proBadge}
-              </span>
-            )}
             {IS_STAGING && (
               <span className="ml-2 px-2 py-0.5 bg-yellow-400 text-yellow-900 text-[10px] font-black rounded shadow-sm uppercase tracking-wider" title="Staging preview build">
                 STAGING
@@ -948,6 +964,46 @@ export default function App() {
               title={uiLang === 'zh' ? '排行榜' : 'Leaderboard'}
             >
               <Trophy className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+            {/* 用量图标 —— 0.4.1 新增。点击进入独立用量页面（/usage）。
+                颜色随最高用量百分比变化：默认灰、≥70% 黄、≥90% 红+脉冲。
+                未登录用户没有 userProfile，但 useUsage 内部已 guard，
+                worstPctDay 会保持 0 → 图标灰、无右上角小数字，不打扰。 */}
+            <button
+              onClick={() => setActiveTab('usage')}
+              aria-label={uiLang === 'zh' ? '查看用量' : 'View usage'}
+              className={cn(
+                'relative p-1.5 sm:p-2 rounded-full transition-colors',
+                activeTab === 'usage'
+                  ? 'bg-[rgba(10,14,26,0.06)]'
+                  : 'hover:bg-gray-50'
+              )}
+              title={uiLang === 'zh' ? '查看用量' : 'View usage'}
+            >
+              <Gauge
+                className={cn(
+                  'w-4 h-4 sm:w-5 sm:h-5 transition-colors',
+                  usageIconAnimating ? 'animate-pulse' : ''
+                )}
+                style={{ color: usageDotColor }}
+              />
+              {worstPctDay >= 0.7 && usagePctLabel && (
+                <span
+                  className="absolute -top-0.5 -right-0.5 px-1 rounded-full font-mono-meta tabular-nums"
+                  style={{
+                    fontSize: 8,
+                    fontWeight: 700,
+                    background: usageDotColor,
+                    color: '#FFFFFF',
+                    lineHeight: 1.4,
+                    minWidth: 16,
+                    textAlign: 'center',
+                    letterSpacing: 0,
+                  }}
+                >
+                  {usagePctLabel}
+                </span>
+              )}
             </button>
             <button
               onClick={() => setActiveTab('profile')}
@@ -1187,6 +1243,12 @@ export default function App() {
                 onLogout={confirmLogout}
               />
             </div>
+          ) : activeTab === 'usage' ? (
+            <UsagePage
+              isPro={userProfile?.isPro ?? false}
+              uiLang={uiLang}
+              onUpgrade={() => onPaymentNeeded('usage_page_upgrade')}
+            />
           ) : null}
         </Suspense>
 
