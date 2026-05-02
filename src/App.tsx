@@ -970,8 +970,10 @@ export default function App() {
             {/* sticky 紧贴 header 下方（header 高度 64px mobile / 80px desktop）。
                 以前不 sticky，滚下去再回来时 Tab 栏被滚出视野，看不见。
                 z-20 < header z-30 — 万一布局抖动 header 仍然盖住 tab 栏，
-                不会反过来。-mx 让背景填满全宽，避免和 header 之间露出空隙。 */}
-            <div translate="no" className="notranslate sticky top-16 sm:top-20 z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 pt-2 pb-4 mb-4 bg-[rgba(244,247,255,0.85)] backdrop-blur-xl">
+                不会反过来。容器本身透明，让 glass-shell 自带的玻璃胶囊
+                单独成为视觉重心；滚动时下方内容会从 Tab 胶囊**两侧**擦过去，
+                由 header 的不透明背景在顶部挡住，不会跟 Tab 重叠。 */}
+            <div translate="no" className="notranslate sticky top-16 sm:top-20 z-20 pt-2 pb-4 mb-4">
               <div className="relative">
               {/* Thick liquid-glass shell; active tab elevates on top of it
                   via .glass-pill-active (see src/index.css). The shell is
