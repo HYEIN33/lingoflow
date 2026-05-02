@@ -967,12 +967,12 @@ export default function App() {
             items={tabs.map((t) => t.id)}
             strategy={horizontalListSortingStrategy}
           >
-            {/* `relative` so the gradient-fade indicator can absolute-position
-                inside. The fade is a visual hint that the tab strip scrolls
-                horizontally — without it users don't realise there are
-                tabs further right on narrow screens. pointer-events-none so
-                it never eats taps meant for the tabs underneath. */}
-            <div translate="no" className="notranslate relative mb-6 sm:mb-8">
+            {/* sticky 紧贴 header 下方（header 高度 64px mobile / 80px desktop）。
+                以前不 sticky，滚下去再回来时 Tab 栏被滚出视野，看不见。
+                z-20 < header z-30 — 万一布局抖动 header 仍然盖住 tab 栏，
+                不会反过来。-mx 让背景填满全宽，避免和 header 之间露出空隙。 */}
+            <div translate="no" className="notranslate sticky top-16 sm:top-20 z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 pt-2 pb-4 mb-4 bg-[rgba(244,247,255,0.85)] backdrop-blur-xl">
+              <div className="relative">
               {/* Thick liquid-glass shell; active tab elevates on top of it
                   via .glass-pill-active (see src/index.css). The shell is
                   deliberately thinner/lighter than the active pill to push
@@ -991,6 +991,7 @@ export default function App() {
                 aria-hidden="true"
                 className="pointer-events-none absolute top-0 right-0 h-full w-8 rounded-r-[22px] bg-gradient-to-l from-[#F4F7FF]/70 to-transparent"
               />
+              </div>
             </div>
           </SortableContext>
         </DndContext>
