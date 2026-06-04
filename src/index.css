@@ -380,3 +380,14 @@
   background: rgba(10, 14, 26, 0.08);
   color: var(--ink);
 }
+
+/* Standard Translation card — tier change cross-fade. The <p> inside the
+   card is keyed by formalityTier so React remounts on tier change; this
+   keyframe runs on every remount, producing a soft 200ms fade-in. Avoids
+   the jarring instant-swap when dragging the formality slider across a
+   bucket boundary. */
+@keyframes tier-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-tier-fade { animation: tier-fade-in 200ms ease-out; }

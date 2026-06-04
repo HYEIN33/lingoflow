@@ -1,21 +1,14 @@
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import * as Sentry from "@sentry/react";
 import { auth } from "../firebase";
+import { makeSentry } from "../lib/sentry";
+import { hasChinese, type TtsLang } from "../lib/lang";
 
-// Record a Gemini-related event to Sentry as a breadcrumb. Only runs when
-// Sentry is actually initialized (PROD). In DEV it's a cheap no-op.
-function aiBreadcrumb(message: string, data?: Record<string, unknown>) {
-  try {
-    Sentry.addBreadcrumb({
-      category: 'ai.gemini',
-      level: 'info',
-      message,
-      data,
-    });
-  } catch {
-    // Sentry not initialized — ignore.
-  }
-}
+const { breadcrumb: aiBreadcrumb } = makeSentry('ai.gemini');
+
+// Re-exported so existing callers (`useAudio`, page components) keep
+// importing TtsLang from `services/ai`. The canonical home is `lib/lang`.
+export type { TtsLang };
 
 export type AIProvider = 'gemini';
 
@@ -199,6 +192,68 @@ async function callGeminiProxy(
 // the full `gemini-2.0-flash` has been deprecated.
 const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash-lite'];
 
+/**
+ * Permanent fallback map: preview model → closest GA replacement. Used
+ * when a preview model returns a permanent error (404 / model not found /
+ * 410 gone) that means "this model is retired or never existed". Without
+ * this, hardcoded preview callsites (classroom translate, live notes)
+ * would just throw — even though a perfectly serviceable GA model exists
+ * one tier down. 5 s latency vs 1 s for classroom-translate; the user
+ * gets degraded quality, not a broken feature.
+ *
+ * Update this table when Google ships a GA version of any preview model
+ * we use (currently none of these have GA equivalents — see CLAUDE
+ * 2026-05-10 model audit).
+ */
+const PREVIEW_TO_GA_FALLBACK: Record<string, string> = {
+  'gemini-3-flash-preview': 'gemini-2.5-flash',
+  'gemini-3-pro-preview':   'gemini-2.5-flash',  // 2.5-pro is too slow for live; flash is the closest workable swap
+  // gemini-2.5-flash-preview-tts has no GA equivalent; TTS callers see
+  // their own failure and fall back to browser SpeechSynthesis already
+  // (see useAudio.ts catch path).
+};
+
+/**
+ * True iff the error suggests the model has been retired or doesn't
+ * exist (vs. transient rate limit / 5xx). We treat 404 + "model" mentions
+ * + "not found" / "not supported" / "deprecated" as permanent.
+ */
+function isModelGoneError(status: number | undefined, msg: string): boolean {
+  if (status === 404 || status === 410) return true;
+  const lc = msg.toLowerCase();
+  return /not found|deprecated|retired|no longer available|unknown model/.test(lc);
+}
+
+/**
+ * Best-effort permanent fallback for a hardcoded preview model. If the
+ * preview is permanently gone, swap to its GA replacement and try once;
+ * surface to Sentry as a warning so we know to update the table. Used
+ * outside the geminiGenerate fallback loop by hardcoded callsites
+ * (classroom translate, live notes).
+ */
+export async function withPreviewFallback<T>(
+  preview: string,
+  op: (model: string) => Promise<T>,
+): Promise<T> {
+  try {
+    return await op(preview);
+  } catch (e: any) {
+    const msg = e?.message || String(e);
+    const status = Number(e?.status) || Number(msg.match(/(\d{3})/)?.[1]);
+    const ga = PREVIEW_TO_GA_FALLBACK[preview];
+    if (ga && isModelGoneError(status, msg)) {
+      Sentry.captureMessage(`Preview model retired: ${preview} → falling back to ${ga}`, {
+        level: 'warning',
+        tags: { component: 'ai.gemini', preview, ga },
+        extra: { status, msg: msg.slice(0, 200) },
+      });
+      aiBreadcrumb('preview.fallback_to_ga', { preview, ga, status });
+      return op(ga);
+    }
+    throw e;
+  }
+}
+
 // Translation/slang/grammar prompts do not benefit from reasoning. Turning off
 // thinking cuts latency from ~2.3s → ~0.85s on `gemini-2.5-flash` with zero
 // quality regression on short-text translation (benchmarked 2026-04-20 via
@@ -285,15 +340,24 @@ async function geminiGenerate(opts: {
         }
       }
 
-      // 400 (model rejected), 403, 404, 503, 429 — try next model in chain.
-      // For gemini-3-flash-preview we deliberately DON'T fall back — its
-      // quality is markedly better than 2.5, and silently degrading to
-      // 2.5-lite on a transient 503 would mask the real problem. The
-      // caller (translateSimple) sees the error and shows "翻译失败".
-      const shouldFallback = [400, 403, 404, 429, 503].includes(Number(status));
-      if (shouldFallback && i < models.length - 1 && models[0] !== 'gemini-3-flash-preview') {
+      // 400 / 403 / 429 / 503 → try next in chain. For gemini-3-flash-preview
+      // we previously NEVER fell back (to surface transient 503s loud). But
+      // a 404/410 means the model is GONE — falling back is the right move
+      // there regardless. isModelGoneError() distinguishes the two.
+      const statusNum = Number(status);
+      const isGone = isModelGoneError(statusNum, msg);
+      const isTransient = [400, 403, 429, 503].includes(statusNum);
+      const shouldFallback = isGone || (isTransient && models[0] !== 'gemini-3-flash-preview');
+      if (shouldFallback && i < models.length - 1) {
         console.warn(`${models[i]} failed (${status}: ${msg.substring(0, 60)}), falling back to ${models[i + 1]}`);
-        aiBreadcrumb('generate.model_fallback', { from: models[i], to: models[i + 1], status: String(status) });
+        aiBreadcrumb('generate.model_fallback', { from: models[i], to: models[i + 1], status: String(status), reason: isGone ? 'gone' : 'transient' });
+        if (isGone) {
+          Sentry.captureMessage(`Model retired mid-flight: ${models[i]} → ${models[i + 1]}`, {
+            level: 'warning',
+            tags: { component: 'ai.gemini', from: models[i], to: models[i + 1] },
+            extra: { status: String(status), msg: msg.slice(0, 200) },
+          });
+        }
         continue;
       }
 
@@ -344,10 +408,71 @@ export interface UsageDefinition {
 export interface TranslationResult {
   original: string;
   pronunciation?: string;
+  /**
+   * 五档梯度翻译（formality 滑块 0-100 平均切五段，2026-05-06 升 3→5 档）：
+   *   authenticTranslation  = 滑块  0-19  最地道、最口语，朋友式
+   *   leanCasualTranslation = 滑块 20-39  偏地道但更克制，日常对话
+   *   standardTranslation   = 滑块 40-59  中性、通用书面/口头都行
+   *   leanFormalTranslation = 滑块 60-79  偏正式但不学究，工作邮件
+   *   academicTranslation   = 滑块 80-100 最正式、最学术
+   * 老字段名（authentic / academic）保留向后兼容已存的 SavedWord 文档；
+   * standardTranslation / leanCasual / leanFormal 是新字段，老数据里没有，
+   * 渲染时要做 fallback。
+   */
   authenticTranslation?: string;
+  leanCasualTranslation?: string;
+  standardTranslation?: string;
+  leanFormalTranslation?: string;
   academicTranslation?: string;
   slangTerms?: string[];
   usages: UsageDefinition[];
+}
+
+/**
+ * Five-tier formality gradient for the「标准翻译」slider. Boundaries split
+ * the slider's 0-100 range as evenly as possible:
+ *   0-19   → authentic
+ *   20-39  → leanCasual
+ *   40-59  → standard
+ *   60-79  → leanFormal
+ *   80-100 → academic
+ */
+export type FormalityTier = 'authentic' | 'leanCasual' | 'standard' | 'leanFormal' | 'academic';
+
+export function tierFromLevel(level: number): FormalityTier {
+  if (level < 20) return 'authentic';
+  if (level < 40) return 'leanCasual';
+  if (level < 60) return 'standard';
+  if (level < 80) return 'leanFormal';
+  return 'academic';
+}
+
+/**
+ * Resolve the text to display for a given tier, falling back to adjacent
+ * tiers if the requested one is missing. Handles both old SavedWord
+ * documents (only authentic/academic) and the in-flight window between
+ * the main translate call and loadMidTierTranslations() landing.
+ */
+export function pickTierText(result: TranslationResult, tier: FormalityTier): string {
+  const order: Record<FormalityTier, FormalityTier[]> = {
+    authentic:  ['authentic',  'leanCasual', 'standard',   'leanFormal', 'academic'],
+    leanCasual: ['leanCasual', 'authentic',  'standard',   'leanFormal', 'academic'],
+    standard:   ['standard',   'leanCasual', 'leanFormal', 'authentic',  'academic'],
+    leanFormal: ['leanFormal', 'academic',   'standard',   'leanCasual', 'authentic'],
+    academic:   ['academic',   'leanFormal', 'standard',   'leanCasual', 'authentic'],
+  };
+  const fieldOf: Record<FormalityTier, keyof TranslationResult> = {
+    authentic:  'authenticTranslation',
+    leanCasual: 'leanCasualTranslation',
+    standard:   'standardTranslation',
+    leanFormal: 'leanFormalTranslation',
+    academic:   'academicTranslation',
+  };
+  for (const t of order[tier]) {
+    const v = result[fieldOf[t]] as string | undefined;
+    if (v) return v;
+  }
+  return '';
 }
 
 export interface GrammarEdit {
@@ -419,18 +544,13 @@ export async function explainSlang(text: string): Promise<SlangExplanationResult
   return JSON.parse(text_);
 }
 
-export async function translateText(text: string, formalityLevel?: number, uiLang: 'zh' | 'en' = 'zh', bucket: BucketName = 'translate'): Promise<TranslationResult> {
+export async function translateText(text: string, uiLang: 'zh' | 'en' = 'zh', bucket: BucketName = 'translate'): Promise<TranslationResult> {
   const { model } = getEffectiveConfig();
 
-  let formalityPrompt = "";
-  if (formalityLevel !== undefined) {
-    formalityPrompt = `\nThe user has requested a specific formality level of ${formalityLevel} (1 = very casual/slang, 100 = highly academic/formal). Please ensure the 'authenticTranslation' reflects this exact formality level.`;
-  }
-
-  const hasChinese = /[\u4e00-\u9fa5]/.test(text);
-  const langDirection = hasChinese
-    ? 'The input is Chinese. Translate it to English. The authenticTranslation and academicTranslation MUST be in English.'
-    : 'The input is English. Translate it to Chinese. The authenticTranslation and academicTranslation MUST be in Chinese (中文).';
+  const inputIsZh = hasChinese(text);
+  const langDirection = inputIsZh
+    ? 'The input is Chinese. Translate it to English. All three translations (authentic / standard / academic) MUST be in English.'
+    : 'The input is English. Translate it to Chinese. All three translations (authentic / standard / academic) MUST be in Chinese (中文).';
 
   // Usage-definition language follows the UI, not the input text. A
   // Chinese-UI user learning English wants the meaning explained in
@@ -447,14 +567,15 @@ export async function translateText(text: string, formalityLevel?: number, uiLan
   // when the user expands "Details".
   const contents = `You are a professional translator. ${langDirection}
 
-    1. Provide an 'Authentic Translation' (地道表达) that sounds natural to native speakers of the TARGET language.
-    2. Provide an 'Academic Translation' (学术表达) that is formal and suitable for academic or professional contexts.
-    3. If the original text contains any slang or idioms, list them in 'slangTerms' (at most 3).
-    4. Provide 1-3 usage definitions. ${defLangHint}
+    Produce THREE translations that form a register gradient. Each MUST be genuinely different — don't copy or trivially reword. The middle two tiers ('leanCasual' and 'leanFormal') are loaded separately by a follow-up call so do NOT generate them here.
+    1. 'authenticTranslation' (地道表达) — colloquial, idiomatic, the way a close friend would say it. May use slang.
+    2. 'standardTranslation' (标准) — neutral, the version you'd write in a generic message or article. Not slangy, not stiff. Genuinely different from authentic AND academic.
+    3. 'academicTranslation' (学术表达) — formal, precise, suitable for academic or professional writing.
+    4. If the original text contains any slang or idioms, list them in 'slangTerms' (at most 3).
+    5. Provide 1-3 usage definitions. ${defLangHint}
        Each usage also has 2 example sentences with translations (examples always bilingual — this is not affected by UI language).
 
     Do NOT include synonyms, antonyms, alternatives, or conjugations — those are fetched separately.
-    ${formalityPrompt}
 
     Text: "${text}"`;
 
@@ -492,6 +613,7 @@ export async function translateText(text: string, formalityLevel?: number, uiLan
         original: { type: Type.STRING },
         pronunciation: { type: Type.STRING },
         authenticTranslation: { type: Type.STRING },
+        standardTranslation: { type: Type.STRING },
         academicTranslation: { type: Type.STRING },
         slangTerms: { type: Type.ARRAY, items: { type: Type.STRING } },
         usages: {
@@ -527,6 +649,60 @@ export async function translateText(text: string, formalityLevel?: number, uiLan
   return parsed;
 }
 
+/**
+ * Background follow-up that fills in the formality slider's two
+ * intermediate tiers (leanCasual + leanFormal). Split from translateText
+ * so first paint is fast: a single 5-tier prompt was 50-80% slower in
+ * testing. The two calls run in parallel from useTranslation; if this one
+ * fails the slider falls back to its three primary tiers via
+ * pickTierText's fallback chain.
+ */
+export async function loadMidTierTranslations(
+  text: string,
+  bucket: BucketName = 'translate',
+): Promise<{ leanCasualTranslation?: string; leanFormalTranslation?: string }> {
+  const { model } = getEffectiveConfig();
+
+  const langDirection = hasChinese(text)
+    ? 'The input is Chinese. Translate it to English. Both translations MUST be in English.'
+    : 'The input is English. Translate it to Chinese. Both translations MUST be in Chinese (中文).';
+
+  const contents = `You are a professional translator. ${langDirection}
+
+    The user already has three translations of this text — most casual ("authentic"), neutral ("standard"), and most formal ("academic"). You will produce the TWO INTERMEDIATE register tiers that fit between them. Each must be genuinely distinct from the three the user already has, and from each other.
+
+    1. 'leanCasualTranslation' (偏口语) — relaxed everyday register, no slang, like chatting with a coworker you know well. Sits between 'authentic' and 'standard'.
+    2. 'leanFormalTranslation' (偏正式) — polished, suitable for a work email or professional report. Sits between 'standard' and 'academic'.
+
+    Return JSON ONLY with exactly these two fields.
+
+    Text: "${text}"`;
+
+  const config = {
+    responseMimeType: 'application/json',
+    responseSchema: {
+      type: Type.OBJECT,
+      properties: {
+        leanCasualTranslation: { type: Type.STRING },
+        leanFormalTranslation: { type: Type.STRING },
+      },
+      required: ['leanCasualTranslation', 'leanFormalTranslation'],
+    },
+  };
+
+  try {
+    const text_ = await geminiGenerate({ model, contents, config, bucket });
+    const parsed = JSON.parse(text_);
+    return {
+      leanCasualTranslation: parsed?.leanCasualTranslation,
+      leanFormalTranslation: parsed?.leanFormalTranslation,
+    };
+  } catch (e) {
+    aiBreadcrumb('mid-tier.fail', { error: (e as any)?.message?.slice(0, 200) });
+    return {};
+  }
+}
+
 // Loaded lazily when the user clicks "Show Details" on a word-mode translation.
 // Returns synonyms/antonyms/alternatives/conjugations for a specific usage.
 // Kept separate from translateText so the first paint stays fast; users who
@@ -544,8 +720,7 @@ export async function loadTranslationDetails(
   usageMeaning: string,
 ): Promise<TranslationDetails> {
   const { model } = getEffectiveConfig();
-  const hasChinese = /[\u4e00-\u9fa5]/.test(word);
-  const targetLang = hasChinese ? 'English' : 'Chinese';
+  const targetLang = hasChinese(word) ? 'English' : 'Chinese';
 
   const contents = `For the word/phrase "${word}" used as "${usageLabel}" (meaning: ${usageMeaning}), provide:
     1. synonyms (up to 5, in the original language)
@@ -831,18 +1006,47 @@ Keep answers concise, practical, and encouraging. Use examples when helpful.`;
   return result.trim();
 }
 
-// Speech generation requires the SDK (audio modality not supported through the proxy).
-// This will only work when the API key is bundled or when running in AI Studio.
-export async function generateSpeech(text: string, voiceName: string = 'Kore'): Promise<string | undefined> {
-  if (USE_PROXY) {
-    throw new Error('Speech generation is not available through the API proxy. Run with a bundled API key or use AI Studio.');
-  }
-  const ai = getGeminiAI();
-  const hasChinese = /[\u4e00-\u9fa5]/.test(text);
-  const prompt = hasChinese 
-    ? `Read this naturally in Chinese: ${text}`
-    : `Read this naturally in English: ${text}`;
+// Speech generation. In prod (USE_PROXY=true) goes through /api/tts; in
+// dev with a bundled key, falls back to the SDK. Optional `lang` steers
+// the model \u2014 omit for ambiguous text (e.g. "wagyu", "yyds") and let
+// Gemini auto-detect per token.
+export interface SpeechOptions {
+  voiceName?: string;
+  lang?: TtsLang;
+}
 
+export async function generateSpeech(
+  text: string,
+  options: SpeechOptions = {},
+): Promise<string | undefined> {
+  const { voiceName = 'Puck', lang } = options;
+
+  if (USE_PROXY) {
+    const token = await getAuthToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch('/api/tts', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ text, voiceName, lang }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      if (res.status === 429) throw new RateLimitError(err);
+      const error: any = new Error(err.error || `TTS proxy error: ${res.status}`);
+      error.status = res.status;
+      throw error;
+    }
+    const data = await res.json();
+    return data?.audio as string | undefined;
+  }
+
+  // SDK path (dev only). Style prompt is simpler than the proxy's
+  // per-lang variants \u2014 dev's job is to round-trip audio, not nail tone.
+  void lang;
+  const prompt = `Read the following naturally in a relaxed, friendly tone, in whatever language(s) it is actually written in: ${text}`;
+
+  const ai = getGeminiAI();
   const response = await ai.models.generateContent({
     model: "gemini-2.5-flash-preview-tts",
     contents: [{ parts: [{ text: prompt }] }],

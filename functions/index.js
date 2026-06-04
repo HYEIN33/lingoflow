@@ -42,6 +42,12 @@ const BUCKETS = {
   grammar:   { perMinute: { free: 30, pro: 100 },  perDay: { free: 400, pro: 2500 } },
   chat:      { perMinute: { free: 40, pro: 150 },  perDay: { free: 500, pro: 3000 } },
   slang:     { perMinute: { free: 80, pro: 250 },  perDay: { free: 800, pro: 4000 } },
+  // tts: Gemini TTS audio generation. Heavier per-call (audio bytes) but
+  // users only press the speaker icon a few times per session, so the
+  // per-day cap is small. Per-minute cap is what actually matters for
+  // anti-abuse — without it a malicious client could mint hundreds of
+  // 24kHz PCM clips and burn quota fast.
+  tts:       { perMinute: { free: 20, pro: 60 },   perDay: { free: 200, pro: 1000 } },
   // live-token: token issuance only, no per-day cap (signing is cheap;
   // the WebSocket itself is what burns Deepgram credit). Per-minute cap
   // exists only to defeat scripted abuse.
@@ -52,10 +58,15 @@ const DEFAULT_BUCKET = 'translate';
 // Touched 2026-04-27 night to force redeploy that resets in-memory state
 // after the bucket-based rewrite. New mem schema is incompatible with old.
 
-// Allowed origins — anything else gets a hard CORS reject
+// Allowed origins — anything else gets a hard CORS reject.
+// memeflow.cn / www.memeflow.cn 是绑定到 Firebase Hosting 的自定义域名
+// （2026-05-04 配置）。两条都要列，因为 www CNAME 跳转后 Origin 头会
+// 是 https://www.memeflow.cn 而不是裸域。
 const ALLOWED_ORIGINS = new Set([
   'https://memeflow-16ecf.web.app',
   'https://memeflow-16ecf.firebaseapp.com',
+  'https://memeflow.cn',
+  'https://www.memeflow.cn',
   'http://localhost:3000',
   'http://localhost:3001',
   'http://localhost:5173',
@@ -385,6 +396,149 @@ exports.apiGenerate = onRequest(
         return;
       }
       res.json(data);
+    } catch (e) {
+      res.status(500).json({ error: e.message || 'Internal error' });
+    }
+  }
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// Gemini TTS proxy — generates speech audio for the speaker icon in
+// 翻译/词典/梗百科. Mirrors apiGenerate's auth + rate-limit pattern but
+// targets the audio-only TTS model and returns base64 PCM.
+//
+// Why this exists at all: USE_PROXY=true in prod means generateSpeech()
+// in the browser previously threw and fell back to SpeechSynthesis,
+// which sounds robotic. This endpoint puts real Gemini TTS back online.
+//
+// Request:  POST /api/tts  { text: string, voiceName?: string }
+// Response: { audio: base64-pcm-string, mimeType: "audio/L16;..." }
+//           (the client decodes 16-bit signed PCM @ 24kHz)
+exports.apiTts = onRequest(
+  { secrets: ['GEMINI_API_KEY'], cors: false },
+  async (req, res) => {
+    const corsOk = applyCors(req, res);
+    if (req.method === 'OPTIONS') {
+      res.status(corsOk ? 204 : 403).end();
+      return;
+    }
+    if (!corsOk) {
+      res.status(403).json({ error: 'Origin not allowed' });
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed' });
+      return;
+    }
+
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) {
+      res.status(401).json({ error: 'Missing auth token' });
+      return;
+    }
+    let decoded;
+    try {
+      decoded = await admin.auth().verifyIdToken(token);
+    } catch (e) {
+      res.status(401).json({ error: 'Invalid auth token' });
+      return;
+    }
+    const uid = decoded.uid;
+
+    try {
+      const rl = await checkRateLimit(uid, 'tts', decoded);
+      if (!rl.allowed) {
+        const msg = rl.reason === 'minute'
+          ? '请求太频繁，请稍后再试'
+          : '今日语音额度已用完，明天再来';
+        res.status(429).json({
+          error: msg,
+          bucket: rl.bucket,
+          reason: rl.reason,
+          retryAfter: rl.retryAfter,
+          isPro: rl.isPro,
+        });
+        return;
+      }
+    } catch (e) {
+      console.error('TTS rate limit check failed:', e);
+      res.status(503).json({ error: 'Rate limit service unavailable' });
+      return;
+    }
+
+    const { text, voiceName, lang } = req.body || {};
+    if (!text || typeof text !== 'string') {
+      res.status(400).json({ error: 'Missing text' });
+      return;
+    }
+    // Cap input length — TTS bills per character upstream and a single user
+    // shouldn't be able to mint a 30-minute clip from one click. The speaker
+    // icon in this product reads back single words / single sentences.
+    if (text.length > 500) {
+      res.status(400).json({ error: 'Text too long (max 500 chars)' });
+      return;
+    }
+
+    // Whitelist voices to match the upload-form dropdown values in
+    // SlangDictionary.tsx and the firestore audit rule (voiceName must be
+    // one of these or absent). Defaults to Puck — Kore was the previous
+    // default and users reported it as too "newscaster-y" / stiff.
+    const ALLOWED_VOICES = new Set(['Puck', 'Charon', 'Kore', 'Fenrir', 'Zephyr']);
+    const voice = ALLOWED_VOICES.has(voiceName) ? voiceName : 'Puck';
+
+    // Style + lang steering. Caller's explicit `lang` wins; without it
+    // we leave language UNSPECIFIED so the model auto-detects per token
+    // (a regex was previously mis-tagging "wagyu"/和牛 as English).
+    // The "relaxed, friendly tone" instruction always applies — without
+    // it the model reads in a flat newscaster register.
+    let styled;
+    if (lang === 'zh') {
+      styled = `用中文以轻松自然的口吻朗读，像和朋友聊天那样：${text}`;
+    } else if (lang === 'en') {
+      styled = `Read this in English in a relaxed, friendly tone, like chatting with a friend: ${text}`;
+    } else if (lang === 'ja') {
+      styled = `日本語でリラックスした自然な口調で読んでください：${text}`;
+    } else if (lang === 'ko') {
+      styled = `한국어로 친구와 대화하듯 자연스럽고 편안한 어조로 읽어주세요: ${text}`;
+    } else {
+      styled = `Read the following naturally in a relaxed, friendly tone, in whatever language(s) it is actually written in: ${text}`;
+    }
+
+    const gemBody = JSON.stringify({
+      contents: [{ parts: [{ text: styled }] }],
+      generationConfig: {
+        responseModalities: ['AUDIO'],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: voice },
+          },
+        },
+      },
+    });
+
+    try {
+      const upstream = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: gemBody,
+        }
+      );
+      const data = await upstream.json();
+      if (!upstream.ok) {
+        res.status(upstream.status).json({ error: data.error?.message || 'TTS API error' });
+        return;
+      }
+      const part = data?.candidates?.[0]?.content?.parts?.[0];
+      const audio = part?.inlineData?.data;
+      const mimeType = part?.inlineData?.mimeType || 'audio/L16;codec=pcm;rate=24000';
+      if (!audio) {
+        res.status(502).json({ error: 'No audio in TTS response' });
+        return;
+      }
+      res.json({ audio, mimeType, voiceName: voice });
     } catch (e) {
       res.status(500).json({ error: e.message || 'Internal error' });
     }

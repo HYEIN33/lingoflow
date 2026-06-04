@@ -548,7 +548,9 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
         audio.onended = () => setPlayingAudioId(null);
         await audio.play();
       } else {
-        await speak(meaning.meaning);
+        // Slang meanings are always in Chinese — pass lang explicitly so
+        // the TTS model doesn't fumble Latin-letter pinyin slang inside.
+        await speak(meaning.meaning, 'zh');
         // speak() manages its own playback lifecycle; clear the UI lock
         // here since we don't get an 'ended' callback surfaced.
         setPlayingAudioId(null);

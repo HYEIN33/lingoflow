@@ -23,6 +23,9 @@ import { createClient, LiveTranscriptionEvents, type ListenLiveClient } from '@d
 import { auth } from '../firebase';
 import { translateSimple } from './ai';
 import { ProxyLiveClient } from './proxyLiveClient';
+import { makeSentry } from '../lib/sentry';
+
+const { breadcrumb: liveBreadcrumb, warn: liveWarn } = makeSentry('live.session', 'liveSession');
 
 // 走 Cloud Run 代理（VITE_PROXY_WS_URL 配置了的话）还是浏览器直连
 // Deepgram。代理的好处见 proxyLiveClient.ts 头注释 —— 主要是断网/重连
@@ -142,6 +145,12 @@ export interface LiveSessionHandle {
    * slowly) and the user knows the stream is stuck from their side.
    */
   forceReconnect(): void;
+  /**
+   * Manual flush — short-circuit all wait timers and immediately translate
+   * whatever is currently buffered. Triggered by the「立即翻译」button.
+   * Idempotent and safe to spam.
+   */
+  forceFlush(): void;
   /**
    * Snapshot of the liveness metrics the UI uses to decide when to
    * surface the manual-reconnect button. All fields are safe to poll
@@ -285,6 +294,14 @@ export async function startLiveSession(
     onOpen: (h: () => void) => void;
     send: (data: ArrayBuffer) => void;
     sendKeepAlive: () => void;
+    /**
+     * Force Deepgram to flush its server-side buffer as is_final without
+     * closing the stream. Wired up to the user-facing 「立即翻译」button
+     * in ClassroomTab — when ASR appears stuck, this short-circuits the
+     * 8s idle and 5s delayed-flush waits so the speaker gets their last
+     * paragraph translated immediately.
+     */
+    finalize: () => void;
     requestClose: () => void;
   };
 
@@ -308,6 +325,11 @@ export async function startLiveSession(
         try { (raw as any).keepAlive?.(); } catch { /* nothing */ }
         try { (raw as any).send?.(JSON.stringify({ type: 'KeepAlive' })); } catch { /* nothing */ }
       },
+      finalize: () => {
+        // SDK exposes finalize(); fall back to raw send for older SDK builds.
+        try { (raw as any).finalize?.(); } catch { /* fall through */ }
+        try { (raw as any).send?.(JSON.stringify({ type: 'Finalize' })); } catch { /* nothing */ }
+      },
       requestClose: () => { try { raw.requestClose(); } catch { /* nothing */ } },
     };
     return { conn, raw };
@@ -326,6 +348,7 @@ export async function startLiveSession(
       // 代理的 KeepAlive：浏览器到代理那段我们用空 JSON 帧；代理到 Deepgram
       // 那段是代理服务器自己每 5s 发，浏览器不用管。
       sendKeepAlive: () => raw.send(JSON.stringify({ type: 'KeepAlive' })),
+      finalize: () => raw.finalize(),
       requestClose: () => raw.requestClose(),
     };
     return { conn, raw };
@@ -587,6 +610,11 @@ ${englishParagraph}`;
   // starts won't fire SpeechStarted, and the user still deserves feedback.
   setTimeout(() => flipToLiveOnce(), 2000);
 
+  // Wall-clock when the session went live, used for end-of-session
+  // quality stats. Set at session creation rather than first event so
+  // dead-on-arrival sessions (no audio at all) still get reported.
+  const sessionStartedAt = Date.now();
+
   // ASR-level state for Bug A mitigation. Nova-3 sometimes emits
   // is_final=true with text="" while the interim stream had real content
   // (WebSocket "dirty" state). We handle this with a layered defence:
@@ -787,6 +815,22 @@ ${englishParagraph}`;
       if (lastInterimText) {
         pendingSyntheticFinal = true;
       }
+      // Sentry: report exactly once per streak when we hit the 3-strike
+      // mark with a non-empty interim. That's the smoking gun for the
+      // "覆盖" bug — Deepgram is dribbling empty finals while the speaker
+      // is still talking. UtteranceEnd should rescue this, but we want
+      // visibility into how often it happens and how big the rescued
+      // text was, in case something later eats it before commit.
+      if (emptyFinalStreak === 3 && lastInterimText) {
+        liveWarn('live: suspected overwrite (3+ empty finals with interim)', {
+          emptyFinalStreak,
+          interimPreview: lastInterimText.slice(0, 80),
+          interimLength: lastInterimText.length,
+          finalEventCount,
+          emptyFinalCount,
+          emptyFinalRatio: finalEventCount > 0 ? emptyFinalCount / finalEventCount : 0,
+        });
+      }
       // If no interim either: nothing to do. UtteranceEnd may still fire
       // and cleanly close the utterance; if stream is truly stuck, the
       // watchdog (healthTimer below) will force reconnect.
@@ -799,8 +843,26 @@ ${englishParagraph}`;
     conn.onUtteranceEnd(() => {
       // eslint-disable-next-line no-console
       console.info(`[live] UtteranceEnd (pendingSynthetic=${pendingSyntheticFinal}, lastInterim=${JSON.stringify(lastInterimText.slice(0, 40))})`);
+      liveBreadcrumb('UtteranceEnd', {
+        pendingSynthetic: pendingSyntheticFinal,
+        interimLen: lastInterimText.length,
+        batchChars: countChars(pendingBatch),
+      });
       if (pendingSyntheticFinal && lastInterimText) {
         commitFinalText(lastInterimText, 'rescued-interim', true);
+      } else if (pendingSyntheticFinal && !lastInterimText) {
+        // Sentry: this is the smoking gun for "吞字". We saw an empty
+        // final, marked the utterance as needing rescue, then UtteranceEnd
+        // fired and there's nothing to rescue with. The speech happened
+        // (ASR sent empty final = it heard SOMETHING) but neither interim
+        // nor final captured the words. Most likely an ASR-model miss.
+        liveWarn('live: suspected swallow (UtteranceEnd with no interim to rescue)', {
+          finalEventCount,
+          emptyFinalCount,
+          emptyFinalRatio: finalEventCount > 0 ? emptyFinalCount / finalEventCount : 0,
+        });
+        lastInterimText = '';
+        pendingSyntheticFinal = false;
       } else {
         lastInterimText = '';
         pendingSyntheticFinal = false;
@@ -1111,6 +1173,11 @@ ${englishParagraph}`;
       if (consecutiveSendFailures >= 3 && !reconnecting && !userStopped) {
         // eslint-disable-next-line no-console
         console.warn('[live] PCM send failed 3x in a row — forcing reconnect', err);
+        liveWarn('live: PCM send failed 3x, forcing reconnect', {
+          error: (err as any)?.message || String(err),
+          finalEventCount,
+          batchChars: countChars(pendingBatch),
+        });
         consecutiveSendFailures = 0;
         void reconnect();
       }
@@ -1172,11 +1239,60 @@ ${englishParagraph}`;
     isPaused() {
       return paused;
     },
+    /**
+     * Manual flush triggered by the「立即翻译」UI button. Three-step:
+     *   1. tell Deepgram to flush its server-side audio buffer as final
+     *      now (otherwise we wait on speech_final / UtteranceEnd / our
+     *      own 8s idle timer);
+     *   2. if there's still un-promoted interim text in our local state,
+     *      rescue it into the batch immediately (Deepgram's Finalize
+     *      response races with our flush — don't trust it to land first);
+     *   3. flush whatever's in pendingBatch to the translator.
+     *
+     * Idempotent and safe to spam — if buffers are empty it's a no-op.
+     */
+    forceFlush() {
+      liveBreadcrumb('forceFlush invoked', {
+        interimLen: lastInterimText.length,
+        batchChars: countChars(pendingBatch),
+        pendingSynthetic: pendingSyntheticFinal,
+      });
+      try { connection?.finalize(); } catch { /* nothing */ }
+      if (lastInterimText && lastInterimText.trim()) {
+        commitFinalText(lastInterimText, 'rescued-interim', true);
+      }
+      cancelDelayedFlush();
+      cancelIdleFlush();
+      if (pendingBatch.length > 0) {
+        void flushBatch();
+      }
+    },
     async stop() {
       // Mark before closing — the Close event handler checks this flag
       // to decide whether to auto-reconnect. Without it, stop() would
       // trigger the reconnect loop.
       userStopped = true;
+      // Report end-of-session ASR quality stats. We only flag as warning
+      // if the empty-final ratio is high (>20%) OR the rescue count is
+      // high (>5) — both signal that this user had a degraded session
+      // that they likely experienced as "吞字 / 覆盖". Healthy sessions
+      // get a breadcrumb (silent) so we have context if something else
+      // captures an event.
+      const durationSec = Math.round((Date.now() - sessionStartedAt) / 1000);
+      const ratio = finalEventCount > 0 ? emptyFinalCount / finalEventCount : 0;
+      const stats = {
+        durationSec,
+        finalEventCount,
+        emptyFinalCount,
+        emptyFinalRatio: Number(ratio.toFixed(3)),
+        rescuedCount: interimEmptyFinalRescueCount,
+      };
+      const degraded = ratio > 0.2 || interimEmptyFinalRescueCount > 5;
+      if (degraded && finalEventCount >= 5) {
+        liveWarn('live: session ended with degraded ASR quality', stats);
+      } else {
+        liveBreadcrumb('session ended', stats);
+      }
       clearInterval(keepAliveTimer);
       clearInterval(healthTimer);
       document.removeEventListener('visibilitychange', visibilityHandler);

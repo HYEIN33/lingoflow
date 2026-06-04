@@ -61,7 +61,9 @@ export function assertRegion(expected: DeploymentRegion): void {
 export const REGION_CONFIG = {
   global: {
     name: '海外版 (Global)',
-    primaryDomain: 'memeflow-16ecf.web.app',
+    // memeflow.cn 是绑定到 Firebase Hosting 的自定义域名（2026-05-04 配置）。
+    // memeflow-16ecf.web.app 仍然有效，作为 fallback / 内部访问入口。
+    primaryDomain: 'memeflow.cn',
     backend: {
       type: 'firebase' as const,
       hosting: 'firebase',

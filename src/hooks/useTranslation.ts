@@ -9,6 +9,7 @@ import {
   translateText,
   translateSimple,
   loadTranslationDetails,
+  loadMidTierTranslations,
   TranslationResult,
   explainSlang,
   SlangExplanationResult
@@ -94,15 +95,6 @@ export function useTranslation({
     setShowDetails(false);
     setSelectedUsageIndex(0);
     setSlangInsights([]);
-    // Set lastTranslatedFormality NOW (not just after the full result lands).
-    // Otherwise the preview-path setTranslationResult on line ~117 below
-    // creates a window where (translationResult != null) but
-    // (lastTranslatedFormality != current formalityLevel) — TranslateTab's
-    // formalityDrifted derives true and its 600ms auto-retranslate effect
-    // fires, kicking off another translate, looping forever. Setting it up
-    // front means "for the duration of this in-flight translate, the slider
-    // value is locked in" — drifted only goes true when the user later
-    // moves the slider AFTER the result has settled.
     setLastTranslatedFormality(userProfile?.isPro ? formalityLevel : null);
     markOnboardingStep('translate_word');
 
@@ -110,9 +102,14 @@ export function useTranslation({
     // then translateText in parallel for the full structured result. Whichever
     // finishes first shows; the full result replaces the preview when ready.
     // If translateText finishes first (rare), the preview is simply ignored.
-    const fullPromise = translateText(textToTranslate, userProfile?.isPro ? formalityLevel : undefined, uiLang === 'zh' ? 'zh' : 'en');
+    const fullPromise = translateText(textToTranslate, uiLang === 'zh' ? 'zh' : 'en');
     let fullDone = false;
     fullPromise.finally(() => { fullDone = true; });
+
+    // Kick off mid-tier (leanCasual / leanFormal) in parallel with the main
+    // call — saves ~1-2 s on mid-tier landing vs the previous "await then
+    // fire" sequencing. Failure is silent inside loadMidTier itself.
+    const midPromise = loadMidTierTranslations(textToTranslate);
 
     try {
       // Preview path — streamed, best-effort, never blocks the full path.
@@ -137,9 +134,22 @@ export function useTranslation({
       const result = await fullPromise;
       setTranslationResult(result);
       setSelectedUsageIndex(0);
-      // Record the formality used for this result so the UI can tell when
-      // the user has since dragged the slider to a different value.
       setLastTranslatedFormality(userProfile?.isPro ? formalityLevel : null);
+
+      // Merge mid-tier when it lands. Guard against the user having moved
+      // on (typed a new query) by comparing the original text.
+      void midPromise.then((mid) => {
+          if (!mid.leanCasualTranslation && !mid.leanFormalTranslation) return;
+          setTranslationResult((prev) => {
+            if (!prev) return prev;
+            if (prev.original !== result.original) return prev;
+            return {
+              ...prev,
+              leanCasualTranslation: mid.leanCasualTranslation || prev.leanCasualTranslation,
+              leanFormalTranslation: mid.leanFormalTranslation || prev.leanFormalTranslation,
+            };
+          });
+        });
 
       // Fetch slang insights if terms are found
       if (result.slangTerms && result.slangTerms.length > 0) {
