@@ -1067,6 +1067,19 @@ export default function App() {
         </DndContext>
 
         <Suspense fallback={<LazyFallback />}>
+          {/* 切 Tab 过渡：用 motion 给整块内容做"淡入 + 轻微上滑"。
+              mode="wait" 让旧页面先淡出、新页面再淡入，避免两页重叠抖动。
+              key 绑定 activeTab —— 每次切 Tab 触发一次进退场动画。
+              现状：之前点 Tab 是硬切，画面瞬间换掉很生硬。
+              修后：切页有 0.22s 的顺滑过渡，像原生 app。 */}
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            >
           {activeTab === 'translate' ? (
             <TranslateTab
               inputText={inputText}
@@ -1250,6 +1263,8 @@ export default function App() {
               onUpgrade={() => onPaymentNeeded('usage_page_upgrade')}
             />
           ) : null}
+            </motion.div>
+          </AnimatePresence>
         </Suspense>
 
         {/* Rate Limit Modal — global, fires on any 429 from /api/generate */}

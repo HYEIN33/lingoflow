@@ -32,8 +32,18 @@ import {
   Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { TranslationResult, SlangExplanationResult } from '../services/ai';
+import { TranslationResult, SlangExplanationResult, FormalityTier, tierFromLevel, pickTierText, TtsLang } from '../services/ai';
 import { cn } from '../lib/utils';
+
+// Hoisted to module scope so the labels object isn't reallocated per
+// render — the slider drag triggers re-renders at high frequency.
+const TIER_LABELS: Record<FormalityTier, { zh: string; en: string }> = {
+  authentic:  { zh: '地道',     en: 'Authentic'    },
+  leanCasual: { zh: '偏口语',   en: 'Lean Casual'  },
+  standard:   { zh: '标准',     en: 'Standard'     },
+  leanFormal: { zh: '偏正式',   en: 'Lean Formal'  },
+  academic:   { zh: '学术',     en: 'Academic'     },
+};
 import { Language, translations } from '../i18n';
 import { UserProfile } from '../App';
 
@@ -108,7 +118,7 @@ interface TranslateTabProps {
   onSearchWord: (word: string) => void;
   onGoBack: () => void;
   onSaveWord: (styleTag?: 'authentic' | 'academic' | 'standard') => void;
-  onSpeak: (text: string) => void;
+  onSpeak: (text: string, lang?: TtsLang) => void;
   onOpenPaywall: (trigger: string) => void;
   onUpgrade: () => void;
   onViewSlangEntry: (term: string) => void;
@@ -188,29 +198,12 @@ export default function TranslateTab({
     }
   }, [isTranslating, translationResult]);
 
-  // Has the user dragged the slider away from the value that produced the
-  // on-screen result? If so we auto re-translate after they stop dragging
-  // (600ms debounce) — no extra button click needed. The chip below just
-  // confirms "reapplying…" so it doesn't feel silent.
-  const formalityDrifted =
-    !!translationResult
-    && !isTranslating  // 关键: in-flight 时永远不算 drifted, 防自动重翻死循环
-    && userProfile?.isPro
-    && lastTranslatedFormality !== null
-    && formalityLevel !== lastTranslatedFormality;
-
-  // Debounced auto re-translate when formality drifts. Only fires for Pro
-  // (free users can't use the slider anyway), only when there's already a
-  // result on-screen (so the initial translation isn't triggered by just
-  // opening the page).
-  useEffect(() => {
-    if (!formalityDrifted) return;
-    const timer = setTimeout(() => {
-      onTranslate();
-    }, 600);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formalityLevel, formalityDrifted]);
+  // Slider value → tier for the「标准翻译」card. Drag doesn't re-call the
+  // AI; the card just switches among 5 pre-generated translations.
+  // `lastTranslatedFormality` is still set by useTranslation for App.tsx
+  // state shape but no longer drives behaviour here.
+  void lastTranslatedFormality;
+  const formalityTier = tierFromLevel(formalityLevel);
 
   return (
     <div className="space-y-6">
@@ -381,29 +374,51 @@ export default function TranslateTab({
               </span>
               <span className="font-zh-sans text-[10px] font-light tracking-[0.1em] text-[rgba(10,14,26,0.4)]">{uiLang === 'zh' ? '学术 · 正式' : 'Academic · Formal'}</span>
             </div>
-            <input
-              type="range"
-              min="1"
-              max="100"
-              value={formalityLevel}
-              onChange={(e) => setFormalityLevel(Number(e.target.value))}
-              disabled={!userProfile?.isPro}
-              className="w-full h-0.5 bg-[rgba(10,14,26,0.1)] rounded-full appearance-none accent-[#5B7FE8]"
-            />
-            {/* Re-run hint — the slider itself doesn't retranslate; show an
-                amber chip as soon as the user drags it away from the value
-                that produced the current result, with a one-click button to
-                apply the new formality. Without this the slider feels dead. */}
-            {formalityDrifted && (
-              <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-[12px] bg-[rgba(91,127,232,0.08)] border border-[rgba(91,127,232,0.22)]">
-                <Loader2 className="w-3 h-3 animate-spin text-[var(--blue-accent)] shrink-0" />
-                <span className="font-zh-sans text-[12px] text-[var(--ink-body)] leading-tight">
-                  {uiLang === 'zh'
-                    ? `正式程度已改为 ${formalityLevel} · 正在自动重翻…`
-                    : `Formality is now ${formalityLevel} · auto-retranslating…`}
-                </span>
+            {/* Slider — Pro users drag freely (0-100, step 1) for a
+                smooth feel; under the hood we only have 5 pre-generated
+                translations, so the slider value is bucketed by the
+                formalityTier helper (0-19 / 20-39 / 40-59 / 60-79 / 80-100)
+                and the「标准翻译」card switches to the matching tier.
+                Free users get the thumb pinned to 50 and the input
+                disabled; the parent paywall overlay handles clicks. */}
+            <div className="relative">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={userProfile?.isPro ? formalityLevel : 50}
+                onChange={(e) => setFormalityLevel(Number(e.target.value))}
+                disabled={!userProfile?.isPro}
+                aria-label={uiLang === 'zh' ? '正式程度' : 'Formality'}
+                className="w-full h-0.5 bg-[rgba(10,14,26,0.1)] rounded-full appearance-none accent-[#5B7FE8] relative z-[1]"
+              />
+              {/* 5 tick marks centred at the bucket midpoints (10/30/50/70/90).
+                  Pure visual hint — they don't intercept pointer events.
+                  The middle tick gets a slightly darker dot so users see the
+                  default standard position at a glance. */}
+              <div className="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-between px-[3px]" aria-hidden="true">
+                {[10, 30, 50, 70, 90].map((pos) => (
+                  <span
+                    key={pos}
+                    className={cn(
+                      "block w-1 h-1 rounded-full",
+                      pos === 50 ? "bg-[rgba(10,14,26,0.35)]" : "bg-[rgba(10,14,26,0.18)]"
+                    )}
+                  />
+                ))}
               </div>
-            )}
+            </div>
+            {/* Tier chip — confirms which of the five buckets is active. */}
+            <div className="mt-2 flex justify-center">
+              <span className="font-mono-meta text-[10px] tracking-[0.15em] text-[rgba(10,14,26,0.5)] uppercase transition-opacity duration-200">
+                {(() => {
+                  const activeTier = userProfile?.isPro ? formalityTier : 'standard';
+                  const l = TIER_LABELS[activeTier];
+                  return uiLang === 'zh' ? `当前 · ${l.zh}` : `Now · ${l.en}`;
+                })()}
+              </span>
+            </div>
           </div>
         </div>
       </div>
@@ -500,6 +515,14 @@ export default function TranslateTab({
         const wordCount = txt.split(/\s+/).filter(Boolean).length;
         const isSentence = wordCount > 3 || txt.length > 20;
         const isParagraph = txt.length >= 200;
+        // TTS language: detect direction from the user's input. The whole
+        // input is much more reliable than per-token CJK detection — if
+        // the user typed Chinese, the translation is English, and vice
+        // versa. Used to steer the speaker icon away from "wagyu read as
+        // English" type bugs.
+        const inputIsZh = /[一-龥]/.test(txt);
+        const sourceLang: 'zh' | 'en' = inputIsZh ? 'zh' : 'en';
+        const targetLang: 'zh' | 'en' = inputIsZh ? 'en' : 'zh';
         const translationFontCls = isParagraph
           ? "text-xs sm:text-sm leading-relaxed"
           : isSentence
@@ -525,9 +548,60 @@ export default function TranslateTab({
               animate={{ opacity: 1, y: 0 }}
               className="surface !rounded-[18px] p-5 sm:p-8 space-y-8 overflow-hidden"
             >
+              {/*「标准翻译」white card — slider picks one of 5 tiers via
+                  pickTierText; fallback chain keeps old SavedWord docs
+                  (authentic/academic only) rendering instead of blanking. */}
+              {(() => {
+                const standardText = pickTierText(translationResult, formalityTier);
+                if (!standardText) return null;
+                return (
+                  // 逐条入场第 1 块：标准翻译卡最先淡入上滑（delay 0）。
+                  <motion.div
+                    initial={{ opacity: 0, y: 16 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: 0, ease: [0.22, 1, 0.36, 1] }}
+                    className="rounded-[18px] p-4 sm:p-6 bg-white border border-[var(--ink)] relative overflow-hidden">
+                    <h3 className="font-mono-meta text-[10px] font-bold text-[var(--ink-muted)] uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+                      {uiLang === 'zh' ? '标准翻译 · Standard' : 'Standard Translation'}
+                    </h3>
+                    {/* keyed → remount on tier change retriggers fade-in. */}
+                    <p
+                      key={formalityTier}
+                      className={cn(
+                        "font-zh-serif font-bold text-[var(--ink)] break-words animate-tier-fade",
+                        translationFontCls,
+                        textPadRight,
+                      )}
+                    >
+                      {standardText}
+                    </p>
+                    <button
+                      onClick={() => onSpeak(standardText, targetLang)}
+                      className={cn(volumeBtnCls, "text-gray-400 hover:text-[var(--ink)]")}
+                    >
+                      <Volume2 className="w-5 h-5" />
+                      {isSentence && <span>{uiLang === 'zh' ? '朗读' : 'Listen'}</span>}
+                    </button>
+                    <button
+                      onClick={() => onSaveWord('standard')}
+                      disabled={isSaving}
+                      className="mt-4 inline-flex items-center gap-1 font-zh-serif text-[12px] font-bold text-[var(--ink-muted)] hover:text-[var(--ink)] transition-colors"
+                    >
+                      <Plus className="w-3 h-3" />
+                      {uiLang === 'zh' ? '存入标准翻译' : 'Save as Standard'}
+                    </button>
+                  </motion.div>
+                );
+              })()}
+
               {/* Dual Column Translation */}
               {(translationResult.authenticTranslation || translationResult.academicTranslation) && (
-                <div className={cn("grid grid-cols-1 gap-4", !isSentence && "lg:grid-cols-2")}>
+                // 逐条入场第 2 块：地道/学术双栏在标准卡之后 0.1s 跟上。
+                <motion.div
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.4, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+                  className={cn("grid grid-cols-1 gap-4 mt-4", !isSentence && "lg:grid-cols-2")}>
                   {/* Authentic Column — 对齐 grammar.html 原型 .corrected-box：蓝渐变底 + 蓝边 */}
                   {translationResult.authenticTranslation && (
                     <div
@@ -542,7 +616,7 @@ export default function TranslateTab({
                         {translationResult.authenticTranslation}
                       </p>
                       <button
-                        onClick={() => onSpeak(translationResult.authenticTranslation!)}
+                        onClick={() => onSpeak(translationResult.authenticTranslation!, targetLang)}
                         className={cn(volumeBtnCls, "text-[rgba(91,127,232,0.6)] hover:text-[var(--blue-accent)]")}
                       >
                         <Volume2 className="w-5 h-5" />
@@ -569,7 +643,7 @@ export default function TranslateTab({
                         {translationResult.academicTranslation}
                       </p>
                       <button
-                        onClick={() => onSpeak(translationResult.academicTranslation!)}
+                        onClick={() => onSpeak(translationResult.academicTranslation!, targetLang)}
                         className={cn(volumeBtnCls, "text-[rgba(125,110,163,0.6)] hover:text-[#7D6EA3]")}
                       >
                         <Volume2 className="w-5 h-5" />
@@ -586,18 +660,28 @@ export default function TranslateTab({
                       </button>
                     </div>
                   )}
-                </div>
+                </motion.div>
               )}
 
               {/* Sentence mode: show original text with matching font tier */}
               {isSentence && (
-                <div className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100">
+                <div className="bg-gray-50/50 p-5 rounded-2xl border border-gray-100 relative">
                   <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-3">
                     {uiLang === 'zh' ? '原文' : 'Original'}
                   </h3>
                   <p className={cn("text-gray-700 break-words whitespace-pre-wrap", translationFontCls)}>
                     {translationResult.original}
                   </p>
+                  <button
+                    onClick={() => onSpeak(translationResult.original, sourceLang)}
+                    disabled={loadingAudioText === translationResult.original}
+                    className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+                  >
+                    {loadingAudioText === translationResult.original
+                      ? <Loader2 className="w-5 h-5 animate-spin" />
+                      : <Volume2 className="w-5 h-5" />}
+                    <span>{uiLang === 'zh' ? '朗读' : 'Listen'}</span>
+                  </button>
                 </div>
               )}
 
@@ -622,14 +706,26 @@ export default function TranslateTab({
                         <span className="text-[#5B7FE8] font-mono bg-[rgba(91,127,232,0.08)] px-2 py-0.5 rounded-lg text-xs">{translationResult.pronunciation}</span>
                       )}
                     </div>
-                    <button
-                      onClick={() => onSaveWord()}
-                      disabled={isSaving}
-                      className="flex items-center gap-1.5 bg-[#0A0E1A] text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-[#1a2440] transition-all shadow-md"
-                    >
-                      {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                      {t.save}
-                    </button>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => onSpeak(translationResult.original, sourceLang)}
+                        disabled={loadingAudioText === translationResult.original}
+                        aria-label={uiLang === 'zh' ? '朗读' : 'Listen'}
+                        className="p-2 text-gray-400 hover:text-[#5B7FE8] transition-colors disabled:opacity-50"
+                      >
+                        {loadingAudioText === translationResult.original
+                          ? <Loader2 className="w-5 h-5 animate-spin" />
+                          : <Volume2 className="w-5 h-5" />}
+                      </button>
+                      <button
+                        onClick={() => onSaveWord()}
+                        disabled={isSaving}
+                        className="flex items-center gap-1.5 bg-[#0A0E1A] text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-[#1a2440] transition-all shadow-md"
+                      >
+                        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                        {t.save}
+                      </button>
+                    </div>
                   </div>
 
                   {/* Frequency Tabs */}
@@ -798,7 +894,14 @@ export default function TranslateTab({
                         <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-4">{t.examples}</h3>
                         <div className="space-y-4">
                           {(translationResult.usages?.[selectedUsageIndex]?.examples || []).map((ex, i) => (
-                            <div key={i} className="bg-white p-6 rounded-2xl border border-gray-100 space-y-3 group/ex hover:border-[rgba(91,127,232,0.4)] transition-colors overflow-hidden">
+                            // 逐条入场：每个例句按序号递增 delay，一条条淡入飞入，
+                            // 比整块例句一起蹦出更有"正在展开"的节奏感。
+                            <motion.div
+                              key={i}
+                              initial={{ opacity: 0, y: 12 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ duration: 0.35, delay: 0.15 + i * 0.06, ease: [0.22, 1, 0.36, 1] }}
+                              className="bg-white p-6 rounded-2xl border border-gray-100 space-y-3 group/ex hover:border-[rgba(91,127,232,0.4)] transition-colors overflow-hidden">
                               <div className="flex items-start justify-between gap-4">
                                 <div className="flex gap-4 min-w-0 flex-1">
                                   <span className="text-[rgba(91,127,232,0.3)] font-black text-xl italic shrink-0">{String(i + 1).padStart(2, '0')}</span>
@@ -817,7 +920,7 @@ export default function TranslateTab({
                                 </button>
                               </div>
                               <p className="text-gray-500 pl-12 border-l-2 border-[rgba(91,127,232,0.15)] italic">{ex.translation}</p>
-                            </div>
+                            </motion.div>
                           ))}
                         </div>
                       </div>

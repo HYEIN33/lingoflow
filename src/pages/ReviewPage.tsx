@@ -2,9 +2,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { BookOpen, CheckCircle, Volume2, Loader2, RotateCcw, Sparkles, Send, MessageSquare, History, Play, ChevronDown, ChevronUp } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
+import gsap from 'gsap';
+import { useGSAP } from '@gsap/react';
 import { cn } from '../lib/utils';
 import { Language, translations } from '../i18n';
 import { SavedWord, UserProfile } from '../App';
+import { TtsLang } from '../services/ai';
 
 interface ReviewPageProps {
   userProfile: UserProfile | null;
@@ -18,7 +21,7 @@ interface ReviewPageProps {
   onSetReviewIndex: (v: number) => void;
   onOpenOnboarding: () => void;
   onOpenPayment: (source: string) => void;
-  onSpeak?: (text: string) => void;
+  onSpeak?: (text: string, lang?: TtsLang) => void;
   loadingAudioText?: string | null;
   totalWords?: number;
   onGetHint?: (word: string, meaningZh: string) => Promise<string>;
@@ -46,6 +49,38 @@ export default function ReviewPage(props: ReviewPageProps) {
   // 正在 requeue 的单词 id，用于按钮 loading 态。
   const [requeueingId, setRequeueingId] = useState<string | null>(null);
   const [requeueingAll, setRequeueingAll] = useState(false);
+
+  // === GSAP 3D 翻卡 ===
+  // 复习卡片点「显示答案」时绕 Y 轴翻转，正面是单词、翻过去露出释义。
+  // 用 GSAP 而不是 motion：3D rotationY + 中途切换内容的时间线编排是
+  // GSAP 的强项。useGSAP 自动在卸载时 revert，避免动画泄漏到已卸载节点。
+  // 按官方 gsap-react skill：registerPlugin(useGSAP) + scope + contextSafe。
+  gsap.registerPlugin(useGSAP);
+  const cardRef = useRef<HTMLDivElement>(null);
+  // contextSafe 包裹的翻转函数：在 useGSAP 执行后被点击事件调用，
+  // 包一层才能被 GSAP context 收编、随组件卸载自动清理。
+  const flipRef = useRef<((toBack: boolean) => void) | null>(null);
+
+  useGSAP((_context, contextSafe) => {
+    if (!contextSafe) return;
+    flipRef.current = contextSafe((toBack: boolean) => {
+      const el = cardRef.current;
+      if (!el) return;
+      // 半程翻转：先翻到 -90°（侧棱朝前、内容看不见）→ React 已经
+      // 切好了正/反面内容 → 再从 90° 翻回 0°。中点用 onComplete 不需要，
+      // 因为 React 的 showReviewAnswer 状态切换驱动内容替换，这里只演翻转。
+      gsap.timeline()
+        .to(el, { rotationY: toBack ? -90 : 90, duration: 0.18, ease: 'power2.in' })
+        .set(el, { rotationY: toBack ? 90 : -90 })
+        .to(el, { rotationY: 0, duration: 0.32, ease: 'power2.out' });
+    });
+  }, { scope: cardRef });
+
+  // 触发翻转 + 切状态。点击「显示答案」翻到背面，答完题翻回正面。
+  const triggerFlip = (toBack: boolean) => {
+    flipRef.current?.(toBack);
+    setShowReviewAnswer(toBack);
+  };
 
   // 明天到期数 — savedWords 没传就跳过
   const tomorrowCount = (() => {
@@ -75,6 +110,8 @@ export default function ReviewPage(props: ReviewPageProps) {
     setChatMessages([]);
     setAiHint(null);
     setShowChat(false);
+    // 换词时把卡片翻回正面，清掉上一张可能残留的 rotationY。
+    if (cardRef.current) gsap.set(cardRef.current, { rotationY: 0 });
   }, [currentReviewWord?.id]);
 
   useEffect(() => {
@@ -206,8 +243,13 @@ export default function ReviewPage(props: ReviewPageProps) {
 
           {currentReviewWord ? (
           <>
-            {/* Card stage */}
-            <div className="glass-thick rounded-[28px] p-[36px_28px] sm:p-[56px_48px] max-w-[760px] mx-auto text-center flex flex-col justify-between" style={{ minHeight: 520 }}>
+            {/* Card stage —— ref + 3D 透视。perspective 让 rotationY 看起来
+                有近大远小的立体感，transformStyle 保 3D 不被压平。 */}
+            <div
+              ref={cardRef}
+              className="glass-thick rounded-[28px] p-[36px_28px] sm:p-[56px_48px] max-w-[760px] mx-auto text-center flex flex-col justify-between"
+              style={{ minHeight: 520, perspective: 1200, transformStyle: 'preserve-3d', willChange: 'transform' }}
+            >
               {/* Position + SM-2 LVL 难度标识 */}
               <div className="font-mono-meta text-[11px] tracking-[0.25em] text-[var(--ink-subtle)] uppercase">
                 CARD {String(reviewIndex + 1).padStart(2, '0')} / {dueWords.length}
@@ -348,7 +390,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                           key={btn.q}
                           onClick={() => {
                             onReview(currentReviewWord.id, btn.q);
-                            setShowReviewAnswer(false);
+                            triggerFlip(false);
                             setReviewedCount(c => c + 1);
                             setAiHint(null);
                             if (reviewIndex < dueWords.length - 1) {
@@ -377,7 +419,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                 ) : (
                   <motion.div key="question" className="py-10">
                     <button
-                      onClick={() => setShowReviewAnswer(true)}
+                      onClick={() => triggerFlip(true)}
                       className="rounded-[16px] px-10 py-3.5 font-display italic text-[16px] cursor-pointer transition-[border-color,color,background] duration-150"
                       style={{ background: 'transparent', border: '1.5px dashed rgba(10,14,26,0.25)', color: 'rgba(10,14,26,0.7)' }}
                       onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--blue-accent)'; e.currentTarget.style.color = 'var(--blue-accent)'; e.currentTarget.style.background = 'rgba(91,127,232,0.04)'; }}
