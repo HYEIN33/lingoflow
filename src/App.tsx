@@ -1067,18 +1067,19 @@ export default function App() {
         </DndContext>
 
         <Suspense fallback={<LazyFallback />}>
-          {/* 切 Tab 过渡：用 motion 给整块内容做"淡入 + 轻微上滑"。
-              mode="wait" 让旧页面先淡出、新页面再淡入，避免两页重叠抖动。
-              key 绑定 activeTab —— 每次切 Tab 触发一次进退场动画。
+          {/* 切 Tab 过渡：用 motion 给整块内容做"淡入 + 上滑 + 轻微放大"。
+              key 绑定 activeTab —— 每次切 Tab 触发一次进场动画。
+              为什么不用 mode="wait"：页面是懒加载，旧页瞬间被 Suspense 切掉，
+              退场动画会被吃掉，结果几乎看不见。改成纯进场（每次新页面从
+              下方淡入+轻微放大），幅度调大到肉眼明显。
               现状：之前点 Tab 是硬切，画面瞬间换掉很生硬。
-              修后：切页有 0.22s 的顺滑过渡，像原生 app。 */}
-          <AnimatePresence mode="wait">
+              修后：每次切页新内容从下方明显地浮上来，0.35s，像原生 app。 */}
+          <AnimatePresence>
             <motion.div
               key={activeTab}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              initial={{ opacity: 0, y: 24, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
             >
           {activeTab === 'translate' ? (
             <TranslateTab
