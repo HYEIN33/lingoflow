@@ -263,6 +263,9 @@ const NO_THINKING_MODELS = new Set([
   'gemini-2.5-flash',
   'gemini-2.5-flash-lite',
   'gemini-3-flash-preview',
+  // GA 版课堂主力（2026-06-11 切换）。startsWith('gemini-3') 分支会给它
+  // 发 thinkingLevel: 'low'（3.x 系列的最低档）。
+  'gemini-3.5-flash',
 ]);
 
 async function geminiGenerate(opts: {
@@ -846,7 +849,11 @@ export async function translateSimple(
   //                                   spoken repetition)
   // 5s latency is fine given we batch 2-3 sentences — a student pauses
   // between thoughts anyway. The quality jump from 3-flash is worth it.
-  const model = 'gemini-3-flash-preview';
+  // 2026-06-11 起从 gemini-3-flash-preview 切到 GA 版 gemini-3.5-flash：
+  // preview 版自 2026-04 中旬起高峰期 503 暴增（Google 论坛多人报告，与我们
+  // 课堂"翻译失败"占位符的时间线吻合）。3.5-flash 是正式版 SLA、同代际
+  // 质量（官方称推理更强），瞬时错误仍有 2.5-flash 降级链兜底。
+  const model = 'gemini-3.5-flash';
 
   // Prompt upgraded for spoken classroom audio (vs. the previous generic
   // "translate between Chinese and English"). Deepgram deliveries contain
@@ -865,6 +872,27 @@ Guidelines:
 
 Input:
 ${text}`;
+  // 慢尾保险（2026-06-11）：gemini-3.5-flash 刚 GA，实测延迟 2.8s~30s+
+  // 波动很大（迁移高峰容量爬坡）。课堂是串行翻译队列，一次 30s 会把后续
+  // 段落全堵死。非流式调用（课堂路径 onChunk 为空）超过 12s 没回来，就用
+  // 快且稳的 2.5-flash 直接重发一次拿结果——质量 4/5 但延迟有界。
+  // 流式路径（翻译页打字机）不套这层，避免双流混写。
+  if (!onChunk) {
+    const TIMEOUT_MS = 12000;
+    const primary = geminiGenerate({ model, contents, bucket });
+    const winner = await Promise.race([
+      primary.then((t) => ({ timedOut: false as const, text: t })),
+      new Promise<{ timedOut: true }>((resolve) =>
+        setTimeout(() => resolve({ timedOut: true }), TIMEOUT_MS)
+      ),
+    ]);
+    if ('text' in winner) return winner.text.trim();
+    aiBreadcrumb('translateSimple.slow_tail_fallback', { from: model, to: 'gemini-2.5-flash' });
+    // 原请求不取消（继续在后台耗完），直接用稳定模型要结果。
+    primary.catch(() => {});
+    const rescued = await geminiGenerate({ model: 'gemini-2.5-flash', contents, bucket });
+    return rescued.trim();
+  }
   const result = await geminiGenerate({ model, contents, onChunk, bucket });
   return result.trim();
 }

@@ -316,6 +316,9 @@ exports.apiGenerate = onRequest(
       // path for higher quality on spoken English + classroom register.
       // See 2026-04-20 benchmark in src/services/ai.ts translateSimple.
       'gemini-3-flash-preview',
+      // GA successor — classroom primary since 2026-06-11. Preview 版
+      // 2026-04 中旬起高峰 503 暴增（官方论坛多人报告），GA 版有正式 SLA。
+      'gemini-3.5-flash',
       // Gemini 3 pro preview — used by the Live Notes feature to
       // produce structured study notes (summary + glossary + key
       // points). Notes refresh every ~60s, so pro's 10-40s latency
