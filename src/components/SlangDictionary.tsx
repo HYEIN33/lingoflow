@@ -182,6 +182,9 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
   const [meanings, setMeanings] = useState<SlangMeaning[]>([]);
   const [searchResults, setSearchResults] = useState<(Slang & { topMeaning?: string; totalUpvotes?: number })[]>([]);
   const [allSlangCache, setAllSlangCache] = useState<Slang[]>([]);
+  // 联想竞态修复：缓存异步加载完成时，用这个 ref 拿到「此刻」输入框里的
+  // 最新内容补算一次联想（闭包里的 val 是旧的）。
+  const latestTypeaheadRef = useRef('');
   const [meaningsBySlangId, setMeaningsBySlangId] = useState<Record<string, { meaning: string; upvotes: number }[]>>({});
   const [isSearching, setIsSearching] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -374,7 +377,8 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
       initialMeaningsUnsubRef.current = null;
 
       try {
-        const q = query(collection(db, 'slangs'), where('term', '==', initialSearchTerm.trim().toLowerCase()), limit(1));
+        // 修复（2026-06-11）：term 字段大小写敏感，大写词条匹配不到 —— 改查 termLower。
+        const q = query(collection(db, 'slangs'), where('termLower', '==', initialSearchTerm.trim().toLowerCase()), limit(1));
         const snapshot = await getDocs(q);
         if (cancelled) return;
 
@@ -694,15 +698,19 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
         }
       }
 
-      // Fallback: Firestore query
-      let q = query(collection(db, 'slangs'), where('term', '==', term), limit(1));
+      // Fallback: Firestore query\u3002
+      // \u4fee\u590d\uff082026-06-11\uff09\uff1a\u539f\u6765\u67e5\u7684\u662f term \u5b57\u6bb5\uff0c\u4f46\u8f93\u5165\u5df2 toLowerCase()\uff0c
+      // \u5927\u5199\u5b58\u50a8\u7684\u8bcd\u6761\uff08\u5982\u300cAI\u6cd4\u6c34\u300d\uff09\u6c38\u8fdc\u7cbe\u786e\u5339\u914d\u4e0d\u5230 \u2014\u2014 \u7f13\u5b58\u6ca1\u52a0\u8f7d\u5b8c\u65f6
+      // \u8d70\u5230\u8fd9\u91cc\u5c31\u62a5"\u672a\u627e\u5230\u8be5\u8bcd\u6761"\u3002\u6539\u67e5 termLower\uff08\u5168\u5e93\u5df2\u56de\u586b\u8be5\u5b57\u6bb5\uff0c
+      // \u65b0\u5efa\u8bcd\u6761\u4e5f\u4f1a\u5199\u5165\uff09\uff0c\u5927\u5c0f\u5199\u4e0d\u518d\u5f71\u54cd\u641c\u7d22\u3002
+      let q = query(collection(db, 'slangs'), where('termLower', '==', term), limit(1));
       let snapshot = await getDocs(q);
 
       if (snapshot.empty) {
         q = query(
           collection(db, 'slangs'),
-          where('term', '>=', term),
-          where('term', '<=', term + '\uf8ff'),
+          where('termLower', '>=', term),
+          where('termLower', '<=', term + '\uf8ff'),
           limit(5)
         );
         snapshot = await getDocs(q);
@@ -859,6 +867,9 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
         try {
           const slangRef = await addDoc(collection(db, 'slangs'), {
             term: termToUse,
+            // termLower 是搜索/去重的统一键（2026-06-11 全库已回填）——
+            // 新建词条必须同步写入，否则又会出现"搜不到"的老 bug。
+            termLower: termToUse.toLowerCase().trim(),
             createdAt: serverTimestamp()
           });
           slangId = slangRef.id;
@@ -1173,6 +1184,14 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
           onChange={(e) => {
             const val = e.target.value;
             setSearchTerm(val);
+            latestTypeaheadRef.current = val;
+            // 修复（2026-06-11）：看过词条后 currentSlang 一直挂着，而联想
+            // 下拉的渲染条件要求 !currentSlang —— 导致点开过任何词条后联想
+            // 永久失灵。打字=开始新搜索，离开当前词条页回到联想态。
+            if (currentSlang && val.trim() !== currentSlang.term) {
+              setCurrentSlang(null);
+              setMeanings([]);
+            }
             // Typeahead suggestions
             if (val.trim()) {
               const q = val.trim().toLowerCase();
@@ -1181,6 +1200,16 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
                 getDocs(collection(db, 'slangs')).then(snap => {
                   const slangs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Slang));
                   setAllSlangCache(slangs);
+                  // 修复（2026-06-11）缓存竞态：之前加载完只存缓存不出结果，
+                  // 用户打完字下拉一直是空的。加载完成后用「此刻」输入框的
+                  // 最新内容立刻补算一次联想。
+                  const cur = (latestTypeaheadRef.current || '').trim().toLowerCase();
+                  if (cur) {
+                    const late = slangs
+                      .filter(s => ((s as any).termLower || s.term.toLowerCase()).includes(cur))
+                      .slice(0, 8);
+                    if (late.length > 0) setSearchResults(late);
+                  }
                 });
               }
               const suggestions = allSlangCache
@@ -1192,7 +1221,11 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
                 })
                 .sort((a, b) => (b.totalUpvotes || 0) - (a.totalUpvotes || 0))
                 .slice(0, 8);
-              setSearchResults(suggestions.length > 0 && !currentSlang ? suggestions : []);
+              // 修复（2026-06-11）：原来这里还有 && !currentSlang 守卫，但它读的是
+              // 本次事件闭包里的旧值 —— 上面刚 setCurrentSlang(null) 在这里看不见，
+              // 算好的联想被原地扔掉（词条页打字联想永远不出来）。打字即新搜索，
+              // currentSlang 已在上方清空，这个守卫已无存在意义。
+              setSearchResults(suggestions);
             } else {
               setSearchResults([]);
             }

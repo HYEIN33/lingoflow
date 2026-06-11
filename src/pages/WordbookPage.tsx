@@ -824,7 +824,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                     <button
                       onClick={(e) => { e.stopPropagation(); onSpeak(word.original); }}
                       disabled={loadingAudioText === word.original}
-                      className="w-7 h-7 rounded-[9px] inline-flex items-center justify-center bg-transparent text-[var(--ink-subtle)] hover:text-[var(--blue-accent)] hover:bg-[rgba(91,127,232,0.08)] transition-colors disabled:opacity-50"
+                      className="w-11 h-11 -m-2 rounded-[9px] inline-flex items-center justify-center bg-transparent text-[var(--ink-subtle)] hover:text-[var(--blue-accent)] hover:bg-[rgba(91,127,232,0.08)] transition-colors disabled:opacity-50"
                     >
                       {loadingAudioText === word.original ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -835,7 +835,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                     {!batchMode && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onDeleteWord(word.id); }}
-                        className="w-7 h-7 rounded-[9px] inline-flex items-center justify-center bg-transparent text-[var(--ink-subtle)] hover:text-[var(--red-warn)] hover:bg-[rgba(229,56,43,0.06)] transition-colors"
+                        className="w-11 h-11 -m-2 rounded-[9px] inline-flex items-center justify-center bg-transparent text-[var(--ink-subtle)] hover:text-[var(--red-warn)] hover:bg-[rgba(229,56,43,0.06)] transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>

@@ -41,6 +41,9 @@ import {
   Gauge,
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
+import gsap from 'gsap';
+import { useGSAP } from '@gsap/react';
+import { DUR, EASE_OUT, GSAP_EASE_BACK, prefersReducedMotion } from './lib/motionTokens';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db, signIn, logOut, emailSignUp, emailSignIn, resetPassword } from './firebase';
 import {
@@ -277,10 +280,20 @@ const WordbookPage = lazy(() => import('./pages/WordbookPage'));
 const ClassroomTab = lazy(() => import('./pages/ClassroomTab'));
 const UsagePage = lazy(() => import('./pages/UsagePage'));
 
+// 切 Tab 懒加载时显示"内容的轮廓"骨架而不是转圈 —— 转圈传达"在等"，
+// 骨架传达"马上来"，感知速度差一截。形状对齐各页通用结构：
+// eyebrow 短条 + 两张玻璃卡（标题条 + 两行正文条）。
 function LazyFallback() {
   return (
-    <div className="flex items-center justify-center py-20">
-      <Loader2 className="w-8 h-8 animate-spin text-[#5B7FE8]" />
+    <div className="space-y-4" aria-busy="true" aria-label="loading">
+      <div className="h-3.5 w-28 rounded-md bg-[rgba(10,14,26,0.07)] animate-pulse ml-1" />
+      {[0, 1].map(i => (
+        <div key={i} className="surface !rounded-[18px] p-6 space-y-3">
+          <div className="h-4 rounded-md bg-[rgba(10,14,26,0.08)] animate-pulse w-1/3" />
+          <div className="h-3 rounded-md bg-[rgba(10,14,26,0.06)] animate-pulse w-[82%]" />
+          <div className="h-3 rounded-md bg-[rgba(10,14,26,0.06)] animate-pulse w-[58%]" />
+        </div>
+      ))}
     </div>
   );
 }
@@ -797,7 +810,13 @@ export default function App() {
     } catch (error: any) {
       console.error(error);
       const message = error.message || (uiLang === 'zh' ? '语法检查失败，请重试' : 'Grammar check failed. Please try again.');
-      toast.error(message);
+      // 错误 toast 带「重试」—— 出错后一键恢复，不让用户自己重新操作。
+      toast.error(message, {
+        action: {
+          label: uiLang === 'zh' ? '重试' : 'Retry',
+          onClick: () => { void handleCheckGrammar(); },
+        },
+      });
     } finally {
       setIsCheckingGrammar(false);
     }
@@ -883,6 +902,35 @@ export default function App() {
       default: return { id, label: '', icon: Search };
     }
   });
+
+  // === Tab 栏入场动画（复刻 React Bits Pill Nav 的 Initial Load Animation）===
+  // app 打开 / 登录后，整条液态玻璃 Tab 栏从上方 + 缩小 + 透明，
+  // 用 back.out 回弹弹入归位。为什么动整条 shell 而不是每个 Tab：
+  // 单个 Tab 是 dnd-kit 的 SortableTab，自己管着拖拽 transform，
+  // 直接给它们加 GSAP transform 会和拖拽打架。动外层 shell 容器最安全。
+  // useGSAP 自动在卸载时 revert，零泄漏。
+  gsap.registerPlugin(useGSAP);
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  useGSAP(() => {
+    if (!tabBarRef.current) return;
+    // 系统开了"减少动态"就不播入场（GSAP 不认 MotionConfig，手动守卫）。
+    if (prefersReducedMotion()) return;
+    gsap.from(tabBarRef.current, {
+      y: -28,
+      opacity: 0,
+      scale: 0.92,
+      duration: DUR.hero,
+      ease: GSAP_EASE_BACK,
+    });
+    // 依赖 user：登录后 Tab 栏才挂载，user 变化时重放一次入场。
+  }, { dependencies: [!!user], scope: tabBarRef });
+
+  // 切 Tab 统一回到页面顶部。之前滚到页面中部再切 Tab，新页面从中部
+  // 开始显示很迷惑。瞬时跳转（不用 smooth）—— 平滑滚动会跟切页入场
+  // 动画抢戏，工业级 app（Linear/Notion）切页都是瞬时回顶。
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [activeTab]);
 
   if (!isAuthReady) {
     return (
@@ -1043,7 +1091,7 @@ export default function App() {
             {/* Tab 栏跟内容一起滚动（不 sticky）—— sticky 多次尝试都被
                 用户反馈"盖住组件 / 出白框 / 漂在 logo"，最简单的版本反而
                 最稳：跟着内容滚走，header 在顶部不透明能挡住其他内容。 */}
-            <div translate="no" className="notranslate relative mb-6 sm:mb-8">
+            <div ref={tabBarRef} translate="no" className="notranslate relative mb-6 sm:mb-8">
               {/* Thick liquid-glass shell; active tab elevates on top of it
                   via .glass-pill-active (see src/index.css). The shell is
                   deliberately thinner/lighter than the active pill to push
@@ -1079,7 +1127,7 @@ export default function App() {
               key={activeTab}
               initial={{ opacity: 0, y: 24, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+              transition={{ duration: DUR.emph, ease: EASE_OUT }}
             >
           {activeTab === 'translate' ? (
             <TranslateTab

@@ -340,14 +340,16 @@ async function geminiGenerate(opts: {
         }
       }
 
-      // 400 / 403 / 429 / 503 → try next in chain. For gemini-3-flash-preview
-      // we previously NEVER fell back (to surface transient 503s loud). But
-      // a 404/410 means the model is GONE — falling back is the right move
-      // there regardless. isModelGoneError() distinguishes the two.
+      // 400 / 403 / 429 / 503 → try next in chain. gemini-3-flash-preview
+      // 曾被排除在瞬时错误降级外（测试期为了让 503 暴露得响）——结果就是
+      // 课堂同传高峰期偶发"（翻译失败，稍后重试）"占位符。2026-06-11 起
+      // 改为全模型降级：2.5-flash 的翻译质量 4/5 略低于 preview 的 5/5，
+      // 但真翻译永远好过失败占位符。降级有 model_fallback breadcrumb 记录，
+      // Sentry 可见性不丢。404/410（模型下线）照旧必降。
       const statusNum = Number(status);
       const isGone = isModelGoneError(statusNum, msg);
       const isTransient = [400, 403, 429, 503].includes(statusNum);
-      const shouldFallback = isGone || (isTransient && models[0] !== 'gemini-3-flash-preview');
+      const shouldFallback = isGone || isTransient;
       if (shouldFallback && i < models.length - 1) {
         console.warn(`${models[i]} failed (${status}: ${msg.substring(0, 60)}), falling back to ${models[i + 1]}`);
         aiBreadcrumb('generate.model_fallback', { from: models[i], to: models[i + 1], status: String(status), reason: isGone ? 'gone' : 'transient' });

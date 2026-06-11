@@ -189,7 +189,14 @@ export function useTranslation({
       } else {
         message = uiLang === 'zh' ? '翻译失败，请重试' : 'Translation failed. Please try again.';
       }
-      toast.error(message);
+      // 错误 toast 带「重试」按钮 —— "AI 服务繁忙"这类临时故障一键重发，
+      // 不让用户自己重新点翻译。带上本次的原文重调，避免输入框已被改动。
+      toast.error(message, {
+        action: {
+          label: uiLang === 'zh' ? '重试' : 'Retry',
+          onClick: () => { void handleTranslate(undefined, textToTranslate); },
+        },
+      });
     } finally {
       setIsTranslating(false);
       inFlightRef.current = false;

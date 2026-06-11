@@ -32,6 +32,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { DUR, EASE_OUT } from '../lib/motionTokens';
 import { TranslationResult, SlangExplanationResult, FormalityTier, tierFromLevel, pickTierText, TtsLang } from '../services/ai';
 import { cn } from '../lib/utils';
 
@@ -559,7 +560,7 @@ export default function TranslateTab({
                   <motion.div
                     initial={{ opacity: 0, y: 16 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: 0, ease: [0.22, 1, 0.36, 1] }}
+                    transition={{ duration: DUR.emph, delay: 0, ease: EASE_OUT }}
                     className="rounded-[18px] p-4 sm:p-6 bg-white border border-[var(--ink)] relative overflow-hidden">
                     <h3 className="font-mono-meta text-[10px] font-bold text-[var(--ink-muted)] uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
                       {uiLang === 'zh' ? '标准翻译 · Standard' : 'Standard Translation'}
@@ -600,7 +601,7 @@ export default function TranslateTab({
                 <motion.div
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: 0.1, ease: [0.22, 1, 0.36, 1] }}
+                  transition={{ duration: DUR.emph, delay: 0.1, ease: EASE_OUT }}
                   className={cn("grid grid-cols-1 gap-4 mt-4", !isSentence && "lg:grid-cols-2")}>
                   {/* Authentic Column — 对齐 grammar.html 原型 .corrected-box：蓝渐变底 + 蓝边 */}
                   {translationResult.authenticTranslation && (
@@ -900,7 +901,7 @@ export default function TranslateTab({
                               key={i}
                               initial={{ opacity: 0, y: 12 }}
                               animate={{ opacity: 1, y: 0 }}
-                              transition={{ duration: 0.35, delay: 0.15 + i * 0.06, ease: [0.22, 1, 0.36, 1] }}
+                              transition={{ duration: DUR.emph, delay: 0.15 + i * 0.06, ease: EASE_OUT }}
                               className="bg-white p-6 rounded-2xl border border-gray-100 space-y-3 group/ex hover:border-[rgba(91,127,232,0.4)] transition-colors overflow-hidden">
                               <div className="flex items-start justify-between gap-4">
                                 <div className="flex gap-4 min-w-0 flex-1">

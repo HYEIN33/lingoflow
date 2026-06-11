@@ -4,6 +4,8 @@ import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
+import BlurText from '../components/reactbits/BlurText/BlurText';
+import { prefersReducedMotion } from '../lib/motionTokens';
 import { cn } from '../lib/utils';
 import { Language, translations } from '../i18n';
 import { SavedWord, UserProfile } from '../App';
@@ -66,6 +68,9 @@ export default function ReviewPage(props: ReviewPageProps) {
     flipRef.current = contextSafe((toBack: boolean) => {
       const el = cardRef.current;
       if (!el) return;
+      // 系统开了"减少动态"就不翻转（GSAP 不认 MotionConfig，手动守卫）；
+      // 内容切换由 React 状态驱动，照常生效。
+      if (prefersReducedMotion()) return;
       // 半程翻转：先翻到 -90°（侧棱朝前、内容看不见）→ React 已经
       // 切好了正/反面内容 → 再从 90° 翻回 0°。中点用 onComplete 不需要，
       // 因为 React 的 showReviewAnswer 状态切换驱动内容替换，这里只演翻转。
@@ -81,6 +86,51 @@ export default function ReviewPage(props: ReviewPageProps) {
     flipRef.current?.(toBack);
     setShowReviewAnswer(toBack);
   };
+
+  // 答题（质量按钮和键盘快捷键共用）：记录 SM-2 质量分 → 翻回正面 →
+  // 推进到下一张。从质量按钮的 onClick 里抽出来，避免两处逻辑漂移。
+  const answerQuality = (q: number) => {
+    if (!currentReviewWord) return;
+    onReview(currentReviewWord.id, q);
+    triggerFlip(false);
+    setReviewedCount(c => c + 1);
+    setAiHint(null);
+    if (reviewIndex < dueWords.length - 1) {
+      onSetReviewIndex(reviewIndex + 1);
+    } else {
+      onSetReviewIndex(0);
+    }
+  };
+
+  // 键盘快捷键：质量按钮角上一直印着 1/2/3/4 数字角标，但之前并没有
+  // 真的绑键 —— 是个"承诺了没兑现"的 UI。现在兑现：
+  //   空格/回车 = 翻看答案；数字 1-4 = 四档质量（完全忘了/努力想起/顺利/容易）。
+  // 输入框聚焦时（AI 聊天）不拦截，避免打字误触。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (!currentReviewWord) return;
+      if (!showReviewAnswer) {
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          triggerFlip(true);
+        }
+        return;
+      }
+      const qualityByKey: Record<string, number> = { '1': 1, '2': 3, '3': 4, '4': 5 };
+      const q = qualityByKey[e.key];
+      if (q) {
+        e.preventDefault();
+        answerQuality(q);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // answerQuality/triggerFlip 每次渲染都是新引用；依赖列出它们用到的
+    // 状态键即可 —— 这些变了 effect 重建，闭包永远是新鲜的。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showReviewAnswer, currentReviewWord?.id, reviewIndex, dueWords.length]);
 
   // 明天到期数 — savedWords 没传就跳过
   const tomorrowCount = (() => {
@@ -323,8 +373,29 @@ export default function ReviewPage(props: ReviewPageProps) {
                             <div className="font-mono-meta text-[9.5px] font-bold tracking-[0.15em] uppercase text-[var(--blue-accent)] mb-1">
                               {uiLang === 'zh' ? usage.labelZh : usage.label}
                             </div>
-                            <p className="font-zh-serif text-[14px] text-[var(--ink)] font-medium m-0 mb-1">{usage.meaning}</p>
-                            <p className="font-zh-serif text-[14px] text-[var(--blue-accent)] font-semibold m-0 mb-1.5">{usage.meaningZh}</p>
+                            {/* Blur Text 入场：释义从模糊→清晰逐词浮现。
+                                key 绑定 卡片id + 用法idx + 翻答案状态 ——
+                                切下一张卡（id 变）或重新翻看答案时强制重挂载、
+                                重播模糊显影，契合"记忆显影"的复习仪式感。
+                                英文按词 / 中文按字，节奏更自然。 */}
+                            <BlurText
+                              key={`en-${currentReviewWord.id}-${idx}`}
+                              text={usage.meaning || ''}
+                              animateBy="words"
+                              direction="top"
+                              delay={60}
+                              stepDuration={0.3}
+                              className="font-zh-serif text-[14px] text-[var(--ink)] font-medium m-0 mb-1"
+                            />
+                            <BlurText
+                              key={`zh-${currentReviewWord.id}-${idx}`}
+                              text={usage.meaningZh || ''}
+                              animateBy="letters"
+                              direction="top"
+                              delay={28}
+                              stepDuration={0.3}
+                              className="font-zh-serif text-[14px] text-[var(--blue-accent)] font-semibold m-0 mb-1.5"
+                            />
                             {usage.examples && usage.examples.length > 0 && (
                               <p className="font-display italic text-[12.5px] text-[var(--ink-muted)] m-0">"{usage.examples[0].sentence}"</p>
                             )}
@@ -388,17 +459,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                       ].map((btn, i) => (
                         <button
                           key={btn.q}
-                          onClick={() => {
-                            onReview(currentReviewWord.id, btn.q);
-                            triggerFlip(false);
-                            setReviewedCount(c => c + 1);
-                            setAiHint(null);
-                            if (reviewIndex < dueWords.length - 1) {
-                              onSetReviewIndex(reviewIndex + 1);
-                            } else {
-                              onSetReviewIndex(0);
-                            }
-                          }}
+                          onClick={() => answerQuality(btn.q)}
                           className="relative overflow-hidden rounded-[18px] p-[18px_14px_16px] border-2 cursor-pointer flex flex-col items-center gap-1 transition-[transform,box-shadow,filter] duration-150 hover:-translate-y-0.5 hover:brightness-105"
                           style={{ background: btn.bg, borderColor: btn.bc, color: btn.tc, boxShadow: '0 4px 14px rgba(10,14,26,0.06)' }}
                         >
