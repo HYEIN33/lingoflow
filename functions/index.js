@@ -1679,6 +1679,108 @@ exports.scanDataIssues = onCall({ cors: false, timeoutSeconds: 120 }, async (req
   }
 });
 
+// ============================================================
+// getClassroomStats — Admin 课堂数据指标聚合（callable, admin only）
+//
+// 为什么用云函数而不是前端直查：classSessions 规则只允许 owner 读自己的
+// 会话，前端无法跨用户聚合。Admin SDK 绕过规则全集合扫描，再把指标算好回传。
+//
+// 为什么在内存里算而不是用聚合查询：Firestore 没有原生 distinct（去重 uid）、
+// 没有 avg。只能把会话文档拉下来在内存里遍历。为防止全表扫爆（会话只增不减），
+// 设最近 SCAN_LIMIT 条上限（按 createdAt 倒序），超过则 truncated=true 标注
+// "这是近 N 条的样本，不是全量"。
+// ============================================================
+const CLASSROOM_SCAN_LIMIT = 1000;
+
+exports.getClassroomStats = onCall({ cors: false, timeoutSeconds: 120 }, async (request) => {
+  await assertAdmin(request);
+  const db = firestoreDb();
+  try {
+    // 先看集合总量，决定要不要标 truncated。count() 是服务端聚合，不拉文档，便宜。
+    let totalInCollection = null;
+    try {
+      const countSnap = await db.collection('classSessions').count().get();
+      totalInCollection = countSnap.data().count;
+    } catch (e) {
+      // count() 失败不致命 —— 继续用样本算，只是 truncated 判定降级。
+      console.warn('getClassroomStats count() failed, falling back:', e.message);
+    }
+
+    // 拉最近 CLASSROOM_SCAN_LIMIT 条。createdAt 可能缺失（早期会话只有
+    // startedAt），orderBy('createdAt') 会漏掉缺字段的文档，所以这里不加
+    // orderBy 而是直接 limit 扫一批样本——指标是近似值，可接受。
+    const snap = await db.collection('classSessions').limit(CLASSROOM_SCAN_LIMIT).get();
+    const scanned = snap.size;
+    const truncated = totalInCollection !== null
+      ? totalInCollection > CLASSROOM_SCAN_LIMIT
+      : scanned >= CLASSROOM_SCAN_LIMIT;
+
+    const uids = new Set();
+    const modeCounts = { tutorial: 0, lecture: 0, other: 0 };
+    let durationSum = 0;
+    let durationCount = 0;          // 只对带 durationSec 的会话求平均
+    let ratioSum = 0;
+    let ratioCount = 0;             // 只对带 emptyFinalRatio 的会话求平均
+    let degradedCount = 0;          // emptyFinalRatio > 0.2 的会话数
+    let withStatsCount = 0;         // 带 ASR 质量字段（落库后的新会话）的会话数
+
+    snap.forEach((doc) => {
+      const d = doc.data() || {};
+      if (d.uid) uids.add(d.uid);
+
+      if (d.mode === 'tutorial' || d.mode === 'lecture') modeCounts[d.mode] += 1;
+      else modeCounts.other += 1;
+
+      if (typeof d.durationSec === 'number' && isFinite(d.durationSec)) {
+        durationSum += d.durationSec;
+        durationCount += 1;
+      }
+      if (typeof d.emptyFinalRatio === 'number' && isFinite(d.emptyFinalRatio)) {
+        withStatsCount += 1;
+        ratioSum += d.emptyFinalRatio;
+        ratioCount += 1;
+        if (d.emptyFinalRatio > 0.2) degradedCount += 1;
+      }
+    });
+
+    const result = {
+      // 总量：truncated 时 totalSessions = 集合真实总数，scannedSessions =
+      // 实际拉下来算的样本数；前端据此提示"基于近 N 条"。
+      totalSessions: totalInCollection !== null ? totalInCollection : scanned,
+      scannedSessions: scanned,
+      truncated,
+      // distinct uid（仅样本内）
+      uniqueUsers: uids.size,
+      // 平均时长（秒），只对带 durationSec 的会话；没有则 null
+      avgDurationSec: durationCount > 0 ? Math.round(durationSum / durationCount) : null,
+      // mode 分布
+      modeBreakdown: modeCounts,
+      // ASR 质量：带质量字段的会话数 + 退化占比 + 平均 emptyFinalRatio
+      sessionsWithStats: withStatsCount,
+      degradedSessions: degradedCount,
+      // 退化占比分母用 withStatsCount（老会话没有质量字段，不该拉低占比）
+      degradedRatio: withStatsCount > 0 ? Number((degradedCount / withStatsCount).toFixed(3)) : null,
+      avgEmptyFinalRatio: ratioCount > 0 ? Number((ratioSum / ratioCount).toFixed(3)) : null,
+    };
+
+    // 留痕：谁在什么时刻看了课堂指标面板。
+    await db.collection(AUDIT_COLLECTION).add({
+      action: 'get_classroom_stats',
+      totalSessions: result.totalSessions,
+      scannedSessions: result.scannedSessions,
+      truncated: result.truncated,
+      adminUid: request.auth.uid,
+      at: FieldValue.serverTimestamp(),
+    });
+
+    return result;
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    console.error('getClassroomStats failed:', e);
+    throw new HttpsError('internal', e.message || 'classroom stats failed');
+  }
+});
+
 // 四个修复 worker — 返回 { processed, failed[] }。单条失败不中断整批，
 // 原因塞到 failed 里回传前端。
 

@@ -85,7 +85,43 @@ export interface LiveSessionCallbacks {
    * "翻译中…" chip while at least one is pending.
    */
   onTranslationPending?: (pending: boolean, key: string) => void;
+  /**
+   * Fired once, inside stop(), with the end-of-session ASR quality stats
+   * the session already computed for Sentry. The UI uses this to persist
+   * the metrics alongside the transcript in `classSessions` so the admin
+   * dashboard can aggregate them. Same numbers that go to liveWarn /
+   * liveBreadcrumb — no extra computation. Best-effort: if stop() tears
+   * down before this fires the session just isn't tagged with stats.
+   *
+   * slowTailCount (gemini-3.5-flash 慢尾保险触发次数) is intentionally
+   * absent: that fallback lives in ai.ts, not this session, so liveSession
+   * has no way to count it. Only ASR-quality fields are reported here.
+   */
+  onSessionStats?: (stats: LiveSessionStats) => void;
 }
+
+/**
+ * End-of-session ASR quality snapshot. Computed in stop() and reported via
+ * both Sentry (liveWarn / liveBreadcrumb) and onSessionStats (for Firestore
+ * persistence + the admin dashboard).
+ */
+// Index signature so the same object can be passed straight to liveWarn /
+// liveBreadcrumb (which take Record<string, unknown>) without a cast. All
+// known fields are number — the extra `[k: string]` is a structural escape
+// hatch only, callers should rely on the named fields below.
+export type LiveSessionStats = {
+  /** Wall-clock session length in seconds. */
+  durationSec: number;
+  /** Total Deepgram is_final events seen this session. */
+  finalEventCount: number;
+  /** How many of those finals arrived with empty text (吞字 signal). */
+  emptyFinalCount: number;
+  /** emptyFinalCount / finalEventCount, rounded to 3 decimals (0 if no finals). */
+  emptyFinalRatio: number;
+  /** How many empty-final gaps we recovered by re-committing the last interim. */
+  rescuedCount: number;
+  [k: string]: number;
+};
 
 export interface LiveSessionOptions {
   audioSource: 'tab' | 'mic';
@@ -1280,7 +1316,7 @@ ${englishParagraph}`;
       // captures an event.
       const durationSec = Math.round((Date.now() - sessionStartedAt) / 1000);
       const ratio = finalEventCount > 0 ? emptyFinalCount / finalEventCount : 0;
-      const stats = {
+      const stats: LiveSessionStats = {
         durationSec,
         finalEventCount,
         emptyFinalCount,
@@ -1293,6 +1329,9 @@ ${englishParagraph}`;
       } else {
         liveBreadcrumb('session ended', stats);
       }
+      // Hand the same stats to the UI so it can persist them with the
+      // transcript. Best-effort — never let a callback error abort teardown.
+      try { cb.onSessionStats?.(stats); } catch { /* nothing */ }
       clearInterval(keepAliveTimer);
       clearInterval(healthTimer);
       document.removeEventListener('visibilitychange', visibilityHandler);

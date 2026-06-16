@@ -60,7 +60,7 @@ type ReportDoc = {
   createdAt?: Timestamp;
 };
 
-type Tab = 'pending' | 'reported' | 'browse' | 'import' | 'export' | 'repair';
+type Tab = 'pending' | 'reported' | 'browse' | 'import' | 'export' | 'repair' | 'classroom';
 
 interface Stats {
   total: number | null;
@@ -132,6 +132,22 @@ const repairIssuesFn = httpsCallable<
   { action: RepairAction; ids?: string[]; groups?: Array<{ term: string; docIds: string[] }> },
   RepairResult
 >(fns, 'repairDataIssues');
+
+// 课堂数据指标 —— getClassroomStats 返回的聚合结果。字段含义见
+// functions/index.js 的 getClassroomStats。可空字段表示样本里没有可算的数据。
+type ClassroomStats = {
+  totalSessions: number;          // 集合真实总数（count() 拿到）
+  scannedSessions: number;        // 实际拉下来算的样本数（<= 扫描上限）
+  truncated: boolean;             // 总量 > 上限，指标基于近 N 条样本
+  uniqueUsers: number;            // 样本内 distinct uid
+  avgDurationSec: number | null;  // 平均时长（秒），无带时长的会话则 null
+  modeBreakdown: { tutorial: number; lecture: number; other: number };
+  sessionsWithStats: number;      // 带 ASR 质量字段的会话数（落库后新会话）
+  degradedSessions: number;       // emptyFinalRatio > 0.2 的会话数
+  degradedRatio: number | null;   // degradedSessions / sessionsWithStats
+  avgEmptyFinalRatio: number | null;
+};
+const classroomStatsFn = httpsCallable<Record<string, never>, ClassroomStats>(fns, 'getClassroomStats');
 
 function aiBand(score: number | undefined): 'hi' | 'mid' | 'low' | null {
   if (typeof score !== 'number') return null;
@@ -689,6 +705,7 @@ export default function AdminPanel({ uiLang, onExit }: Props) {
           <TabBtn on={tab === 'import'} onClick={() => setTab('import')} label={T('导入', 'Import')} />
           <TabBtn on={tab === 'export'} onClick={() => setTab('export')} label={T('导出', 'Export')} />
           <TabBtn on={tab === 'repair'} onClick={() => setTab('repair')} label={T('修复数据', 'Repair')} />
+          <TabBtn on={tab === 'classroom'} onClick={() => setTab('classroom')} label={T('课堂', 'Classroom')} />
         </div>
 
         {tab === 'pending' && (
@@ -961,6 +978,8 @@ export default function AdminPanel({ uiLang, onExit }: Props) {
         {tab === 'export' && <ExportTab uiLang={uiLang} />}
 
         {tab === 'repair' && <RepairTab uiLang={uiLang} />}
+
+        {tab === 'classroom' && <ClassroomStatsTab uiLang={uiLang} />}
       </div>
 
       {/* 作者历史弹窗 */}
@@ -1648,6 +1667,173 @@ function ExportTab({ uiLang }: { uiLang: Language }) {
 //   - missing author：meaning.authorId 为空 → 删除（无主信息）
 //   - missing qualityScore：meaning 没有 qualityScore → 回填 70（默认及格）
 // ──────────────────────────────────────────────────────────────────────
+
+// ──────────────────────────────────────────────────────────────────────
+// 课堂数据指标 Tab — 调 getClassroomStats（admin only, Admin SDK 跨用户聚合）
+// 展示：总会话/独立用户/平均时长/mode 分布/ASR 质量退化占比。
+// 三态都处理：加载中（spinner）、出错（红框 + 重试）、空数据（提示文案）。
+// ──────────────────────────────────────────────────────────────────────
+function ClassroomStatsTab({ uiLang }: { uiLang: Language }) {
+  const T = (zh: string, en: string) => (uiLang === 'zh' ? zh : en);
+  const [stats, setStats] = useState<ClassroomStats | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const res = await classroomStatsFn({} as Record<string, never>);
+      setStats(res.data);
+    } catch (e) {
+      console.error('getClassroomStats failed:', e);
+      Sentry.captureException(e, { tags: { component: 'AdminPanel', op: 'getClassroomStats' } });
+      setError(true);
+      toast.error(T('加载课堂指标失败，稍后重试', 'Failed to load classroom stats'));
+    } finally {
+      setLoading(false);
+    }
+  }, [T]);
+
+  // 进 Tab 自动拉一次。
+  useEffect(() => {
+    void load();
+    // 只在挂载时跑一次；load 的依赖只有 T（uiLang 切换不需要重拉数据）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 平均时长格式化：>= 60s 显示 "Xm Ys"，否则 "Xs"。
+  const fmtDuration = (sec: number | null): string => {
+    if (sec === null) return '—';
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  };
+
+  const isEmpty = stats !== null && stats.totalSessions === 0;
+
+  return (
+    <div className="surface !rounded-[18px] p-6 md:p-8">
+      <div className="flex items-center gap-3 flex-wrap mb-5">
+        <h3 className="font-display font-semibold text-[20px] mr-auto" style={{ color: 'var(--ink)' }}>
+          {T('课堂数据指标', 'Classroom metrics')}
+        </h3>
+        {stats && stats.truncated && (
+          <span className="text-[12px]" style={{ color: 'var(--ink-muted)' }}>
+            {T(
+              `基于近 ${stats.scannedSessions.toLocaleString()} 条样本`,
+              `Based on the latest ${stats.scannedSessions.toLocaleString()} sessions`
+            )}
+          </span>
+        )}
+        <button
+          onClick={() => void load()}
+          disabled={loading}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold disabled:opacity-50"
+          style={{ background: 'var(--ink)', color: 'white' }}
+        >
+          {loading
+            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            : <RefreshCw className="w-3.5 h-3.5" />}
+          {T('刷新', 'Refresh')}
+        </button>
+      </div>
+
+      {/* 加载中（首次，还没有数据时才铺满；有数据刷新时按钮自带 spinner） */}
+      {loading && !stats && (
+        <div className="flex items-center justify-center py-16" style={{ color: 'var(--ink-muted)' }}>
+          <Loader2 className="w-5 h-5 animate-spin mr-2" />
+          {T('加载中…', 'Loading…')}
+        </div>
+      )}
+
+      {/* 出错态：红框 + 重试 */}
+      {error && !loading && (
+        <div
+          className="flex items-center gap-3 p-4 rounded-xl"
+          style={{ border: '1px solid rgba(229,56,43,0.25)', background: 'rgba(229,56,43,0.06)' }}
+        >
+          <AlertTriangle className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--red-warn)' }} />
+          <span className="text-[13px] mr-auto" style={{ color: 'var(--ink-body)' }}>
+            {T('加载失败，请重试', 'Could not load metrics')}
+          </span>
+          <button
+            onClick={() => void load()}
+            className="px-3 py-1.5 rounded-lg text-[12px] font-semibold"
+            style={{ background: 'var(--red-warn)', color: 'white' }}
+          >
+            {T('重试', 'Retry')}
+          </button>
+        </div>
+      )}
+
+      {/* 空数据态 */}
+      {!loading && !error && isEmpty && (
+        <div className="py-16 text-center" style={{ color: 'var(--ink-muted)' }}>
+          <div className="text-[14px]">{T('还没有课堂会话数据', 'No classroom sessions yet')}</div>
+        </div>
+      )}
+
+      {/* 有数据 */}
+      {!loading && !error && stats && !isEmpty && (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+            <StatCell label={T('总会话', 'SESSIONS')} value={stats.totalSessions} />
+            <StatCell label={T('独立用户', 'USERS')} value={stats.uniqueUsers} />
+            {/* 平均时长不是纯数字，用一个轻量卡片自己渲染 */}
+            <div className="p-4 bg-white rounded-xl" style={{ border: '1px solid var(--ink-hairline)' }}>
+              <div className="font-mono text-[10.5px] font-bold mb-1.5" style={{ color: 'var(--ink-muted)', letterSpacing: '0.18em' }}>
+                — {T('平均时长', 'AVG DURATION')}
+              </div>
+              <div className="font-black text-[28px] leading-none tracking-tight" style={{ color: 'var(--ink)', fontFamily: '"Clash Display", system-ui, sans-serif' }}>
+                {fmtDuration(stats.avgDurationSec)}
+              </div>
+            </div>
+            <StatCell
+              label={T('退化会话占比', 'DEGRADED')}
+              value={stats.degradedRatio === null ? null : Math.round(stats.degradedRatio * 100)}
+              accent="var(--red-warn)"
+              numColor={stats.degradedRatio !== null && stats.degradedRatio > 0.2 ? 'var(--red-warn)' : undefined}
+            />
+          </div>
+
+          {/* mode 分布 */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
+            <StatCell label={T('1对1辅导', 'TUTORIAL')} value={stats.modeBreakdown.tutorial} />
+            <StatCell label={T('大课讲座', 'LECTURE')} value={stats.modeBreakdown.lecture} />
+            {stats.modeBreakdown.other > 0 && (
+              <StatCell label={T('其他/未知', 'OTHER')} value={stats.modeBreakdown.other} />
+            )}
+          </div>
+
+          {/* ASR 质量明细 */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <StatCell label={T('带质量数据', 'WITH STATS')} value={stats.sessionsWithStats} />
+            <StatCell label={T('退化会话', 'DEGRADED N')} value={stats.degradedSessions} accent="var(--red-warn)" />
+            {/* 平均吞字率：百分比，自渲染 */}
+            <div className="p-4 bg-white rounded-xl" style={{ border: '1px solid var(--ink-hairline)' }}>
+              <div className="font-mono text-[10.5px] font-bold mb-1.5" style={{ color: 'var(--ink-muted)', letterSpacing: '0.18em' }}>
+                — {T('平均吞字率', 'AVG EMPTY-FINAL')}
+              </div>
+              <div className="font-black text-[28px] leading-none tracking-tight" style={{ color: 'var(--ink)', fontFamily: '"Clash Display", system-ui, sans-serif' }}>
+                {stats.avgEmptyFinalRatio === null ? '—' : `${(stats.avgEmptyFinalRatio * 100).toFixed(1)}%`}
+              </div>
+            </div>
+          </div>
+
+          {/* 口径说明 —— 让管理员知道质量指标只覆盖落库后的新会话 */}
+          <p className="mt-5 text-[12px] leading-relaxed" style={{ color: 'var(--ink-muted)' }}>
+            {T(
+              `退化会话 = 单次 emptyFinalRatio（吞字率）> 20% 的会话。占比与平均吞字率仅统计「带质量数据」的会话（${stats.sessionsWithStats.toLocaleString()} 条）；更早的会话没有记录质量字段，不计入分母。`,
+              `Degraded = sessions whose single-session empty-final ratio exceeds 20%. The ratio and average only cover sessions with recorded stats (${stats.sessionsWithStats.toLocaleString()}); older sessions have no quality fields and are excluded from the denominator.`
+            )}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
 
 function RepairTab({ uiLang }: { uiLang: Language }) {
   const T = (zh: string, en: string) => (uiLang === 'zh' ? zh : en);

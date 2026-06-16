@@ -26,7 +26,7 @@
  *     keep the session open for a full tutorial AND engage the chat? If
  *     yes → 3-4 week real MVP. If no → product direction was wrong.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as Sentry from '@sentry/react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -47,9 +47,15 @@ import {
 } from 'lucide-react';
 import { addDoc, collection, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { startLiveSession, LiveSessionHandle } from '../services/liveSession';
+import { startLiveSession, LiveSessionHandle, LiveSessionStats } from '../services/liveSession';
 import ClassNotesModal from '../components/ClassNotesModal';
 import LiveNotesPanel from '../components/LiveNotesPanel';
+import CourseSlides, { type CourseSlide } from '../components/CourseSlides';
+import {
+  FloatingSubtitleButton,
+  useFloatingSubtitle,
+  pickLatestSubtitles,
+} from '../components/FloatingSubtitle';
 import { generateLiveNotes, type LiveNotes } from '../services/ai';
 import { aiChat, translateSimple } from '../services/ai';
 import { cn } from '../lib/utils';
@@ -283,6 +289,18 @@ export default function ClassroomTab({
   });
   const [courseExpanded, setCourseExpanded] = useState(false);
 
+  // 课件导入（2026-06-16）。课件可能在「上课前 / 上课中」就导入，但会话
+  // 文档 classSessions 要到 handleStop 才写入；所以上传产物先存为本地
+  // state（courseSlides），handleStop 时再随会话一起写进 courseSlides 字段。
+  // slideSessionId 是这次组件挂载期间稳定的临时 id，用作 Storage 路径
+  // /classSlides/{uid}/{slideSessionId}/ —— 跟最终的 classSessions 文档 id
+  // 解耦（文档 id 是 addDoc 自动生成的，上传时还拿不到）。用 ref 保证整个
+  // 生命周期不变，不会因重渲染换路径。
+  const slideSessionIdRef = useRef<string>(
+    `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  );
+  const [courseSlides, setCourseSlides] = useState<CourseSlide[]>([]);
+
   // UI state for startup friction + live focus:
   //   - `isConfigExpanded`: full config card vs. one-line summary. Starts
   //     true (idle) so new users see the options; auto-collapses when the
@@ -308,8 +326,15 @@ export default function ClassroomTab({
   // enough new transcript has accumulated, so we don't hammer gemini-
   // 3-pro on a quiet room. The refs track "last run wall clock" and
   // "last transcript length" to make that decision cheap.
-  const LIVE_NOTES_MIN_INTERVAL_MS = 45000;
-  const LIVE_NOTES_MIN_NEW_CHARS = 200;
+  //
+  // 2026-06-16 调参 45s→25s / 200→120：让笔记滚动成形更快、更接近"实时"。
+  // 没有更激进的原因：gemini-3-pro 单次调用慢（一大段转写要 20-40s）且
+  // 有 token 成本，课堂代理还套了限流桶；25s + 120 字是"足够实时但不会
+  // 在安静的房间空转、也不会撞限流"的平衡点。两个门槛是 AND 关系
+  // （间隔够 && 新内容够），所以低门槛只在老师持续讲课时才会触发更频繁，
+  // 短暂停顿不会浪费调用。
+  const LIVE_NOTES_MIN_INTERVAL_MS = 25000;
+  const LIVE_NOTES_MIN_NEW_CHARS = 120;
   const [liveNotes, setLiveNotes] = useState<LiveNotes | null>(null);
   const [liveNotesLoading, setLiveNotesLoading] = useState(false);
   // `notesLastUpdatedAt` is the wall-clock ms at which the panel last
@@ -361,6 +386,10 @@ export default function ClassroomTab({
   // onStatusChange handler to ignore stop()'s tail 'stopped' event so
   // the red error banner doesn't get overwritten with "Stopped".
   const cleanupAfterErrorRef = useRef(false);
+  // Stashed by liveSession's onSessionStats (fires inside stop()) so handleStop
+  // can persist the ASR quality metrics alongside the transcript. Cleared after
+  // each write so a session without stats doesn't inherit the previous one's.
+  const sessionStatsRef = useRef<LiveSessionStats | null>(null);
   const itemCounter = useRef(0);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
@@ -872,10 +901,15 @@ ${englishParagraph}`;
    *
    * Write failures surface as a toast AND a Sentry event — silent fails
    * would make the button look broken.
+   *
+   * `edited` is the panel's effective notes (manual edits when present,
+   * else the AI version). We persist that so what the user saves matches
+   * what they see; fall back to `liveNotes` if the panel passed nothing.
    */
-  const handleSaveLiveNotesToClassNotes = async () => {
+  const handleSaveLiveNotesToClassNotes = async (edited?: LiveNotes) => {
     const zh = uiLang === 'zh';
-    if (!liveNotes) {
+    const notesToSave = edited ?? liveNotes;
+    if (!notesToSave) {
       toast.error(zh ? '还没有可保存的笔记' : 'No notes to save yet');
       return;
     }
@@ -900,9 +934,9 @@ ${englishParagraph}`;
     try {
       await addDoc(collection(db, 'classNotes'), {
         uid: user.uid,
-        title: liveNotes.title ?? '',
-        overview: liveNotes.overview ?? [],
-        keyPoints: liveNotes.keyPoints ?? [],
+        title: notesToSave.title ?? '',
+        overview: notesToSave.overview ?? [],
+        keyPoints: notesToSave.keyPoints ?? [],
         course: courseLabel ?? null,
         mode: translationMode,
         savedAt: serverTimestamp(),
@@ -925,9 +959,10 @@ ${englishParagraph}`;
    * meaningful) then trigger window.print. The toast tells the user
    * what to do in the print dialog.
    */
-  const handleExportLiveNotesPdf = async () => {
+  const handleExportLiveNotesPdf = async (edited?: LiveNotes) => {
     const zh = uiLang === 'zh';
-    if (!liveNotes) {
+    const notesToExport = edited ?? liveNotes;
+    if (!notesToExport) {
       toast.error(zh ? '还没有可导出的笔记' : 'No notes to export yet');
       return;
     }
@@ -942,7 +977,7 @@ ${englishParagraph}`;
       // Title
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(18);
-      const title = liveNotes.title || (zh ? 'MemeFlow 实时笔记' : 'MemeFlow Live Notes');
+      const title = notesToExport.title || (zh ? 'MemeFlow 实时笔记' : 'MemeFlow Live Notes');
       doc.text(title, margin, y);
       y += 28;
 
@@ -977,15 +1012,15 @@ ${englishParagraph}`;
         y += 10;
       };
 
-      writeSection(zh ? '概述 Overview' : 'Overview', liveNotes.overview || []);
-      writeSection(zh ? '重点 Key Points' : 'Key Points', liveNotes.keyPoints || []);
+      writeSection(zh ? '概述 Overview' : 'Overview', notesToExport.overview || []);
+      writeSection(zh ? '重点 Key Points' : 'Key Points', notesToExport.keyPoints || []);
 
       // Footer
       doc.setFontSize(9);
       doc.setTextColor(150);
       doc.text('Generated by MemeFlow · memeflow.cn', margin, 820);
 
-      const safeTitle = (liveNotes.title || 'memeflow-notes')
+      const safeTitle = (notesToExport.title || 'memeflow-notes')
         .replace(/[^a-z0-9\u4e00-\u9fa5\s-]/gi, '')
         .slice(0, 48)
         .trim();
@@ -1082,6 +1117,9 @@ ${englishParagraph}`;
               return next;
             });
           },
+          // Stash the ASR quality stats stop() computes so handleStop can
+          // persist them with the transcript (see classSessions write below).
+          onSessionStats: (stats) => { sessionStatsRef.current = stats; },
         }
       );
       sessionRef.current = handle;
@@ -1142,6 +1180,11 @@ ${englishParagraph}`;
     // the live subtitles on screen.
     const user = auth.currentUser;
     if (user && transcript.trim().length > 0) {
+      // onSessionStats fired inside handle.stop() above (already awaited), so
+      // these are populated by now. Spread only when present so an early
+      // teardown (no stats) still writes a valid doc — admin aggregation
+      // treats missing fields as "untagged" rather than crashing.
+      const stats = sessionStatsRef.current;
       try {
         await addDoc(collection(db, 'classSessions'), {
           uid: user.uid,
@@ -1151,13 +1194,28 @@ ${englishParagraph}`;
           endedAt: Timestamp.now(),
           transcript,
           createdAt: serverTimestamp(),
+          // 课件导入（2026-06-16）：把本次会话期间上传的课件一并写进会话
+          // 文档，方便日后在笔记/会话详情里回看。courseSlides 里的 uploadedAt
+          // 是 epoch ms（number），Firestore 直接存数字即可，不必转 Timestamp。
+          ...(courseSlides.length > 0 && { courseSlides }),
+          ...(stats && {
+            durationSec: stats.durationSec,
+            finalEventCount: stats.finalEventCount,
+            emptyFinalCount: stats.emptyFinalCount,
+            emptyFinalRatio: stats.emptyFinalRatio,
+            rescuedCount: stats.rescuedCount,
+          }),
         });
         toast.success(uiLang === 'zh' ? '笔记已保存' : 'Notes saved');
       } catch (e: any) {
         console.warn('Save class session failed:', e);
         Sentry.captureException(e, { tags: { component: 'ClassroomTab', op: 'firestore.write', collection: 'classSessions' } });
         toast.error(uiLang === 'zh' ? '保存笔记失败' : 'Could not save notes');
+      } finally {
+        sessionStatsRef.current = null;
       }
+    } else {
+      sessionStatsRef.current = null;
     }
   };
 
@@ -1228,6 +1286,12 @@ ${englishParagraph}`;
 
   const isLive = status === 'live';
   const isBusy = status === 'connecting' || status === 'requesting-token';
+
+  // 悬浮字幕窗（Document Picture-in-Picture）：把最近 2 条【已翻译完成】的
+  // 双语字幕弹成一个浮在所有窗口之上的小窗，用户可边看 PPT 边看翻译。
+  // latestSubtitles 随 stream 实时更新 → hook 内部把它渲染进 PiP 窗。
+  const latestSubtitles = useMemo(() => pickLatestSubtitles(stream, 2), [stream]);
+  const floatingSubtitle = useFloatingSubtitle(latestSubtitles, uiLang);
 
   // Session timer (seconds) — shown mono-spaced in the live bar so users
   // can glance at elapsed time without checking system clock. Only counts
@@ -1806,6 +1870,19 @@ ${englishParagraph}`;
           </div>
         )}
 
+        {/* Row 5: 课件导入 — 上传 PDF/PPT/图片课件，同页展示。上传产物存进
+            courseSlides 本地 state，handleStop 时随 classSessions 一起写库。
+            课堂同传整体是 Pro 专享（非 Pro 在组件顶部就被 paywall 拦截，走不
+            到这里），所以这里无需再加 Pro 门槛。 */}
+        <div className="pt-[14px] mt-2 border-t border-[var(--ink-hairline)]">
+          <CourseSlides
+            uiLang={uiLang}
+            sessionId={slideSessionIdRef.current}
+            slides={courseSlides}
+            onChange={setCourseSlides}
+          />
+        </div>
+
         {/* Action buttons row — Start / Stop */}
         {!isLive && (
           <div className="flex items-center gap-2 pt-[14px] mt-2 border-t border-[var(--ink-hairline)]">
@@ -1888,6 +1965,15 @@ ${englishParagraph}`;
         {/* Always visible during a live session — users expect the
             button right after they say something. */}
         {status === 'live' && <FlushNowButton uiLang={uiLang} onClick={handleManualFlush} />}
+        {/* 悬浮字幕窗 — 把最新双语字幕弹成置顶小窗，边看 PPT 边看翻译。 */}
+        {status === 'live' && (
+          <FloatingSubtitleButton
+            uiLang={uiLang}
+            active={floatingSubtitle.active}
+            onOpen={floatingSubtitle.open}
+            onClose={floatingSubtitle.close}
+          />
+        )}
       </div>
       </motion.div>
       )}
@@ -1909,6 +1995,19 @@ ${englishParagraph}`;
 
       {/* Mirror for collapsed-config view. */}
       {!isConfigExpanded && status === 'live' && <FlushNowButton uiLang={uiLang} onClick={handleManualFlush} />}
+      {!isConfigExpanded && status === 'live' && (
+        <FloatingSubtitleButton
+          uiLang={uiLang}
+          active={floatingSubtitle.active}
+          onOpen={floatingSubtitle.open}
+          onClose={floatingSubtitle.close}
+        />
+      )}
+
+      {/* 悬浮字幕降级条 — 不支持 Document PiP 的浏览器（Safari/Firefox）点
+          按钮时，这里渲染一个 fixed、底部居中、可拖拽的字幕条；支持 PiP 时
+          为 null（字幕渲染在独立窗里）。 */}
+      {floatingSubtitle.fallbackNode}
 
       {/* TRANSCRIPT STREAM — widened visual focus. min-height bumped so
           subtitles occupy the visual center of the classroom page; bottom
