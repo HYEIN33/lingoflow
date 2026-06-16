@@ -687,7 +687,10 @@ ${englishParagraph}`;
   // and reset the deadline; if the deadline fires first, we flush.
   // This collapses 1-sentence "孤段" into the next paragraph naturally.
   let flushDeadlineTimer: ReturnType<typeof setTimeout> | null = null;
-  const FLUSH_DELAY_AFTER_SPEECH_FINAL_MS = 5000;
+  // 2026-06-16 攒句提速：5000→3000ms。讲师停顿满 3 秒就开译，不再等满 5 秒，
+  // 字幕跟手很多；仍保留"新句到来就重置 deadline"的合并逻辑，不会把一句话
+  // 切碎（连续讲话时靠 320 字硬上限 PARAGRAPH_CHAR_HARD_CAP 触发，不受此值影响）。
+  const FLUSH_DELAY_AFTER_SPEECH_FINAL_MS = 3000;
   const armDelayedFlush = () => {
     if (flushDeadlineTimer) clearTimeout(flushDeadlineTimer);
     flushDeadlineTimer = setTimeout(() => {

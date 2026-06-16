@@ -947,9 +947,12 @@ export async function generateLiveNotes(
   transcript: string,
   opts?: { course?: string }
 ): Promise<LiveNotes> {
-  // Prefer the newest reasoning model first; fall back to 2.5 pro on
-  // 503/quota problems so a pro outage doesn't blank the Notes panel.
-  const model = 'gemini-3-pro-preview';
+  // 2026-06-16：从 gemini-3-pro-preview 切到 GA 版 gemini-2.5-pro。preview 版
+  // 高峰期静默 503（实测："字幕和翻译都出来了但笔记一直不出"的根因——翻译走
+  // 的 gemini-3.5-flash 已是 GA 所以正常，笔记的 pro-preview 没换所以挂）。
+  // 2.5-pro 是 GA 正式 SLA、推理质量接近，笔记不要求低延迟（45s 才刷一次）。
+  // 仍有下方 15s 慢尾保险 → gemini-2.5-flash 兜底。
+  const model = 'gemini-2.5-pro';
   const courseLine = opts?.course
     ? `The class subject is: ${opts.course}. Use that subject's terminology and register.\n`
     : '';

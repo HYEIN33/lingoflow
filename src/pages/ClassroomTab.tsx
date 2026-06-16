@@ -844,22 +844,37 @@ ${englishParagraph}`;
   const [unseenCount, setUnseenCount] = useState(0);
   const lastSeenStreamLenRef = useRef(0);
 
+  // 内容签名：不只看 stream.length，还把每条的转写+译文长度算进去。
+  // 修复（2026-06-16）"翻译出来不自动到最新"：译文是异步填进【已存在】的
+  // line（applyTranslationBatch），stream.length 不变 → 旧 effect 只依赖
+  // [stream] 数组引用变化，但更要命的是它在 React 重绘【之前】同步读
+  // scrollHeight，量到的是【加译文变高之前】的旧高度，于是滚到旧底部，
+  // 新译文又被推到屏幕外。两个修法：① 依赖加内容签名，译文变长也触发；
+  // ② 用 requestAnimationFrame 把滚动推迟到重绘后，读到的是新高度。
+  const streamContentSig = stream.reduce((n, it: any) =>
+    n + (it.transcription?.length || 0) + (it.translation?.length || 0) + (it.answer?.length || 0), 0);
+
   // Auto-scroll on stream change — only when user is at bottom.
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
-    if (distanceFromBottom <= STICK_THRESHOLD_PX) {
-      el.scrollTop = el.scrollHeight;
+    // 重绘前先判断用户是否在底部（基于当前可见高度），避免新内容撑高后误判。
+    const wasAtBottom =
+      el.scrollHeight - el.clientHeight - el.scrollTop <= STICK_THRESHOLD_PX;
+    if (wasAtBottom) {
+      // 推迟到下一帧：此时新译文已渲染、scrollHeight 是最新的，贴底才贴得准。
+      const raf = requestAnimationFrame(() => {
+        const e2 = scrollerRef.current;
+        if (e2) e2.scrollTop = e2.scrollHeight;
+      });
       lastSeenStreamLenRef.current = stream.length;
       setUnseenCount(0);
+      return () => cancelAnimationFrame(raf);
     } else {
-      // User has scrolled away — count new items they haven't seen.
-      // We approximate "new" by stream length growth since last bottom-stick.
       const delta = stream.length - lastSeenStreamLenRef.current;
       if (delta > 0) setUnseenCount(delta);
     }
-  }, [stream]);
+  }, [streamContentSig, stream.length]);
 
   // Track scroll position so the "↓ N new" pill knows when to hide.
   useEffect(() => {
