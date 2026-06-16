@@ -412,7 +412,7 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
             </span>
           )}
         </h1>
-        <div className="text-[11px] text-gray-400 font-mono mb-3 sm:mb-4 tabular-nums">v{APP_VERSION} · {APP_ENV}</div>
+        <div className="text-[11px] text-[var(--ink-subtle)] font-mono mb-3 sm:mb-4 tabular-nums">v{APP_VERSION} · {APP_ENV}</div>
         <p className="text-gray-600 mb-8 sm:mb-10 text-base sm:text-lg leading-relaxed">{t.tagline}</p>
 
         {mode === 'main' ? (
@@ -433,7 +433,7 @@ function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
             </button>
             <div className="relative flex items-center my-2">
               <div className="flex-1 border-t border-gray-200" />
-              <span className="px-3 text-xs text-gray-400">{uiLang === 'zh' ? '或' : 'or'}</span>
+              <span className="px-3 text-xs text-[var(--ink-subtle)]">{uiLang === 'zh' ? '或' : 'or'}</span>
               <div className="flex-1 border-t border-gray-200" />
             </div>
             <button
@@ -1007,7 +1007,7 @@ export default function App() {
               aria-label={uiLang === 'zh' ? '排行榜' : 'Leaderboard'}
               className={cn(
                 "p-1.5 sm:p-2 rounded-full transition-colors",
-                activeTab === 'leaderboard' ? "bg-amber-100 text-amber-600" : "hover:bg-gray-50 text-gray-400 hover:text-amber-500"
+                activeTab === 'leaderboard' ? "bg-[rgba(232,180,60,0.18)] text-[var(--amber)]" : "hover:bg-[rgba(10,14,26,0.04)] text-[var(--ink-subtle)] hover:text-[var(--amber)]"
               )}
               title={uiLang === 'zh' ? '排行榜' : 'Leaderboard'}
             >
@@ -1058,7 +1058,7 @@ export default function App() {
               aria-label={uiLang === 'zh' ? '我的' : 'Profile'}
               className={cn(
                 "p-1.5 sm:p-2 rounded-full transition-colors",
-                activeTab === 'profile' ? "bg-[rgba(91,127,232,0.1)] text-[#5B7FE8]" : "hover:bg-gray-50 text-gray-400 hover:text-[#5B7FE8]"
+                activeTab === 'profile' ? "bg-[rgba(91,127,232,0.1)] text-[var(--blue-accent-text)]" : "hover:bg-[rgba(10,14,26,0.04)] text-[var(--ink-subtle)] hover:text-[var(--blue-accent-text)]"
               )}
               title={uiLang === 'zh' ? '我的' : 'Profile'}
             >

@@ -181,6 +181,9 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
   const [currentSlang, setCurrentSlang] = useState<Slang | null>(null);
   const [meanings, setMeanings] = useState<SlangMeaning[]>([]);
   const [searchResults, setSearchResults] = useState<(Slang & { topMeaning?: string; totalUpvotes?: number })[]>([]);
+  // 联想下拉键盘导航：当前高亮项的下标（-1 = 无高亮，沿用输入框本身的值）。
+  // ↑↓ 移动、Enter 选中、Esc 关闭都依赖它。每次联想结果变化要归零。
+  const [activeIndex, setActiveIndex] = useState(-1);
   const [allSlangCache, setAllSlangCache] = useState<Slang[]>([]);
   // 联想竞态修复：缓存异步加载完成时，用这个 ref 拿到「此刻」输入框里的
   // 最新内容补算一次联想（闭包里的 val 是旧的）。
@@ -1166,7 +1169,9 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-lg"
+            role="status"
+            aria-live="polite"
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-[var(--z-toast)] bg-gray-900 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-lg"
           >
             {toastMessage}
           </motion.div>
@@ -1181,10 +1186,40 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
         <input
           type="text"
           value={searchTerm}
+          role="combobox"
+          aria-expanded={searchResults.length > 0 && !currentSlang && !!searchTerm.trim()}
+          aria-controls="slang-typeahead-listbox"
+          aria-autocomplete="list"
+          aria-activedescendant={activeIndex >= 0 ? `slang-option-${activeIndex}` : undefined}
+          onKeyDown={(e) => {
+            const open = searchResults.length > 0 && !currentSlang && !!searchTerm.trim();
+            if (!open) return;
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setActiveIndex(i => (i + 1) % searchResults.length);
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setActiveIndex(i => (i <= 0 ? searchResults.length - 1 : i - 1));
+            } else if (e.key === 'Enter') {
+              // 有高亮项时直接选中它，拦掉表单默认提交；没高亮就交给 form onSubmit 走常规搜索。
+              if (activeIndex >= 0 && activeIndex < searchResults.length) {
+                e.preventDefault();
+                selectSlang(searchResults[activeIndex]);
+                setSearchResults([]);
+                setActiveIndex(-1);
+              }
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              setSearchResults([]);
+              setActiveIndex(-1);
+            }
+          }}
           onChange={(e) => {
             const val = e.target.value;
             setSearchTerm(val);
             latestTypeaheadRef.current = val;
+            // 每次改输入，联想列表会重算，旧高亮下标失效，归零。
+            setActiveIndex(-1);
             // 修复（2026-06-11）：看过词条后 currentSlang 一直挂着，而联想
             // 下拉的渲染条件要求 !currentSlang —— 导致点开过任何词条后联想
             // 永久失灵。打字=开始新搜索，离开当前词条页回到联想态。
@@ -1234,7 +1269,10 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
             if (searchTerm.trim() && allSlangCache.length > 0 && !currentSlang) {
               const q = searchTerm.trim().toLowerCase();
               const suggestions = allSlangCache.filter(s => s.term.toLowerCase().includes(q)).slice(0, 6);
-              if (suggestions.length > 0) setSearchResults(suggestions);
+              if (suggestions.length > 0) {
+                setSearchResults(suggestions);
+                setActiveIndex(-1);
+              }
             }
           }}
           placeholder={uiLang === 'zh' ? '搜索网络热词、梗…' : 'Search internet slang, memes…'}
@@ -1253,7 +1291,8 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
         <button
           type="submit"
           disabled={isSearching || !searchTerm.trim()}
-          className="absolute right-2 top-1/2 -translate-y-1/2 bg-[var(--ink)] text-white px-[18px] py-[8px] rounded-[10px] font-zh-serif text-[13px] font-bold hover:bg-[#1a2440] disabled:opacity-50 transition-colors"
+          aria-label={uiLang === 'zh' ? '搜索' : 'Search'}
+          className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center min-h-[44px] min-w-[44px] bg-[var(--ink)] text-white px-[18px] py-[8px] rounded-[10px] font-zh-serif text-[13px] font-bold hover:bg-[#1a2440] disabled:opacity-50 transition-colors"
         >
           {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : (uiLang === 'zh' ? '搜索' : 'Search')}
         </button>
@@ -1261,19 +1300,33 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
 
       {/* Search results / typeahead */}
       {searchResults.length > 0 && !currentSlang && searchTerm.trim() && (
-        <div className="absolute left-0 right-0 z-30 bg-white rounded-[18px] border border-[var(--ink-hairline)] shadow-[0_12px_36px_rgba(91,127,232,0.18)] overflow-hidden mt-1.5 max-h-80 overflow-y-auto">
+        <div
+          id="slang-typeahead-listbox"
+          role="listbox"
+          aria-label={uiLang === 'zh' ? '搜索联想结果' : 'Search suggestions'}
+          className="absolute left-0 right-0 z-[var(--z-dropdown)] bg-white rounded-[18px] border border-[var(--ink-hairline)] shadow-[0_12px_36px_rgba(91,127,232,0.18)] overflow-hidden mt-1.5 max-h-80 overflow-y-auto"
+        >
           <div className="px-4 py-[10px] bg-[rgba(244,247,255,0.8)] font-mono-meta text-[10px] font-semibold tracking-[0.18em] uppercase text-[var(--ink-muted)] border-b border-[var(--ink-hairline)]">
             {uiLang === 'zh' ? `找到 ${searchResults.length} 个相关词条` : `${searchResults.length} matches`}
           </div>
-          {searchResults.map(s => {
+          {searchResults.map((s, idx) => {
             // 社区深度信号：用 meaningsBySlangId 拿到该词的释义数量（cache 已有，不是新 Firestore 查询）。
             const meaningCount = (meaningsBySlangId[s.id] || []).length;
             const totalUp = s.totalUpvotes || 0;
+            const isActive = idx === activeIndex;
             return (
               <button
                 key={s.id}
-                onClick={() => { selectSlang(s); setSearchResults([]); }}
-                className="w-full text-left px-4 py-3 hover:bg-[rgba(91,127,232,0.06)] transition-colors border-b border-[rgba(10,14,26,0.04)] last:border-0"
+                id={`slang-option-${idx}`}
+                role="option"
+                aria-selected={isActive}
+                ref={(el) => { if (isActive && el) el.scrollIntoView({ block: 'nearest' }); }}
+                onMouseEnter={() => setActiveIndex(idx)}
+                onClick={() => { selectSlang(s); setSearchResults([]); setActiveIndex(-1); }}
+                className={cn(
+                  "w-full text-left px-4 py-3 transition-colors border-b border-[rgba(10,14,26,0.04)] last:border-0",
+                  isActive ? "bg-[rgba(91,127,232,0.1)]" : "hover:bg-[rgba(91,127,232,0.06)]"
+                )}
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className="font-display font-semibold text-[15px] text-[var(--ink)] shrink-0">{s.term}</span>
@@ -1604,6 +1657,12 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
                     <button
                       onClick={() => handleUpvote(meaning.id, meaning.upvotes)}
                       disabled={upvotedMeanings.has(meaning.id)}
+                      aria-pressed={upvotedMeanings.has(meaning.id)}
+                      aria-label={
+                        upvotedMeanings.has(meaning.id)
+                          ? (uiLang === 'zh' ? `已点赞，当前 ${meaning.upvotes} 个赞` : `Upvoted, ${meaning.upvotes} upvotes`)
+                          : (uiLang === 'zh' ? `点赞，当前 ${meaning.upvotes} 个赞` : `Upvote, ${meaning.upvotes} upvotes`)
+                      }
                       className={cn(
                         "flex items-center gap-[6px] px-[12px] py-[7px] rounded-[10px] text-[13px] font-semibold transition-colors",
                         upvotedMeanings.has(meaning.id)
@@ -1630,7 +1689,9 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.95 }}
-                            className="absolute left-0 bottom-full mb-[6px] bg-white border border-[rgba(10,14,26,0.08)] rounded-[12px] p-[12px] shadow-[0_10px_30px_rgba(10,14,26,0.12)] z-10 min-w-[200px]"
+                            role="dialog"
+                            aria-label={uiLang === 'zh' ? '举报释义' : 'Report meaning'}
+                            className="absolute left-0 bottom-full mb-[6px] bg-white border border-[rgba(10,14,26,0.08)] rounded-[12px] p-[12px] shadow-[0_10px_30px_rgba(10,14,26,0.12)] z-[var(--z-modal)] min-w-[200px]"
                           >
                             <p className="font-zh-serif text-[11px] font-semibold text-[var(--ink-body)] mb-[6px]">
                               {uiLang === 'zh' ? '举报原因' : 'Report reason'}

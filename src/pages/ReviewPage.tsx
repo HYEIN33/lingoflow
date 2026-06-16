@@ -196,7 +196,7 @@ export default function ReviewPage(props: ReviewPageProps) {
     <div className="space-y-6">
       {!userProfile?.isPro && !userProfile?.hasCompletedOnboarding ? (
         /* ======================== PAYWALL ======================== */
-        <div className="surface !rounded-[18px] border-l-[3px] border-l-[var(--blue-accent)] p-[32px_36px] max-w-2xl mx-auto mt-10 text-left">
+        <div className="surface !rounded-[18px] border border-[var(--border-solid)] p-[32px_36px] max-w-2xl mx-auto mt-10 text-left">
           <div className="flex items-center gap-[14px] pb-4 mb-[18px] border-b border-[var(--ink-hairline)]">
             <div className="w-11 h-11 rounded-[14px] flex items-center justify-center text-white shrink-0 shadow-[0_6px_14px_rgba(91,127,232,0.35)]"
               style={{ background: 'linear-gradient(135deg, #5B7FE8, #89A3F0)' }}>
@@ -218,7 +218,7 @@ export default function ReviewPage(props: ReviewPageProps) {
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-[10px]">
             <div className="p-4 rounded-[16px] border-[1.5px] border-[rgba(232,180,60,0.45)] bg-[rgba(255,243,217,0.6)]">
-              <div className="font-display italic font-bold text-[15px] text-[#8A5D0E] mb-1">
+              <div className="font-display italic font-bold text-[15px] text-[var(--amber)] mb-1">
                 {uiLang === 'zh' ? 'Contribute first · 先贡献' : 'Contribute first'}
               </div>
               <div className="font-zh-serif text-[12.5px] leading-[1.6] text-[var(--ink-muted)] mb-3">
@@ -231,7 +231,7 @@ export default function ReviewPage(props: ReviewPageProps) {
               <button
                 onClick={onOpenOnboarding}
                 className="w-full inline-flex items-center justify-center gap-1.5 px-[14px] py-[9px] rounded-[11px] text-[13px] font-bold border-0 cursor-pointer"
-                style={{ background: '#E8C375', color: '#5A3C08' }}
+                style={{ background: 'var(--amber-bright)', color: '#5A3C08' }}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
                 {uiLang === 'zh' ? '去贡献词条' : 'Contribute Now'}
@@ -369,7 +369,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                       </div>
                       <div className="flex flex-col gap-[10px] mt-[10px]">
                         {(currentReviewWord.usages || []).map((usage: any, idx: number) => (
-                          <div key={idx} className="p-[12px_14px] rounded-[0_12px_12px_0] bg-[rgba(91,127,232,0.05)] border-l-[2.5px] border-l-[var(--blue-accent)]">
+                          <div key={idx} className="p-[12px_14px] rounded-[12px] bg-[rgba(91,127,232,0.06)]">
                             <div className="font-mono-meta text-[9.5px] font-bold tracking-[0.15em] uppercase text-[var(--blue-accent)] mb-1">
                               {uiLang === 'zh' ? usage.labelZh : usage.label}
                             </div>
@@ -452,10 +452,10 @@ export default function ReviewPage(props: ReviewPageProps) {
                     {/* Quality buttons */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {[
-                        { q: 1, cls: 'again', en: 'Again', zh: uiLang === 'zh' ? '完全忘了' : 'Forgot',  next: uiLang === 'zh' ? '+ 10 分钟' : '+ 10 min', bg: '#FDECEA', bc: '#E89B94', tc: '#A23B30' },
-                        { q: 3, cls: 'hard',  en: 'Hard',  zh: uiLang === 'zh' ? '努力想起' : 'Hard',    next: uiLang === 'zh' ? '+ 1 天' : '+ 1 day',  bg: '#FFF3D9', bc: '#E8C375', tc: '#8A5D0E' },
-                        { q: 4, cls: 'good',  en: 'Good',  zh: uiLang === 'zh' ? '顺利想起' : 'Smooth',  next: uiLang === 'zh' ? '+ 3 天' : '+ 3 days', bg: '#E4EAFD', bc: '#5B7FE8', tc: '#1E3A8A' },
-                        { q: 5, cls: 'easy',  en: 'Easy',  zh: uiLang === 'zh' ? '非常容易' : 'Easy',    next: uiLang === 'zh' ? '+ 7 天' : '+ 7 days', bg: '#E4F4DC', bc: '#7DB96A', tc: '#2F6317' },
+                        { q: 1, cls: 'again', en: 'Again', zh: uiLang === 'zh' ? '完全忘了' : 'Forgot',  next: uiLang === 'zh' ? '+ 10 分钟' : '+ 10 min', bg: 'var(--quality-again-bg)', bc: 'var(--quality-again-border)', tc: 'var(--quality-again-text)' },
+                        { q: 3, cls: 'hard',  en: 'Hard',  zh: uiLang === 'zh' ? '努力想起' : 'Hard',    next: uiLang === 'zh' ? '+ 1 天' : '+ 1 day',  bg: 'var(--quality-hard-bg)', bc: 'var(--quality-hard-border)', tc: 'var(--quality-hard-text)' },
+                        { q: 4, cls: 'good',  en: 'Good',  zh: uiLang === 'zh' ? '顺利想起' : 'Smooth',  next: uiLang === 'zh' ? '+ 3 天' : '+ 3 days', bg: 'var(--quality-good-bg)', bc: 'var(--quality-good-border)', tc: 'var(--quality-good-text)' },
+                        { q: 5, cls: 'easy',  en: 'Easy',  zh: uiLang === 'zh' ? '非常容易' : 'Easy',    next: uiLang === 'zh' ? '+ 7 天' : '+ 7 days', bg: 'var(--quality-easy-bg)', bc: 'var(--quality-easy-border)', tc: 'var(--quality-easy-text)' },
                       ].map((btn, i) => (
                         <button
                           key={btn.q}
@@ -464,7 +464,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                           style={{ background: btn.bg, borderColor: btn.bc, color: btn.tc, boxShadow: '0 4px 14px rgba(10,14,26,0.06)' }}
                         >
                           <span className="absolute top-2 right-2.5 font-mono-meta text-[10px] font-bold rounded-[5px] px-1.5 py-0.5"
-                            style={{ color: 'rgba(10,14,26,0.5)', background: 'rgba(255,255,255,0.75)', border: '1px solid rgba(10,14,26,0.08)' }}>
+                            style={{ color: 'rgba(10,14,26,0.62)', background: 'rgba(255,255,255,0.75)', border: '1px solid rgba(10,14,26,0.08)' }}>
                             {i + 1}
                           </span>
                           <span className="font-display font-bold text-[18px] tracking-[-0.01em]">{btn.en}</span>
@@ -475,6 +475,11 @@ export default function ReviewPage(props: ReviewPageProps) {
                           </span>
                         </button>
                       ))}
+                    </div>
+                    {/* 快捷键提示 —— 卡片本来就绑了空格翻卡/1-4 评分，但 UI 没说，
+                        加一行低调小字让快捷键可被发现。 */}
+                    <div className="font-mono-meta text-[10.5px] tracking-[0.06em] text-[var(--ink-subtle)] text-center mt-3">
+                      {uiLang === 'zh' ? '快捷键：空格翻卡 · 1-4 评分' : 'Keys: Space to flip · 1-4 to rate'}
                     </div>
                   </motion.div>
                 ) : (
@@ -497,7 +502,7 @@ export default function ReviewPage(props: ReviewPageProps) {
           ) : reviewedCount > 0 ? (
             /* ======================== COMPLETED STATE ======================== */
             <div className="surface !rounded-[18px] p-[36px_40px] text-center space-y-4 max-w-[600px] mx-auto">
-              <div className="w-[60px] h-[60px] rounded-[18px] inline-flex items-center justify-center mb-[18px] bg-[rgba(76,143,59,0.15)] text-[#2F6317]">
+              <div className="w-[60px] h-[60px] rounded-[18px] inline-flex items-center justify-center mb-[18px] bg-[rgba(76,143,59,0.15)] text-[var(--green-ok)]">
                 <CheckCircle className="w-[26px] h-[26px]" />
               </div>
               <h3 className="font-display font-semibold text-[22px] tracking-[-0.02em] text-[var(--ink)] m-0 mb-[10px]">
@@ -518,7 +523,7 @@ export default function ReviewPage(props: ReviewPageProps) {
           ) : (
             /* ======================== EMPTY STATE ======================== */
             <div className="surface !rounded-[18px] p-[36px_40px] text-center max-w-[600px] mx-auto">
-              <div className="w-[60px] h-[60px] rounded-[18px] inline-flex items-center justify-center mb-[18px] bg-[rgba(76,143,59,0.15)] text-[#2F6317]">
+              <div className="w-[60px] h-[60px] rounded-[18px] inline-flex items-center justify-center mb-[18px] bg-[rgba(76,143,59,0.15)] text-[var(--green-ok)]">
                 <CheckCircle className="w-[26px] h-[26px]" />
               </div>
               <h3 className="font-display font-semibold text-[22px] tracking-[-0.02em] text-[var(--ink)] m-0 mb-[10px]">
@@ -712,6 +717,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                     <Sparkles className="w-3.5 h-3.5 text-[var(--blue-accent)] shrink-0" />
                     <input
                       type="text"
+                      aria-label={uiLang === 'zh' ? '问 AI 关于这个词' : 'Ask AI about this word'}
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleChatSend()}

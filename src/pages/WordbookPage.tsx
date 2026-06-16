@@ -222,7 +222,7 @@ export default function WordbookPage(props: WordbookPageProps) {
               setSelectedWordbookItem(null);
               setSelectedUsageIndex(0);
             }}
-            className="inline-flex items-center gap-1.5 py-1.5 pl-2 pr-3 font-display italic text-[13px] text-[var(--blue-accent)] hover:text-[var(--blue-accent-deep)] transition-colors"
+            className="inline-flex items-center gap-1.5 py-1.5 pl-2 pr-3 font-display italic text-[13px] text-[var(--blue-accent-text)] hover:text-[var(--blue-accent-deep)] transition-colors"
           >
             <ChevronRight className="w-3 h-3 rotate-180" />
             {uiLang === 'zh' ? '返回列表 · back' : 'back · 返回列表'}
@@ -310,7 +310,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                   <p className="font-zh-serif font-semibold text-[16px] text-[var(--ink)] m-0 mb-2">
                     {selectedWordbookItem.usages?.[selectedUsageIndex]?.meaning || ''}
                   </p>
-                  <p className="font-zh-serif text-[15px] font-medium text-[var(--blue-accent)] m-0 pt-2 border-t border-[var(--ink-hairline)]">
+                  <p className="font-zh-serif text-[15px] font-medium text-[var(--blue-accent-text)] m-0 pt-2 border-t border-[var(--ink-hairline)]">
                     {selectedWordbookItem.usages?.[selectedUsageIndex]?.meaningZh || ''}
                   </p>
                 </div>
@@ -350,7 +350,8 @@ export default function WordbookPage(props: WordbookPageProps) {
               {/* Details toggle */}
               <button
                 onClick={() => setShowDetails(!showDetails)}
-                className="inline-flex items-center gap-1.5 font-display italic text-[13px] text-[var(--blue-accent)] hover:text-[var(--blue-accent-deep)] transition-colors mt-2"
+                aria-expanded={showDetails}
+                className="inline-flex items-center gap-1.5 font-display italic text-[13px] text-[var(--blue-accent-text)] hover:text-[var(--blue-accent-deep)] transition-colors mt-2"
               >
                 {showDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 {showDetails ? t.hideDetails : t.showDetails}
@@ -755,6 +756,11 @@ export default function WordbookPage(props: WordbookPageProps) {
                 whileHover={{ y: -3 }}
                 transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                 onClick={() => batchMode ? toggleWordSelection(word.id) : setSelectedWordbookItem(word)}
+                role={batchMode ? 'checkbox' : 'button'}
+                aria-checked={batchMode ? selectedWordIds.has(word.id) : undefined}
+                aria-label={batchMode
+                  ? (uiLang === 'zh' ? `选择 ${word.original}` : `Select ${word.original}`)
+                  : (uiLang === 'zh' ? `查看 ${word.original} 详情` : `View ${word.original} details`)}
                 className={cn(
                   "surface !rounded-[14px] p-[18px_20px] cursor-pointer transition-[border-color,box-shadow] hover:!border-[var(--border-solid-strong)] hover:shadow-[0_4px_14px_rgba(10,14,26,0.06)] relative",
                   batchMode && "pl-[52px]"
@@ -762,6 +768,7 @@ export default function WordbookPage(props: WordbookPageProps) {
               >
                 {batchMode && (
                   <span
+                    aria-hidden="true"
                     className={cn(
                       "absolute left-[18px] top-[22px] w-[22px] h-[22px] rounded-[7px] border-[1.5px] inline-flex items-center justify-center cursor-pointer transition-all",
                       selectedWordIds.has(word.id)
