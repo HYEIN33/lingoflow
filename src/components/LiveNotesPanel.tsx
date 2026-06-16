@@ -32,7 +32,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronUp, ChevronDown, Loader2, Save, Download, Pencil, Check, RefreshCw, Plus, X } from 'lucide-react';
+import { ChevronUp, ChevronDown, Loader2, Save, Download, Pencil, Check, RefreshCw, Plus, X, AlertTriangle } from 'lucide-react';
 import type { LiveNotes } from '../services/ai';
 
 interface Props {
@@ -50,6 +50,19 @@ interface Props {
   // an empty-state card ("开始录音几分钟后…") instead of hiding the panel
   // so users understand the feature exists and is warming up.
   isLive?: boolean;
+  // Visible error state (2026-06-16): when notes generation fails the
+  // parent passes a short bilingual message here; the panel renders a
+  // dismissable error row with a Retry button instead of silently showing
+  // a blank panel (which read as "broken"). `onRetry` forces an immediate
+  // regeneration.
+  errorMessage?: string | null;
+  onRetry?: () => void;
+  // How much finalized English transcript has accumulated. Drives the
+  // "正在收集课堂内容…" guidance state — distinct from "loading" and
+  // "error" — so the user knows we're WAITING for enough speech, not stuck.
+  collectedChars?: number;
+  // Threshold (chars) below which we show the "still collecting" guidance.
+  minCharsForNotes?: number;
 }
 
 export default function LiveNotesPanel({
@@ -61,6 +74,10 @@ export default function LiveNotesPanel({
   onExportPdf,
   isSaving,
   isLive,
+  errorMessage,
+  onRetry,
+  collectedChars = 0,
+  minCharsForNotes = 120,
 }: Props) {
   const zh = uiLang === 'zh';
   const [expanded, setExpanded] = useState(true);
@@ -162,11 +179,20 @@ export default function LiveNotesPanel({
     setDirty(true);
   };
 
-  // When there's nothing to show AND we're not live, hide the panel
-  // (idle home screen). During a live session we render an empty-state
-  // card instead of hiding — keeps the feature discoverable and tells
-  // the user notes will appear soon.
-  if (!effective && !loading && !isLive) return null;
+  // When there's nothing to show AND we're not live AND there's no error,
+  // hide the panel (idle home screen). During a live session — or whenever
+  // there's an error to surface — we render the panel so the user always
+  // has feedback (empty-state guidance, error row, or notes).
+  if (!effective && !loading && !isLive && !errorMessage) return null;
+
+  // Guidance vs error vs loading are three distinct empty states:
+  //   - error:    generation failed → red row + Retry
+  //   - guidance: live but not enough transcript yet → "正在收集课堂内容…"
+  //   - loading:  enough transcript, AI is summarising → spinner
+  // showGuidance is true when we're live, have no notes yet, no error, and
+  // haven't accumulated enough English to even attempt a summary.
+  const showGuidance =
+    isLive && !effective && !errorMessage && !loading && collectedChars < minCharsForNotes;
 
   const secsAgo = lastUpdatedAt ? Math.max(0, Math.floor((now - lastUpdatedAt) / 1000)) : 0;
   const agoText = !lastUpdatedAt
@@ -277,10 +303,60 @@ export default function LiveNotesPanel({
           : 'Live Notes is still catching up · subtitles stream in real-time, notes refresh a summary every 25s'}
       </p>
 
-      {/* Empty-state card — shown during live sessions when we don't
-          have notes yet. Without this the whole panel vanishes and users
-          think the feature is broken. */}
-      {expanded && !effective && isLive && (
+      {/* Error row (2026-06-16) — surfaces a failed generation with a
+          Retry button. Shown above any notes so the user always sees the
+          failure even if a previous (stale) summary is still on screen. */}
+      {expanded && errorMessage && (
+        <div className="rounded-[12px] border border-[rgba(229,56,43,0.25)] bg-[rgba(229,56,43,0.06)] p-[14px_16px] mb-3 flex items-center gap-3">
+          <AlertTriangle className="w-4 h-4 text-[var(--red-warn)] shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="font-zh-sans font-semibold text-[13px] text-[var(--red-warn)] m-0">
+              {zh ? '笔记生成失败，点击重试' : 'Notes failed, tap to retry'}
+            </p>
+            <p className="font-zh-serif text-[11.5px] text-[var(--ink-muted)] m-0 mt-0.5">
+              {zh
+                ? '字幕不受影响，仍在实时翻译。笔记可重新生成。'
+                : 'Subtitles are unaffected and still streaming. You can regenerate the notes.'}
+            </p>
+          </div>
+          {onRetry && (
+            <button
+              type="button"
+              onClick={onRetry}
+              disabled={loading}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-[10px] bg-[var(--red-warn)] text-white font-zh-sans font-bold text-[12px] hover:bg-[var(--red-deep)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed border-0 cursor-pointer"
+            >
+              {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+              {zh ? '重试' : 'Retry'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Guidance state (2026-06-16) — live but not enough transcript to
+          generate yet. Distinct from "loading" (AI is running) and "error"
+          (it failed): tells the user we're WAITING for the teacher to talk,
+          not stuck. Without this, an empty panel early in a session reads
+          as broken. */}
+      {expanded && showGuidance && (
+        <div className="rounded-[12px] border border-dashed border-[rgba(91,127,232,0.35)] p-[18px_20px] bg-[rgba(91,127,232,0.04)]">
+          <div className="font-mono-meta text-[10px] tracking-[0.18em] uppercase text-[var(--blue-accent)] mb-2 inline-flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--blue-accent)] animate-pulse" />
+            {zh ? '正在收集课堂内容' : 'collecting class content'}
+          </div>
+          <p className="font-zh-serif text-[13.5px] text-[var(--ink-body)] m-0 leading-[1.75]">
+            {zh
+              ? '正在收集课堂内容…需要老师讲约 2-3 句话才开始生成笔记。字幕已经在实时翻译，笔记会在攒够内容后自动出现。'
+              : 'Collecting class content… notes start once the teacher has said about 2-3 sentences. Subtitles are already streaming; notes appear automatically once there is enough.'}
+          </p>
+        </div>
+      )}
+
+      {/* Loading / waiting-for-more card — shown during live sessions when
+          we don't have notes yet but ARE past the guidance threshold (AI is
+          running, or between refreshes). Without this the whole panel
+          vanishes and users think the feature is broken. */}
+      {expanded && !effective && isLive && !showGuidance && !errorMessage && (
         <div className="rounded-[12px] border border-dashed border-[var(--ink-hairline)] p-[18px_20px] bg-[rgba(10,14,26,0.02)]">
           <div className="font-mono-meta text-[10px] tracking-[0.18em] uppercase text-[var(--ink-soft)] mb-2 inline-flex items-center gap-1.5">
             {loading ? (

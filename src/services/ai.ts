@@ -996,15 +996,47 @@ ${transcript}`;
     // 永远生成失败。low 给最少的思考预算 + 仍能产出像样的笔记结构。
     thinkingConfig: { thinkingLevel: 'low' },
   };
-  const raw = await geminiGenerate({ model, contents: prompt, config, bucket: 'classroom' });
-  try {
-    return JSON.parse(raw) as LiveNotes;
-  } catch (e) {
-    // Defensive: Pro occasionally wraps JSON in markdown despite
-    // responseMimeType. Strip common fencings and retry the parse.
-    const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-    return JSON.parse(cleaned) as LiveNotes;
+
+  // JSON 解析容错：pro 偶尔会无视 responseMimeType 把 JSON 包进 markdown
+  // 围栏里，先直接 parse，失败就剥掉 ```json``` 围栏再 parse。
+  const parseNotes = (raw: string): LiveNotes => {
+    try {
+      return JSON.parse(raw) as LiveNotes;
+    } catch {
+      const cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+      return JSON.parse(cleaned) as LiveNotes;
+    }
+  };
+
+  // 慢尾 + 超时保险（2026-06-16，对齐 translateSimple 的写法）。
+  // 现状：generateLiveNotes 之前直接 await pro-preview，没有任何超时边界。
+  //   - geminiGenerate 内部只在「模型已下线 / 503 类」错误时才级联到
+  //     FALLBACK_MODELS；但 pro-preview 高峰期常见的是「慢到 30~60s 才回」
+  //     而不是立刻报错，这种慢尾不会触发级联，笔记就一直转圈出不来。
+  // 修后：非流式调用（笔记永远非流式）超过 LIVE_NOTES_TIMEOUT_MS 没回，
+  //   就用更快更稳的 gemini-2.5-flash 直接重发一次。pro-preview 彻底 503
+  //   时 geminiGenerate 的级联仍兜底，慢尾时这层兜底——两条路都保证笔记
+  //   不会因为 preview 抽风而永远空白。
+  const LIVE_NOTES_TIMEOUT_MS = 15000;
+  const rescueModel = 'gemini-2.5-flash';
+
+  const primary = geminiGenerate({ model, contents: prompt, config, bucket: 'classroom' });
+  const winner = await Promise.race([
+    primary.then((t) => ({ timedOut: false as const, text: t })),
+    new Promise<{ timedOut: true }>((resolve) =>
+      setTimeout(() => resolve({ timedOut: true }), LIVE_NOTES_TIMEOUT_MS)
+    ),
+  ]);
+
+  if ('text' in winner) {
+    return parseNotes(winner.text);
   }
+
+  // 慢尾兜底：原请求不取消（继续在后台耗完），直接用稳定模型要结果。
+  aiBreadcrumb('generateLiveNotes.slow_tail_fallback', { from: model, to: rescueModel });
+  primary.catch(() => {});
+  const rescued = await geminiGenerate({ model: rescueModel, contents: prompt, config, bucket: 'classroom' });
+  return parseNotes(rescued);
 }
 
 export async function aiChat(messages: { role: 'user' | 'ai'; text: string }[]): Promise<string> {
