@@ -54,6 +54,9 @@ import { startLiveSession, LiveSessionHandle, LiveSessionStats } from '../servic
 import ClassNotesModal from '../components/ClassNotesModal';
 import LiveNotesPanel from '../components/LiveNotesPanel';
 import CourseSlides, { type CourseSlide } from '../components/CourseSlides';
+import MessageLoading from '../components/ui/message-loading';
+import { Checkbox } from '../components/ui/checkbox';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
 import {
   useFloatingSubtitle,
   pickLatestSubtitles,
@@ -1578,17 +1581,20 @@ ${englishParagraph}`;
                 <li>每个会话的字幕都会写到 <code className="font-mono-meta text-[12px] bg-[rgba(10,14,26,0.04)] px-1 py-0.5 rounded">classSessions/{'{sessionId}'}</code> 集合下，只有你自己能看。</li>
               </ul>
 
-              <label className="flex items-start gap-2 cursor-pointer select-none mb-4">
-                <input
-                  type="checkbox"
+              <div className="flex items-start gap-2.5 select-none mb-4">
+                <Checkbox
+                  id="classroom-compliance-agree"
                   checked={agreed}
-                  onChange={(e) => setAgreed(e.target.checked)}
-                  className="mt-1 accent-[var(--blue-accent)]"
+                  onCheckedChange={(v) => setAgreed(v === true)}
+                  className="mt-0.5"
                 />
-                <span className="font-zh-serif text-[13px] text-[var(--ink-body)]">
+                <label
+                  htmlFor="classroom-compliance-agree"
+                  className="font-zh-serif text-[13px] text-[var(--ink-body)] cursor-pointer"
+                >
                   我已阅读并理解上述内容，确认使用本功能所产生的责任由我自己承担。
-                </span>
-              </label>
+                </label>
+              </div>
 
               <div className="flex gap-2.5 pt-4 border-t border-[rgba(229,56,43,0.15)]">
                 <button
@@ -1813,34 +1819,36 @@ ${englishParagraph}`;
               {uiLang === 'zh' ? '声音来源' : 'source'}
             </div>
           </div>
-          <div className="flex-1 flex flex-wrap gap-1.5">
-            <button
-              onClick={() => setAudioSource('mic')}
-              disabled={isLive || isBusy}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-display italic text-[13px] tracking-[-0.01em] border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-                audioSource === 'mic'
-                  ? "bg-[var(--ink)] text-white border-[var(--ink)] shadow-[0_3px_8px_rgba(10,14,26,0.22)]"
-                  : "bg-white/55 border-white/75 text-[rgba(10,14,26,0.7)] hover:text-[var(--ink)]"
-              )}
+          {/* 音源分区切换 —— 改用共享 ToggleGroup（type=single）。
+              现状：原来是两个自定义 <button>，靠 className 三元手动画选中态。
+              修后：复用 src/components/ui/toggle-group.tsx，选中态自动是品牌蓝底
+                    白字；onValueChange 复用原来的 setAudioSource，业务逻辑不变。
+              注意：单选 ToggleGroup 允许"再点一下取消选中"会回传空串 ''，那样
+                    会让音源变成未选状态，所以 v==='' 时忽略，保持二选一互斥。 */}
+          <ToggleGroup
+            type="single"
+            value={audioSource}
+            onValueChange={(v) => {
+              if (v === 'tab' || v === 'mic') setAudioSource(v);
+            }}
+            disabled={isLive || isBusy}
+            className="flex-1 flex flex-wrap justify-start gap-1.5"
+          >
+            <ToggleGroupItem
+              value="mic"
+              aria-label={uiLang === 'zh' ? '麦克风 / 线下课' : 'microphone'}
+              className="gap-1.5 rounded-full font-display italic text-[13px] tracking-[-0.01em]"
             >
-              {audioSource === 'mic' && <span className="w-1 h-1 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />}
               <Mic className="w-3 h-3" /> mic · {uiLang === 'zh' ? '麦克风' : 'mic'}
-            </button>
-            <button
-              onClick={() => setAudioSource('tab')}
-              disabled={isLive || isBusy}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-display italic text-[13px] tracking-[-0.01em] border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-                audioSource === 'tab'
-                  ? "bg-[var(--ink)] text-white border-[var(--ink)] shadow-[0_3px_8px_rgba(10,14,26,0.22)]"
-                  : "bg-white/55 border-white/75 text-[rgba(10,14,26,0.7)] hover:text-[var(--ink)]"
-              )}
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="tab"
+              aria-label={uiLang === 'zh' ? '浏览器标签音频 / 在线课' : 'browser tab audio'}
+              className="gap-1.5 rounded-full font-display italic text-[13px] tracking-[-0.01em]"
             >
-              {audioSource === 'tab' && <span className="w-1 h-1 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />}
               <Monitor className="w-3 h-3" /> tab audio · {uiLang === 'zh' ? '浏览器标签' : 'browser tab'}
-            </button>
-          </div>
+            </ToggleGroupItem>
+          </ToggleGroup>
         </div>
 
         {/* Row 2 was the realtime/paragraph toggle — removed 2026-04-27
@@ -2112,13 +2120,13 @@ ${englishParagraph}`;
           为 null（字幕渲染在独立窗里）。 */}
       {floatingSubtitle.fallbackNode}
 
-      {/* CLASSROOM WORKSPACE — 左右分栏（2026-06-16）。
-          左 = 双语字幕流（主，自动占满剩余宽度并独立滚动）；
-          右 = 笔记 / 问AI 侧栏（固定 380px，桌面/iPad 横屏显示在右侧）。
-          窄屏（<lg）自动降级回单列上下堆叠：字幕在上、侧栏在下，
-          不会把窄屏挤成一坨。两栏各自 overflow-y-auto 独立滚动，
-          字幕的 scrollerRef 贴底 / ↓N new 逻辑完全保留不动。 */}
-      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start">
+      {/* CLASSROOM WORKSPACE — 左右分栏（2026-06-16 修 iPad 适配）。
+          断点从 lg(1024) 提到 xl(1280)：iPad 横屏(~1024-1180) 实测分栏后
+          字幕被挤到一列窄字、右侧笔记又撑不满留大片空白。改成只有真正宽
+          的桌面(≥1280) 才左右分栏，iPad/平板一律单列上下堆叠 —— 字幕全宽
+          可读性好得多，笔记排在字幕下方。侧栏宽 380→340 收一点。
+          两栏各自独立滚动，scrollerRef 贴底/↓N new 逻辑不动。 */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start">
       {/* LEFT — TRANSCRIPT STREAM. min-height bumped so subtitles occupy
           the visual center of the classroom page. */}
       <div className="relative">
@@ -2359,7 +2367,7 @@ ${englishParagraph}`;
           窄屏（<lg）：自然落到字幕下方，单列堆叠。
           两个 Tab 在同一个右侧栏：默认「笔记」，点一下切到「问 AI」，
           这样"看笔记"和"问 AI"集中在一处，不用到处找。 */}
-      <div className="lg:sticky lg:top-4 flex flex-col gap-3 min-w-0">
+      <div className="xl:sticky xl:top-4 flex flex-col gap-3 min-w-0">
         {/* Tab 切换条 */}
         <div className="surface !rounded-[14px] p-1 flex items-center gap-1">
           <button
@@ -2445,7 +2453,7 @@ ${englishParagraph}`;
                         <div className="flex justify-start">
                           <div className="max-w-[92%] px-3 py-2 rounded-[14px] rounded-tl-[4px] bg-[rgba(91,127,232,0.08)] border border-[rgba(91,127,232,0.18)] font-zh-serif text-[13.5px] leading-[1.75] text-[var(--ink)] whitespace-pre-wrap [&_strong]:text-[var(--blue-accent)] [&_strong]:font-semibold">
                             {item.pending
-                              ? <Loader2 className="w-4 h-4 animate-spin text-[rgba(91,127,232,0.6)]" />
+                              ? <MessageLoading className="w-6 h-5" />
                               : item.answer}
                           </div>
                         </div>

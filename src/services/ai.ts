@@ -947,14 +947,14 @@ export async function generateLiveNotes(
   transcript: string,
   opts?: { course?: string }
 ): Promise<LiveNotes> {
-  // 2026-06-16 笔记 bug 终修：用 GA 版 gemini-2.5-flash。
-  // 踩坑记录：先从 pro-preview(静默503) 换到 gemini-2.5-pro，结果仍失败——
-  // 真因是 thinkingConfig 用了 Gemini 3 的语法 `thinkingLevel`，而 2.5 系列
-  // 只认 `thinkingBudget`（数字），API 直接 400「Thinking level is not
-  // supported for this model」。2.5-pro 还又慢又超时。改用 2.5-flash：快、
-  // GA、结构化摘要质量足够（实测秒回正确 JSON），thinking 用下方正确的
-  // thinkingBudget 语法。15s 慢尾保险仍在。
-  const model = 'gemini-2.5-flash';
+  // 2026-06-16 笔记模型：GA 版 gemini-3.5-flash（用户指定用 Gemini 3，质量
+  // 显著高于 2.5）。Gemini 3 系列认 thinkingConfig.thinkingLevel（下方），
+  // 实测 thinkingLevel:'low' + responseSchema 秒回正确 JSON。
+  // 注意：之前 400「Thinking level is not supported」是因为把 3 的语法传给了
+  // 2.5 模型；现在模型与参数都是 3 系列，匹配正确。15s 慢尾兜底见下方
+  // （兜底模型 gemini-2.5-flash 用的是同一个 config，但 2.5 不认 thinkingLevel
+  //  —— 已在兜底处单独用 2.5 语法，见 rescueConfig）。
+  const model = 'gemini-3.5-flash';
   const courseLine = opts?.course
     ? `The class subject is: ${opts.course}. Use that subject's terminology and register.\n`
     : '';
@@ -993,11 +993,11 @@ ${transcript}`;
       },
       required: ['title', 'overview', 'keyPoints'],
     },
-    // 关思考（2026-06-16）：模型已是 gemini-2.5-flash（2.5 系列），thinking
-    // 必须用 `thinkingBudget`（数字）语法，不能用 Gemini 3 的 `thinkingLevel`
-    // ——后者会被 2.5 模型 400「Thinking level is not supported」直接拒收，
-    // 这正是上一版笔记一直失败的根因。0 = 关思考：结构化摘要不吃推理，省延迟。
-    thinkingConfig: { thinkingBudget: 0 },
+    // 思考强度（2026-06-16）：主模型是 gemini-3.5-flash（3 系列），用
+    // thinkingLevel:'low' —— 3 系列只认 thinkingLevel，不认 thinkingBudget。
+    // low = 最低思考预算，结构化摘要够用又省延迟。慢尾兜底的 2.5-flash 在
+    // 下方 rescueConfig 里换成 thinkingBudget:0（2.5 语法），两边各用各的。
+    thinkingConfig: { thinkingLevel: 'low' },
   };
 
   // JSON 解析容错：pro 偶尔会无视 responseMimeType 把 JSON 包进 markdown
@@ -1036,9 +1036,13 @@ ${transcript}`;
   }
 
   // 慢尾兜底：原请求不取消（继续在后台耗完），直接用稳定模型要结果。
+  // 关键：兜底模型 gemini-2.5-flash 是 2.5 系列，不认主 config 里的
+  // thinkingLevel（会 400）。换成 2.5 语法 thinkingBudget，其余 config 复用。
   aiBreadcrumb('generateLiveNotes.slow_tail_fallback', { from: model, to: rescueModel });
   primary.catch(() => {});
-  const rescued = await geminiGenerate({ model: rescueModel, contents: prompt, config, bucket: 'classroom' });
+  const { thinkingConfig: _omit, ...configNoThinking } = config as any;
+  const rescueConfig = { ...configNoThinking, thinkingConfig: { thinkingBudget: 0 } };
+  const rescued = await geminiGenerate({ model: rescueModel, contents: prompt, config: rescueConfig, bucket: 'classroom' });
   return parseNotes(rescued);
 }
 
