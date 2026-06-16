@@ -176,12 +176,271 @@ const REPORT_REASONS = [
   { value: 'other', labelZh: '其他', labelEn: 'Other' },
 ];
 
+// 单条释义卡片 —— 性能重构（2026-06-16）：从父组件 meanings.map 里原样搬出，
+// 包成 React.memo。父组件每次重渲染（搜索框打字、feed 30s 轮换、评论数回传、
+// trending 刷新）以前都会把所有释义卡连同各自的 CommentSection（带 Firestore
+// onSnapshot）整列重渲染；词条多时低端机明显卡。现在只有「这张卡自己的 props
+// 真的变了」才重渲染。
+// 纯结构提取：JSX、class、ARIA、点赞/举报/分享/朗读/评论逻辑全部原样，零业务改动。
+// props 全是基础类型或父组件 useCallback 稳定化过的回调，保证 memo 真正生效。
+interface MeaningCardProps {
+  meaning: SlangMeaning;
+  index: number;
+  uiLang: 'en' | 'zh';
+  currentSlangId: string;
+  currentSlangTerm: string;
+  commentCount: number;
+  isUpvoted: boolean;
+  isPlaying: boolean;
+  isReporting: boolean;
+  reportReason: string;
+  onUpvote: (meaningId: string, currentUpvotes: number) => void;
+  onToggleReport: (meaningId: string) => void;
+  onReportReasonChange: (reason: string) => void;
+  onReport: (meaningId: string) => void;
+  onShare: (term: string, meaning: string) => void;
+  onPlayAudio: (meaning: SlangMeaning) => void;
+  onCommentCountChange: (meaningId: string, n: number) => void;
+}
+
+const MeaningCard = React.memo(function MeaningCard({
+  meaning,
+  index,
+  uiLang,
+  currentSlangId,
+  currentSlangTerm,
+  commentCount,
+  isUpvoted,
+  isPlaying,
+  isReporting,
+  reportReason,
+  onUpvote,
+  onToggleReport,
+  onReportReasonChange,
+  onReport,
+  onShare,
+  onPlayAudio,
+  onCommentCountChange,
+}: MeaningCardProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.1 }}
+      className={index === 0
+        ? "glass-thick p-6 hover:shadow-[0_6px_20px_rgba(10,14,26,0.1)] transition-shadow"
+        : "surface p-6 !rounded-[18px] hover:shadow-[0_4px_14px_rgba(10,14,26,0.08)] transition-shadow"}
+    >
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-[10px]">
+          <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-display font-semibold text-[13px] shrink-0 bg-gradient-to-br from-[#89A3F0] to-[#5B7FE8]">
+            {meaning.authorName ? meaning.authorName.charAt(0).toUpperCase() : 'A'}
+          </div>
+          <div>
+            <p className="font-zh-serif text-[14px] font-semibold text-[var(--ink)]">{meaning.authorName || 'Anonymous'}</p>
+            {meaning.authorTitle && (
+              <p className="font-display italic text-[11px] text-[var(--blue-accent)]">{meaning.authorTitle}</p>
+            )}
+          </div>
+        </div>
+        {meaning.qualityScore ? (
+          (() => {
+            const score = meaning.qualityScore as number;
+            const tone =
+              score >= 90
+                ? 'bg-[rgba(47,99,23,0.12)] border border-[rgba(47,99,23,0.28)] text-[var(--green-ok)]'
+                : score >= 70
+                ? 'bg-[rgba(138,93,14,0.12)] border border-[rgba(138,93,14,0.28)] text-[var(--amber)]'
+                : 'bg-[rgba(229,56,43,0.10)] border border-[rgba(229,56,43,0.28)] text-[var(--red-warn)]';
+            return (
+              <span className={cn('inline-flex items-center gap-1 px-[10px] py-[4px] rounded-[8px] font-mono-meta text-[10px] font-bold tracking-[0.08em]', tone)}>
+                <span>AI</span>
+                <span>{score}</span>
+              </span>
+            );
+          })()
+        ) : null}
+      </div>
+
+      {/* 社区热度信号 — 让页面看着"有人气"。
+          只用现有 meaning.upvotes 和通过回调回传的 commentCounts，不新增 Firestore 查询。
+          浏览数字段 schema 还没有，暂不显示。有了再在这里接上 "👁 browseCount ·"。 */}
+      {(() => {
+        const up = meaning.upvotes || 0;
+        const cmt = commentCount ?? 0;
+        if (up === 0 && cmt === 0) return null;
+        return (
+          <div className="flex items-center gap-3 mb-3 font-mono-meta text-[11px] text-[var(--ink-muted)] tracking-[0.04em]">
+            {up > 0 && (
+              <span className="inline-flex items-center gap-1" title={uiLang === 'zh' ? '累计点赞' : 'Total upvotes'}>
+                <span aria-hidden="true">❤️</span>
+                <span className="font-semibold text-[var(--ink-body)]">{up}</span>
+              </span>
+            )}
+            {cmt > 0 && (
+              <span className="inline-flex items-center gap-1" title={uiLang === 'zh' ? '评论数' : 'Comments'}>
+                <span aria-hidden="true">💬</span>
+                <span className="font-semibold text-[var(--ink-body)]">{cmt}</span>
+              </span>
+            )}
+          </div>
+        );
+      })()}
+
+      <p className="font-zh-serif text-[15px] leading-[1.85] text-[var(--ink)] mb-[14px] whitespace-pre-wrap">
+        {meaning.meaning}
+      </p>
+
+      {meaning.mediaUrl && (
+        <div className="mb-4 rounded-xl overflow-hidden border border-[var(--ink-hairline)]">
+          {meaning.mediaType === 'image' || meaning.mediaType === 'gif' ? (
+            <img
+              src={meaning.mediaUrl}
+              alt="Slang media"
+              className="w-full h-auto max-h-[400px] object-contain bg-gray-50"
+              referrerPolicy="no-referrer"
+            />
+          ) : meaning.mediaType === 'video' ? (
+            <video
+              src={meaning.mediaUrl}
+              controls
+              className="w-full h-auto max-h-[400px] bg-black"
+            />
+          ) : null}
+        </div>
+      )}
+
+      {meaning.example && (
+        <div className="p-[12px_16px] bg-[rgba(10,14,26,0.03)] border border-[var(--ink-hairline)] rounded-[12px] mb-4">
+          <p className="font-display italic text-[14px] leading-[1.55] text-[var(--ink-body)]">
+            "{meaning.example}"
+          </p>
+        </div>
+      )}
+      <div className="flex items-center justify-between pt-[14px] border-t border-[var(--ink-hairline)]">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onUpvote(meaning.id, meaning.upvotes)}
+            disabled={isUpvoted}
+            aria-pressed={isUpvoted}
+            aria-label={
+              isUpvoted
+                ? (uiLang === 'zh' ? `已点赞，当前 ${meaning.upvotes} 个赞` : `Upvoted, ${meaning.upvotes} upvotes`)
+                : (uiLang === 'zh' ? `点赞，当前 ${meaning.upvotes} 个赞` : `Upvote, ${meaning.upvotes} upvotes`)
+            }
+            className={cn(
+              "flex items-center gap-[6px] px-[12px] py-[7px] rounded-[10px] text-[13px] font-semibold transition-colors",
+              isUpvoted
+                ? "bg-[rgba(91,127,232,0.12)] text-[var(--blue-accent)]"
+                : "bg-transparent text-[var(--ink-body)] hover:bg-[rgba(91,127,232,0.08)] hover:text-[var(--blue-accent)]"
+            )}
+          >
+            <ThumbsUp className={cn("w-4 h-4", isUpvoted && "fill-current")} />
+            {meaning.upvotes}
+          </button>
+          {/* Report/Flag button */}
+          <div className="relative">
+            <button
+              onClick={() => onToggleReport(meaning.id)}
+              className="inline-flex items-center gap-1.5 px-[12px] py-[7px] text-[13px] text-[var(--ink-muted)] hover:text-[var(--red-warn)] transition-colors rounded-[10px] hover:bg-[rgba(229,56,43,0.08)]"
+              title={uiLang === 'zh' ? '举报' : 'Report'}
+            >
+              <Flag className="w-4 h-4" />
+              <span className="font-zh-serif">{uiLang === 'zh' ? '举报' : 'Flag'}</span>
+            </button>
+            <AnimatePresence>
+              {isReporting && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  role="dialog"
+                  aria-label={uiLang === 'zh' ? '举报释义' : 'Report meaning'}
+                  className="absolute left-0 bottom-full mb-[6px] bg-white border border-[rgba(10,14,26,0.08)] rounded-[12px] p-[12px] shadow-[0_10px_30px_rgba(10,14,26,0.12)] z-[var(--z-modal)] min-w-[200px]"
+                >
+                  <p className="font-zh-serif text-[11px] font-semibold text-[var(--ink-body)] mb-[6px]">
+                    {uiLang === 'zh' ? '举报原因' : 'Report reason'}
+                  </p>
+                  <select
+                    value={reportReason}
+                    onChange={(e) => onReportReasonChange(e.target.value)}
+                    className="w-full font-zh-serif text-[12px] border border-[rgba(10,14,26,0.1)] rounded-[8px] p-[6px_8px] mb-[8px] outline-none bg-white"
+                  >
+                    {REPORT_REASONS.map(r => (
+                      <option key={r.value} value={r.value}>
+                        {uiLang === 'zh' ? r.labelZh : r.labelEn}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex gap-[6px]">
+                    <button
+                      onClick={() => onToggleReport(meaning.id)}
+                      className="flex-1 font-zh-serif text-[11px] font-bold px-[8px] py-[6px] rounded-[8px] bg-white border border-[rgba(10,14,26,0.15)] text-[var(--ink-body)] hover:bg-[rgba(10,14,26,0.03)]"
+                    >
+                      {uiLang === 'zh' ? '取消' : 'Cancel'}
+                    </button>
+                    <button
+                      onClick={() => onReport(meaning.id)}
+                      className="flex-1 font-zh-serif text-[11px] font-bold px-[8px] py-[6px] rounded-[8px] bg-[var(--red-warn)] text-white border border-[var(--red-warn)] hover:bg-[var(--red-deep)]"
+                    >
+                      {uiLang === 'zh' ? '提交' : 'Submit'}
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+          {/* Share button */}
+          <button
+            onClick={() => onShare(currentSlangTerm, meaning.meaning)}
+            className="inline-flex items-center gap-1.5 px-[12px] py-[7px] text-[13px] text-[var(--ink-muted)] hover:text-[var(--blue-accent)] transition-colors rounded-[10px] hover:bg-[rgba(91,127,232,0.08)]"
+            title={uiLang === 'zh' ? '分享' : 'Share'}
+          >
+            <Share2 className="w-4 h-4" />
+            <span className="font-zh-serif">{uiLang === 'zh' ? '分享' : 'Share'}</span>
+          </button>
+        </div>
+        <button
+          onClick={() => onPlayAudio(meaning)}
+          disabled={isPlaying}
+          className="p-2 text-[var(--ink-muted)] hover:text-[#5B7FE8] transition-colors disabled:opacity-50"
+          title={uiLang === 'zh' ? '朗读' : 'Read aloud'}
+        >
+          {isPlaying ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
+            <div className="relative">
+              <Volume2 className="w-5 h-5" />
+              {meaning.userAudioUrl && (
+                <div className="absolute -top-1 -right-1 w-2 h-2 bg-[#5B7FE8] rounded-full border border-white" />
+              )}
+            </div>
+          )}
+        </button>
+      </div>
+      {/* Comment Section */}
+      <CommentSection
+        slangId={currentSlangId}
+        meaningId={meaning.id}
+        uiLang={uiLang}
+        onCountChange={(n) => onCommentCountChange(meaning.id, n)}
+      />
+    </motion.div>
+  );
+});
+
 export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpenPaywall }: { uiLang: 'en' | 'zh', initialSearchTerm?: string, userProfile?: UserProfile | null, onOpenPaywall?: (trigger: string) => void }) {
   const [searchTerm, setSearchTerm] = useState(initialSearchTerm || '');
   const [currentSlang, setCurrentSlang] = useState<Slang | null>(null);
   const [meanings, setMeanings] = useState<SlangMeaning[]>([]);
   const [searchResults, setSearchResults] = useState<(Slang & { topMeaning?: string; totalUpvotes?: number })[]>([]);
+  // 联想下拉键盘导航：当前高亮项的下标（-1 = 无高亮，沿用输入框本身的值）。
+  // ↑↓ 移动、Enter 选中、Esc 关闭都依赖它。每次联想结果变化要归零。
+  const [activeIndex, setActiveIndex] = useState(-1);
   const [allSlangCache, setAllSlangCache] = useState<Slang[]>([]);
+  // 联想竞态修复：缓存异步加载完成时，用这个 ref 拿到「此刻」输入框里的
+  // 最新内容补算一次联想（闭包里的 val 是旧的）。
+  const latestTypeaheadRef = useRef('');
   const [meaningsBySlangId, setMeaningsBySlangId] = useState<Record<string, { meaning: string; upvotes: number }[]>>({});
   const [isSearching, setIsSearching] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -374,7 +633,8 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
       initialMeaningsUnsubRef.current = null;
 
       try {
-        const q = query(collection(db, 'slangs'), where('term', '==', initialSearchTerm.trim().toLowerCase()), limit(1));
+        // 修复（2026-06-11）：term 字段大小写敏感，大写词条匹配不到 —— 改查 termLower。
+        const q = query(collection(db, 'slangs'), where('termLower', '==', initialSearchTerm.trim().toLowerCase()), limit(1));
         const snapshot = await getDocs(q);
         if (cancelled) return;
 
@@ -529,7 +789,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
     return await getDownloadURL(storageRef);
   };
 
-  const handlePlayAudio = async (meaning: SlangMeaning) => {
+  const handlePlayAudio = useCallback(async (meaning: SlangMeaning) => {
     if (playingAudioId) return;
     setPlayingAudioId(meaning.id);
 
@@ -548,7 +808,9 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
         audio.onended = () => setPlayingAudioId(null);
         await audio.play();
       } else {
-        await speak(meaning.meaning);
+        // Slang meanings are always in Chinese — pass lang explicitly so
+        // the TTS model doesn't fumble Latin-letter pinyin slang inside.
+        await speak(meaning.meaning, 'zh');
         // speak() manages its own playback lifecycle; clear the UI lock
         // here since we don't get an 'ended' callback surfaced.
         setPlayingAudioId(null);
@@ -557,14 +819,14 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
       console.error("Error playing audio:", error);
       setPlayingAudioId(null);
     }
-  };
+  }, [playingAudioId, speak]);
 
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 2500);
-  };
+  }, []);
 
-  const handleReport = async (meaningId: string) => {
+  const handleReport = useCallback(async (meaningId: string) => {
     if (!auth.currentUser) return;
     try {
       await addDoc(collection(db, 'slang_reports'), {
@@ -581,9 +843,9 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
     }
     setReportingMeaningId(null);
     setReportReason('spam');
-  };
+  }, [reportReason, uiLang, showToast]);
 
-  const handleShare = async (term: string, meaning: string) => {
+  const handleShare = useCallback(async (term: string, meaning: string) => {
     const text = `【梗百科】${term}: ${meaning} — via MemeFlow`;
     try {
       await navigator.clipboard.writeText(text);
@@ -598,7 +860,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
       document.body.removeChild(textarea);
       showToast(uiLang === 'zh' ? '已复制到剪贴板' : 'Copied to clipboard');
     }
-  };
+  }, [uiLang, showToast]);
 
   const selectSlang = useCallback(async (slangData: Slang) => {
     setCurrentSlang(slangData);
@@ -692,15 +954,19 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
         }
       }
 
-      // Fallback: Firestore query
-      let q = query(collection(db, 'slangs'), where('term', '==', term), limit(1));
+      // Fallback: Firestore query\u3002
+      // \u4fee\u590d\uff082026-06-11\uff09\uff1a\u539f\u6765\u67e5\u7684\u662f term \u5b57\u6bb5\uff0c\u4f46\u8f93\u5165\u5df2 toLowerCase()\uff0c
+      // \u5927\u5199\u5b58\u50a8\u7684\u8bcd\u6761\uff08\u5982\u300cAI\u6cd4\u6c34\u300d\uff09\u6c38\u8fdc\u7cbe\u786e\u5339\u914d\u4e0d\u5230 \u2014\u2014 \u7f13\u5b58\u6ca1\u52a0\u8f7d\u5b8c\u65f6
+      // \u8d70\u5230\u8fd9\u91cc\u5c31\u62a5"\u672a\u627e\u5230\u8be5\u8bcd\u6761"\u3002\u6539\u67e5 termLower\uff08\u5168\u5e93\u5df2\u56de\u586b\u8be5\u5b57\u6bb5\uff0c
+      // \u65b0\u5efa\u8bcd\u6761\u4e5f\u4f1a\u5199\u5165\uff09\uff0c\u5927\u5c0f\u5199\u4e0d\u518d\u5f71\u54cd\u641c\u7d22\u3002
+      let q = query(collection(db, 'slangs'), where('termLower', '==', term), limit(1));
       let snapshot = await getDocs(q);
 
       if (snapshot.empty) {
         q = query(
           collection(db, 'slangs'),
-          where('term', '>=', term),
-          where('term', '<=', term + '\uf8ff'),
+          where('termLower', '>=', term),
+          where('termLower', '<=', term + '\uf8ff'),
           limit(5)
         );
         snapshot = await getDocs(q);
@@ -857,6 +1123,9 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
         try {
           const slangRef = await addDoc(collection(db, 'slangs'), {
             term: termToUse,
+            // termLower 是搜索/去重的统一键（2026-06-11 全库已回填）——
+            // 新建词条必须同步写入，否则又会出现"搜不到"的老 bug。
+            termLower: termToUse.toLowerCase().trim(),
             createdAt: serverTimestamp()
           });
           slangId = slangRef.id;
@@ -1110,7 +1379,7 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
     }
   };
 
-  const handleUpvote = async (meaningId: string, currentUpvotes: number) => {
+  const handleUpvote = useCallback(async (meaningId: string, currentUpvotes: number) => {
     if (!auth.currentUser) return;
     if (upvotedMeanings.has(meaningId)) return; // Already upvoted
 
@@ -1136,7 +1405,19 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
       toast.error(uiLang === 'zh' ? '点赞失败' : 'Upvote failed');
       Sentry.captureException(error, { tags: { component: 'SlangDictionary', op: 'firestore.write', collection: 'slang_upvotes' } });
     }
-  };
+  }, [upvotedMeanings, uiLang]);
+
+  // 稳定的评论数回传回调：用 (meaningId, n) 形式，让 memo 卡片传自己的 id。
+  // 原来是写在 JSX 里的内联箭头闭包（每次渲染新建），会破坏 MeaningCard 的 memo。
+  // 行为完全等价：只有计数真变了才 setState，避免无谓重渲染。
+  const handleCommentCountChange = useCallback((meaningId: string, n: number) => {
+    setCommentCounts(prev => (prev[meaningId] === n ? prev : { ...prev, [meaningId]: n }));
+  }, []);
+
+  // 稳定的举报面板开关回调：切换当前展开的举报项。
+  const handleToggleReport = useCallback((meaningId: string) => {
+    setReportingMeaningId(prev => (prev === meaningId ? null : meaningId));
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -1153,7 +1434,9 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
-            className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-lg"
+            role="status"
+            aria-live="polite"
+            className="fixed top-4 left-1/2 -translate-x-1/2 z-[var(--z-toast)] bg-gray-900 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-lg"
           >
             {toastMessage}
           </motion.div>
@@ -1168,9 +1451,47 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
         <input
           type="text"
           value={searchTerm}
+          role="combobox"
+          aria-expanded={searchResults.length > 0 && !currentSlang && !!searchTerm.trim()}
+          aria-controls="slang-typeahead-listbox"
+          aria-autocomplete="list"
+          aria-activedescendant={activeIndex >= 0 ? `slang-option-${activeIndex}` : undefined}
+          onKeyDown={(e) => {
+            const open = searchResults.length > 0 && !currentSlang && !!searchTerm.trim();
+            if (!open) return;
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setActiveIndex(i => (i + 1) % searchResults.length);
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setActiveIndex(i => (i <= 0 ? searchResults.length - 1 : i - 1));
+            } else if (e.key === 'Enter') {
+              // 有高亮项时直接选中它，拦掉表单默认提交；没高亮就交给 form onSubmit 走常规搜索。
+              if (activeIndex >= 0 && activeIndex < searchResults.length) {
+                e.preventDefault();
+                selectSlang(searchResults[activeIndex]);
+                setSearchResults([]);
+                setActiveIndex(-1);
+              }
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              setSearchResults([]);
+              setActiveIndex(-1);
+            }
+          }}
           onChange={(e) => {
             const val = e.target.value;
             setSearchTerm(val);
+            latestTypeaheadRef.current = val;
+            // 每次改输入，联想列表会重算，旧高亮下标失效，归零。
+            setActiveIndex(-1);
+            // 修复（2026-06-11）：看过词条后 currentSlang 一直挂着，而联想
+            // 下拉的渲染条件要求 !currentSlang —— 导致点开过任何词条后联想
+            // 永久失灵。打字=开始新搜索，离开当前词条页回到联想态。
+            if (currentSlang && val.trim() !== currentSlang.term) {
+              setCurrentSlang(null);
+              setMeanings([]);
+            }
             // Typeahead suggestions
             if (val.trim()) {
               const q = val.trim().toLowerCase();
@@ -1179,6 +1500,16 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
                 getDocs(collection(db, 'slangs')).then(snap => {
                   const slangs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Slang));
                   setAllSlangCache(slangs);
+                  // 修复（2026-06-11）缓存竞态：之前加载完只存缓存不出结果，
+                  // 用户打完字下拉一直是空的。加载完成后用「此刻」输入框的
+                  // 最新内容立刻补算一次联想。
+                  const cur = (latestTypeaheadRef.current || '').trim().toLowerCase();
+                  if (cur) {
+                    const late = slangs
+                      .filter(s => ((s as any).termLower || s.term.toLowerCase()).includes(cur))
+                      .slice(0, 8);
+                    if (late.length > 0) setSearchResults(late);
+                  }
                 });
               }
               const suggestions = allSlangCache
@@ -1190,7 +1521,11 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
                 })
                 .sort((a, b) => (b.totalUpvotes || 0) - (a.totalUpvotes || 0))
                 .slice(0, 8);
-              setSearchResults(suggestions.length > 0 && !currentSlang ? suggestions : []);
+              // 修复（2026-06-11）：原来这里还有 && !currentSlang 守卫，但它读的是
+              // 本次事件闭包里的旧值 —— 上面刚 setCurrentSlang(null) 在这里看不见，
+              // 算好的联想被原地扔掉（词条页打字联想永远不出来）。打字即新搜索，
+              // currentSlang 已在上方清空，这个守卫已无存在意义。
+              setSearchResults(suggestions);
             } else {
               setSearchResults([]);
             }
@@ -1199,7 +1534,10 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
             if (searchTerm.trim() && allSlangCache.length > 0 && !currentSlang) {
               const q = searchTerm.trim().toLowerCase();
               const suggestions = allSlangCache.filter(s => s.term.toLowerCase().includes(q)).slice(0, 6);
-              if (suggestions.length > 0) setSearchResults(suggestions);
+              if (suggestions.length > 0) {
+                setSearchResults(suggestions);
+                setActiveIndex(-1);
+              }
             }
           }}
           placeholder={uiLang === 'zh' ? '搜索网络热词、梗…' : 'Search internet slang, memes…'}
@@ -1218,7 +1556,8 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
         <button
           type="submit"
           disabled={isSearching || !searchTerm.trim()}
-          className="absolute right-2 top-1/2 -translate-y-1/2 bg-[var(--ink)] text-white px-[18px] py-[8px] rounded-[10px] font-zh-serif text-[13px] font-bold hover:bg-[#1a2440] disabled:opacity-50 transition-colors"
+          aria-label={uiLang === 'zh' ? '搜索' : 'Search'}
+          className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center min-h-[44px] min-w-[44px] bg-[var(--ink)] text-white px-[18px] py-[8px] rounded-[10px] font-zh-serif text-[13px] font-bold hover:bg-[#1a2440] disabled:opacity-50 transition-colors"
         >
           {isSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : (uiLang === 'zh' ? '搜索' : 'Search')}
         </button>
@@ -1226,19 +1565,33 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
 
       {/* Search results / typeahead */}
       {searchResults.length > 0 && !currentSlang && searchTerm.trim() && (
-        <div className="absolute left-0 right-0 z-30 bg-white rounded-[18px] border border-[var(--ink-hairline)] shadow-[0_12px_36px_rgba(91,127,232,0.18)] overflow-hidden mt-1.5 max-h-80 overflow-y-auto">
+        <div
+          id="slang-typeahead-listbox"
+          role="listbox"
+          aria-label={uiLang === 'zh' ? '搜索联想结果' : 'Search suggestions'}
+          className="absolute left-0 right-0 z-[var(--z-dropdown)] bg-white rounded-[18px] border border-[var(--ink-hairline)] shadow-[0_12px_36px_rgba(91,127,232,0.18)] overflow-hidden mt-1.5 max-h-80 overflow-y-auto"
+        >
           <div className="px-4 py-[10px] bg-[rgba(244,247,255,0.8)] font-mono-meta text-[10px] font-semibold tracking-[0.18em] uppercase text-[var(--ink-muted)] border-b border-[var(--ink-hairline)]">
             {uiLang === 'zh' ? `找到 ${searchResults.length} 个相关词条` : `${searchResults.length} matches`}
           </div>
-          {searchResults.map(s => {
+          {searchResults.map((s, idx) => {
             // 社区深度信号：用 meaningsBySlangId 拿到该词的释义数量（cache 已有，不是新 Firestore 查询）。
             const meaningCount = (meaningsBySlangId[s.id] || []).length;
             const totalUp = s.totalUpvotes || 0;
+            const isActive = idx === activeIndex;
             return (
               <button
                 key={s.id}
-                onClick={() => { selectSlang(s); setSearchResults([]); }}
-                className="w-full text-left px-4 py-3 hover:bg-[rgba(91,127,232,0.06)] transition-colors border-b border-[rgba(10,14,26,0.04)] last:border-0"
+                id={`slang-option-${idx}`}
+                role="option"
+                aria-selected={isActive}
+                ref={(el) => { if (isActive && el) el.scrollIntoView({ block: 'nearest' }); }}
+                onMouseEnter={() => setActiveIndex(idx)}
+                onClick={() => { selectSlang(s); setSearchResults([]); setActiveIndex(-1); }}
+                className={cn(
+                  "w-full text-left px-4 py-3 transition-colors border-b border-[rgba(10,14,26,0.04)] last:border-0",
+                  isActive ? "bg-[rgba(91,127,232,0.1)]" : "hover:bg-[rgba(91,127,232,0.06)]"
+                )}
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className="font-display font-semibold text-[15px] text-[var(--ink)] shrink-0">{s.term}</span>
@@ -1469,204 +1822,26 @@ export function SlangDictionary({ uiLang, initialSearchTerm, userProfile, onOpen
 
           <div className="space-y-4">
             {meanings.map((meaning, index) => (
-              <motion.div
+              <MeaningCard
                 key={meaning.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-                className={index === 0
-                  ? "glass-thick p-6 hover:shadow-[0_6px_20px_rgba(10,14,26,0.1)] transition-shadow"
-                  : "surface p-6 !rounded-[18px] hover:shadow-[0_4px_14px_rgba(10,14,26,0.08)] transition-shadow"}
-              >
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-[10px]">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-display font-semibold text-[13px] shrink-0 bg-gradient-to-br from-[#89A3F0] to-[#5B7FE8]">
-                      {meaning.authorName ? meaning.authorName.charAt(0).toUpperCase() : 'A'}
-                    </div>
-                    <div>
-                      <p className="font-zh-serif text-[14px] font-semibold text-[var(--ink)]">{meaning.authorName || 'Anonymous'}</p>
-                      {meaning.authorTitle && (
-                        <p className="font-display italic text-[11px] text-[var(--blue-accent)]">{meaning.authorTitle}</p>
-                      )}
-                    </div>
-                  </div>
-                  {meaning.qualityScore ? (
-                    (() => {
-                      const score = meaning.qualityScore as number;
-                      const tone =
-                        score >= 90
-                          ? 'bg-[rgba(47,99,23,0.12)] border border-[rgba(47,99,23,0.28)] text-[var(--green-ok)]'
-                          : score >= 70
-                          ? 'bg-[rgba(138,93,14,0.12)] border border-[rgba(138,93,14,0.28)] text-[var(--amber)]'
-                          : 'bg-[rgba(229,56,43,0.10)] border border-[rgba(229,56,43,0.28)] text-[var(--red-warn)]';
-                      return (
-                        <span className={cn('inline-flex items-center gap-1 px-[10px] py-[4px] rounded-[8px] font-mono-meta text-[10px] font-bold tracking-[0.08em]', tone)}>
-                          <span>AI</span>
-                          <span>{score}</span>
-                        </span>
-                      );
-                    })()
-                  ) : null}
-                </div>
-
-                {/* 社区热度信号 — 让页面看着"有人气"。
-                    只用现有 meaning.upvotes 和通过回调回传的 commentCounts，不新增 Firestore 查询。
-                    浏览数字段 schema 还没有，暂不显示。有了再在这里接上 "👁 browseCount ·"。 */}
-                {(() => {
-                  const up = meaning.upvotes || 0;
-                  const cmt = commentCounts[meaning.id] ?? 0;
-                  if (up === 0 && cmt === 0) return null;
-                  return (
-                    <div className="flex items-center gap-3 mb-3 font-mono-meta text-[11px] text-[var(--ink-muted)] tracking-[0.04em]">
-                      {up > 0 && (
-                        <span className="inline-flex items-center gap-1" title={uiLang === 'zh' ? '累计点赞' : 'Total upvotes'}>
-                          <span aria-hidden="true">❤️</span>
-                          <span className="font-semibold text-[var(--ink-body)]">{up}</span>
-                        </span>
-                      )}
-                      {cmt > 0 && (
-                        <span className="inline-flex items-center gap-1" title={uiLang === 'zh' ? '评论数' : 'Comments'}>
-                          <span aria-hidden="true">💬</span>
-                          <span className="font-semibold text-[var(--ink-body)]">{cmt}</span>
-                        </span>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                <p className="font-zh-serif text-[15px] leading-[1.85] text-[var(--ink)] mb-[14px] whitespace-pre-wrap">
-                  {meaning.meaning}
-                </p>
-                
-                {meaning.mediaUrl && (
-                  <div className="mb-4 rounded-xl overflow-hidden border border-[var(--ink-hairline)]">
-                    {meaning.mediaType === 'image' || meaning.mediaType === 'gif' ? (
-                      <img 
-                        src={meaning.mediaUrl} 
-                        alt="Slang media" 
-                        className="w-full h-auto max-h-[400px] object-contain bg-gray-50"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : meaning.mediaType === 'video' ? (
-                      <video 
-                        src={meaning.mediaUrl} 
-                        controls 
-                        className="w-full h-auto max-h-[400px] bg-black"
-                      />
-                    ) : null}
-                  </div>
-                )}
-
-                {meaning.example && (
-                  <div className="p-[12px_16px] bg-[rgba(10,14,26,0.03)] border border-[var(--ink-hairline)] rounded-[12px] mb-4">
-                    <p className="font-display italic text-[14px] leading-[1.55] text-[var(--ink-body)]">
-                      "{meaning.example}"
-                    </p>
-                  </div>
-                )}
-                <div className="flex items-center justify-between pt-[14px] border-t border-[var(--ink-hairline)]">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => handleUpvote(meaning.id, meaning.upvotes)}
-                      disabled={upvotedMeanings.has(meaning.id)}
-                      className={cn(
-                        "flex items-center gap-[6px] px-[12px] py-[7px] rounded-[10px] text-[13px] font-semibold transition-colors",
-                        upvotedMeanings.has(meaning.id)
-                          ? "bg-[rgba(91,127,232,0.12)] text-[var(--blue-accent)]"
-                          : "bg-transparent text-[var(--ink-body)] hover:bg-[rgba(91,127,232,0.08)] hover:text-[var(--blue-accent)]"
-                      )}
-                    >
-                      <ThumbsUp className={cn("w-4 h-4", upvotedMeanings.has(meaning.id) && "fill-current")} />
-                      {meaning.upvotes}
-                    </button>
-                    {/* Report/Flag button */}
-                    <div className="relative">
-                      <button
-                        onClick={() => setReportingMeaningId(reportingMeaningId === meaning.id ? null : meaning.id)}
-                        className="inline-flex items-center gap-1.5 px-[12px] py-[7px] text-[13px] text-[var(--ink-muted)] hover:text-[var(--red-warn)] transition-colors rounded-[10px] hover:bg-[rgba(229,56,43,0.08)]"
-                        title={uiLang === 'zh' ? '举报' : 'Report'}
-                      >
-                        <Flag className="w-4 h-4" />
-                        <span className="font-zh-serif">{uiLang === 'zh' ? '举报' : 'Flag'}</span>
-                      </button>
-                      <AnimatePresence>
-                        {reportingMeaningId === meaning.id && (
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            className="absolute left-0 bottom-full mb-[6px] bg-white border border-[rgba(10,14,26,0.08)] rounded-[12px] p-[12px] shadow-[0_10px_30px_rgba(10,14,26,0.12)] z-10 min-w-[200px]"
-                          >
-                            <p className="font-zh-serif text-[11px] font-semibold text-[var(--ink-body)] mb-[6px]">
-                              {uiLang === 'zh' ? '举报原因' : 'Report reason'}
-                            </p>
-                            <select
-                              value={reportReason}
-                              onChange={(e) => setReportReason(e.target.value)}
-                              className="w-full font-zh-serif text-[12px] border border-[rgba(10,14,26,0.1)] rounded-[8px] p-[6px_8px] mb-[8px] outline-none bg-white"
-                            >
-                              {REPORT_REASONS.map(r => (
-                                <option key={r.value} value={r.value}>
-                                  {uiLang === 'zh' ? r.labelZh : r.labelEn}
-                                </option>
-                              ))}
-                            </select>
-                            <div className="flex gap-[6px]">
-                              <button
-                                onClick={() => setReportingMeaningId(null)}
-                                className="flex-1 font-zh-serif text-[11px] font-bold px-[8px] py-[6px] rounded-[8px] bg-white border border-[rgba(10,14,26,0.15)] text-[var(--ink-body)] hover:bg-[rgba(10,14,26,0.03)]"
-                              >
-                                {uiLang === 'zh' ? '取消' : 'Cancel'}
-                              </button>
-                              <button
-                                onClick={() => handleReport(meaning.id)}
-                                className="flex-1 font-zh-serif text-[11px] font-bold px-[8px] py-[6px] rounded-[8px] bg-[var(--red-warn)] text-white border border-[var(--red-warn)] hover:bg-[var(--red-deep)]"
-                              >
-                                {uiLang === 'zh' ? '提交' : 'Submit'}
-                              </button>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                    {/* Share button */}
-                    <button
-                      onClick={() => handleShare(currentSlang!.term, meaning.meaning)}
-                      className="inline-flex items-center gap-1.5 px-[12px] py-[7px] text-[13px] text-[var(--ink-muted)] hover:text-[var(--blue-accent)] transition-colors rounded-[10px] hover:bg-[rgba(91,127,232,0.08)]"
-                      title={uiLang === 'zh' ? '分享' : 'Share'}
-                    >
-                      <Share2 className="w-4 h-4" />
-                      <span className="font-zh-serif">{uiLang === 'zh' ? '分享' : 'Share'}</span>
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => handlePlayAudio(meaning)}
-                    disabled={playingAudioId === meaning.id}
-                    className="p-2 text-[var(--ink-muted)] hover:text-[#5B7FE8] transition-colors disabled:opacity-50"
-                    title={uiLang === 'zh' ? '朗读' : 'Read aloud'}
-                  >
-                    {playingAudioId === meaning.id ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <div className="relative">
-                        <Volume2 className="w-5 h-5" />
-                        {meaning.userAudioUrl && (
-                          <div className="absolute -top-1 -right-1 w-2 h-2 bg-[#5B7FE8] rounded-full border border-white" />
-                        )}
-                      </div>
-                    )}
-                  </button>
-                </div>
-                {/* Comment Section */}
-                {currentSlang && (
-                  <CommentSection
-                    slangId={currentSlang.id}
-                    meaningId={meaning.id}
-                    uiLang={uiLang}
-                    onCountChange={(n) => setCommentCounts(prev => (prev[meaning.id] === n ? prev : { ...prev, [meaning.id]: n }))}
-                  />
-                )}
-              </motion.div>
+                meaning={meaning}
+                index={index}
+                uiLang={uiLang}
+                currentSlangId={currentSlang.id}
+                currentSlangTerm={currentSlang.term}
+                commentCount={commentCounts[meaning.id] ?? 0}
+                isUpvoted={upvotedMeanings.has(meaning.id)}
+                isPlaying={playingAudioId === meaning.id}
+                isReporting={reportingMeaningId === meaning.id}
+                reportReason={reportReason}
+                onUpvote={handleUpvote}
+                onToggleReport={handleToggleReport}
+                onReportReasonChange={setReportReason}
+                onReport={handleReport}
+                onShare={handleShare}
+                onPlayAudio={handlePlayAudio}
+                onCommentCountChange={handleCommentCountChange}
+              />
             ))}
 
             {meanings.length === 0 && !showAddForm && (

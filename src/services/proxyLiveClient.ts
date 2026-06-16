@@ -139,9 +139,14 @@ export class ProxyLiveClient {
     }
   }
 
-  /** 强制 finalize（让 Deepgram 把 buffer 里的内容立刻吐出来）*/
+  /**
+   * 强制 finalize：让 Deepgram 立即把 buffer 里的内容吐成 is_final，
+   * 但**不关闭连接**，可以继续录音。Deepgram 文档：消息类型必须是
+   * "Finalize"（不是 CloseStream，CloseStream 会真正断流）。响应里
+   * 会带 `from_finalize: true` 标记。
+   */
   finalize(): void {
-    this.send(JSON.stringify({ type: 'CloseStream' }));
+    this.send(JSON.stringify({ type: 'Finalize' }));
   }
 
   /** 优雅关闭 */

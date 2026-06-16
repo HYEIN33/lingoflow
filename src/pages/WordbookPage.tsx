@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Language, translations } from '../i18n';
 import { SavedWord } from '../App';
+import { TtsLang } from '../services/ai';
 
 export interface WordbookFolder {
   id: string;
@@ -26,7 +27,7 @@ interface WordbookPageProps {
   setShowDetails: (v: boolean) => void;
   loadingAudioText: string | null;
   uiLang: Language;
-  onSpeak: (text: string) => void;
+  onSpeak: (text: string, lang?: TtsLang) => void;
   onDeleteWord: (id: string) => Promise<void>;
   // Folder props
   folders: WordbookFolder[];
@@ -221,7 +222,7 @@ export default function WordbookPage(props: WordbookPageProps) {
               setSelectedWordbookItem(null);
               setSelectedUsageIndex(0);
             }}
-            className="inline-flex items-center gap-1.5 py-1.5 pl-2 pr-3 font-display italic text-[13px] text-[var(--blue-accent)] hover:text-[var(--blue-accent-deep)] transition-colors"
+            className="inline-flex items-center gap-1.5 py-1.5 pl-2 pr-3 font-display italic text-[13px] text-[var(--blue-accent-text)] hover:text-[var(--blue-accent-deep)] transition-colors"
           >
             <ChevronRight className="w-3 h-3 rotate-180" />
             {uiLang === 'zh' ? '返回列表 · back' : 'back · 返回列表'}
@@ -309,7 +310,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                   <p className="font-zh-serif font-semibold text-[16px] text-[var(--ink)] m-0 mb-2">
                     {selectedWordbookItem.usages?.[selectedUsageIndex]?.meaning || ''}
                   </p>
-                  <p className="font-zh-serif text-[15px] font-medium text-[var(--blue-accent)] m-0 pt-2 border-t border-[var(--ink-hairline)]">
+                  <p className="font-zh-serif text-[15px] font-medium text-[var(--blue-accent-text)] m-0 pt-2 border-t border-[var(--ink-hairline)]">
                     {selectedWordbookItem.usages?.[selectedUsageIndex]?.meaningZh || ''}
                   </p>
                 </div>
@@ -349,7 +350,8 @@ export default function WordbookPage(props: WordbookPageProps) {
               {/* Details toggle */}
               <button
                 onClick={() => setShowDetails(!showDetails)}
-                className="inline-flex items-center gap-1.5 font-display italic text-[13px] text-[var(--blue-accent)] hover:text-[var(--blue-accent-deep)] transition-colors mt-2"
+                aria-expanded={showDetails}
+                className="inline-flex items-center gap-1.5 font-display italic text-[13px] text-[var(--blue-accent-text)] hover:text-[var(--blue-accent-deep)] transition-colors mt-2"
               >
                 {showDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 {showDetails ? t.hideDetails : t.showDetails}
@@ -738,19 +740,35 @@ export default function WordbookPage(props: WordbookPageProps) {
           )}
 
           {/* Word cards grid */}
+          {/* AnimatePresence 让删词时卡片"缩小淡出滑走"而不是瞬间消失，
+              新增的词则"淡入滑入"。layout 让其余卡片平滑补位。
+              现状：之前增删词是瞬间出现/消失，看不清哪条变了。
+              修后：增删有动画，用户一眼看清变化；hover 时卡片微微抬起更跟手。 */}
           <div className="grid grid-cols-1 gap-3.5">
+            <AnimatePresence mode="popLayout" initial={false}>
             {folderFilteredWords.map((word) => (
               <motion.article
                 layout
                 key={word.id}
+                initial={{ opacity: 0, y: 12, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.18 } }}
+                whileHover={{ y: -3 }}
+                transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                 onClick={() => batchMode ? toggleWordSelection(word.id) : setSelectedWordbookItem(word)}
+                role={batchMode ? 'checkbox' : 'button'}
+                aria-checked={batchMode ? selectedWordIds.has(word.id) : undefined}
+                aria-label={batchMode
+                  ? (uiLang === 'zh' ? `选择 ${word.original}` : `Select ${word.original}`)
+                  : (uiLang === 'zh' ? `查看 ${word.original} 详情` : `View ${word.original} details`)}
                 className={cn(
-                  "surface !rounded-[14px] p-[18px_20px] cursor-pointer transition-all hover:!border-[var(--border-solid-strong)] hover:shadow-[0_4px_14px_rgba(10,14,26,0.06)] relative",
+                  "surface !rounded-[14px] p-[18px_20px] cursor-pointer transition-[border-color,box-shadow] hover:!border-[var(--border-solid-strong)] hover:shadow-[0_4px_14px_rgba(10,14,26,0.06)] relative",
                   batchMode && "pl-[52px]"
                 )}
               >
                 {batchMode && (
                   <span
+                    aria-hidden="true"
                     className={cn(
                       "absolute left-[18px] top-[22px] w-[22px] h-[22px] rounded-[7px] border-[1.5px] inline-flex items-center justify-center cursor-pointer transition-all",
                       selectedWordIds.has(word.id)
@@ -813,7 +831,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                     <button
                       onClick={(e) => { e.stopPropagation(); onSpeak(word.original); }}
                       disabled={loadingAudioText === word.original}
-                      className="w-7 h-7 rounded-[9px] inline-flex items-center justify-center bg-transparent text-[var(--ink-subtle)] hover:text-[var(--blue-accent)] hover:bg-[rgba(91,127,232,0.08)] transition-colors disabled:opacity-50"
+                      className="w-11 h-11 -m-2 rounded-[9px] inline-flex items-center justify-center bg-transparent text-[var(--ink-subtle)] hover:text-[var(--blue-accent)] hover:bg-[rgba(91,127,232,0.08)] transition-colors disabled:opacity-50"
                     >
                       {loadingAudioText === word.original ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -824,7 +842,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                     {!batchMode && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onDeleteWord(word.id); }}
-                        className="w-7 h-7 rounded-[9px] inline-flex items-center justify-center bg-transparent text-[var(--ink-subtle)] hover:text-[var(--red-warn)] hover:bg-[rgba(229,56,43,0.06)] transition-colors"
+                        className="w-11 h-11 -m-2 rounded-[9px] inline-flex items-center justify-center bg-transparent text-[var(--ink-subtle)] hover:text-[var(--red-warn)] hover:bg-[rgba(229,56,43,0.06)] transition-colors"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -833,6 +851,7 @@ export default function WordbookPage(props: WordbookPageProps) {
                 </div>
               </motion.article>
             ))}
+            </AnimatePresence>
           </div>
 
           {folderFilteredWords.length === 0 && (

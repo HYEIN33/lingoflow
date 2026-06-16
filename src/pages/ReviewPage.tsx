@@ -2,9 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { BookOpen, CheckCircle, Volume2, Loader2, RotateCcw, Sparkles, Send, MessageSquare, History, Play, ChevronDown, ChevronUp } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'motion/react';
+import gsap from 'gsap';
+import { useGSAP } from '@gsap/react';
+import BlurText from '../components/reactbits/BlurText/BlurText';
+import { prefersReducedMotion } from '../lib/motionTokens';
 import { cn } from '../lib/utils';
 import { Language, translations } from '../i18n';
 import { SavedWord, UserProfile } from '../App';
+import { TtsLang } from '../services/ai';
 
 interface ReviewPageProps {
   userProfile: UserProfile | null;
@@ -18,7 +23,7 @@ interface ReviewPageProps {
   onSetReviewIndex: (v: number) => void;
   onOpenOnboarding: () => void;
   onOpenPayment: (source: string) => void;
-  onSpeak?: (text: string) => void;
+  onSpeak?: (text: string, lang?: TtsLang) => void;
   loadingAudioText?: string | null;
   totalWords?: number;
   onGetHint?: (word: string, meaningZh: string) => Promise<string>;
@@ -46,6 +51,86 @@ export default function ReviewPage(props: ReviewPageProps) {
   // 正在 requeue 的单词 id，用于按钮 loading 态。
   const [requeueingId, setRequeueingId] = useState<string | null>(null);
   const [requeueingAll, setRequeueingAll] = useState(false);
+
+  // === GSAP 3D 翻卡 ===
+  // 复习卡片点「显示答案」时绕 Y 轴翻转，正面是单词、翻过去露出释义。
+  // 用 GSAP 而不是 motion：3D rotationY + 中途切换内容的时间线编排是
+  // GSAP 的强项。useGSAP 自动在卸载时 revert，避免动画泄漏到已卸载节点。
+  // 按官方 gsap-react skill：registerPlugin(useGSAP) + scope + contextSafe。
+  gsap.registerPlugin(useGSAP);
+  const cardRef = useRef<HTMLDivElement>(null);
+  // contextSafe 包裹的翻转函数：在 useGSAP 执行后被点击事件调用，
+  // 包一层才能被 GSAP context 收编、随组件卸载自动清理。
+  const flipRef = useRef<((toBack: boolean) => void) | null>(null);
+
+  useGSAP((_context, contextSafe) => {
+    if (!contextSafe) return;
+    flipRef.current = contextSafe((toBack: boolean) => {
+      const el = cardRef.current;
+      if (!el) return;
+      // 系统开了"减少动态"就不翻转（GSAP 不认 MotionConfig，手动守卫）；
+      // 内容切换由 React 状态驱动，照常生效。
+      if (prefersReducedMotion()) return;
+      // 半程翻转：先翻到 -90°（侧棱朝前、内容看不见）→ React 已经
+      // 切好了正/反面内容 → 再从 90° 翻回 0°。中点用 onComplete 不需要，
+      // 因为 React 的 showReviewAnswer 状态切换驱动内容替换，这里只演翻转。
+      gsap.timeline()
+        .to(el, { rotationY: toBack ? -90 : 90, duration: 0.18, ease: 'power2.in' })
+        .set(el, { rotationY: toBack ? 90 : -90 })
+        .to(el, { rotationY: 0, duration: 0.32, ease: 'power2.out' });
+    });
+  }, { scope: cardRef });
+
+  // 触发翻转 + 切状态。点击「显示答案」翻到背面，答完题翻回正面。
+  const triggerFlip = (toBack: boolean) => {
+    flipRef.current?.(toBack);
+    setShowReviewAnswer(toBack);
+  };
+
+  // 答题（质量按钮和键盘快捷键共用）：记录 SM-2 质量分 → 翻回正面 →
+  // 推进到下一张。从质量按钮的 onClick 里抽出来，避免两处逻辑漂移。
+  const answerQuality = (q: number) => {
+    if (!currentReviewWord) return;
+    onReview(currentReviewWord.id, q);
+    triggerFlip(false);
+    setReviewedCount(c => c + 1);
+    setAiHint(null);
+    if (reviewIndex < dueWords.length - 1) {
+      onSetReviewIndex(reviewIndex + 1);
+    } else {
+      onSetReviewIndex(0);
+    }
+  };
+
+  // 键盘快捷键：质量按钮角上一直印着 1/2/3/4 数字角标，但之前并没有
+  // 真的绑键 —— 是个"承诺了没兑现"的 UI。现在兑现：
+  //   空格/回车 = 翻看答案；数字 1-4 = 四档质量（完全忘了/努力想起/顺利/容易）。
+  // 输入框聚焦时（AI 聊天）不拦截，避免打字误触。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (!currentReviewWord) return;
+      if (!showReviewAnswer) {
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          triggerFlip(true);
+        }
+        return;
+      }
+      const qualityByKey: Record<string, number> = { '1': 1, '2': 3, '3': 4, '4': 5 };
+      const q = qualityByKey[e.key];
+      if (q) {
+        e.preventDefault();
+        answerQuality(q);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // answerQuality/triggerFlip 每次渲染都是新引用；依赖列出它们用到的
+    // 状态键即可 —— 这些变了 effect 重建，闭包永远是新鲜的。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showReviewAnswer, currentReviewWord?.id, reviewIndex, dueWords.length]);
 
   // 明天到期数 — savedWords 没传就跳过
   const tomorrowCount = (() => {
@@ -75,6 +160,8 @@ export default function ReviewPage(props: ReviewPageProps) {
     setChatMessages([]);
     setAiHint(null);
     setShowChat(false);
+    // 换词时把卡片翻回正面，清掉上一张可能残留的 rotationY。
+    if (cardRef.current) gsap.set(cardRef.current, { rotationY: 0 });
   }, [currentReviewWord?.id]);
 
   useEffect(() => {
@@ -109,7 +196,7 @@ export default function ReviewPage(props: ReviewPageProps) {
     <div className="space-y-6">
       {!userProfile?.isPro && !userProfile?.hasCompletedOnboarding ? (
         /* ======================== PAYWALL ======================== */
-        <div className="surface !rounded-[18px] border-l-[3px] border-l-[var(--blue-accent)] p-[32px_36px] max-w-2xl mx-auto mt-10 text-left">
+        <div className="surface !rounded-[18px] border border-[var(--border-solid)] p-[32px_36px] max-w-2xl mx-auto mt-10 text-left">
           <div className="flex items-center gap-[14px] pb-4 mb-[18px] border-b border-[var(--ink-hairline)]">
             <div className="w-11 h-11 rounded-[14px] flex items-center justify-center text-white shrink-0 shadow-[0_6px_14px_rgba(91,127,232,0.35)]"
               style={{ background: 'linear-gradient(135deg, #5B7FE8, #89A3F0)' }}>
@@ -131,7 +218,7 @@ export default function ReviewPage(props: ReviewPageProps) {
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-[10px]">
             <div className="p-4 rounded-[16px] border-[1.5px] border-[rgba(232,180,60,0.45)] bg-[rgba(255,243,217,0.6)]">
-              <div className="font-display italic font-bold text-[15px] text-[#8A5D0E] mb-1">
+              <div className="font-display italic font-bold text-[15px] text-[var(--amber)] mb-1">
                 {uiLang === 'zh' ? 'Contribute first · 先贡献' : 'Contribute first'}
               </div>
               <div className="font-zh-serif text-[12.5px] leading-[1.6] text-[var(--ink-muted)] mb-3">
@@ -144,7 +231,7 @@ export default function ReviewPage(props: ReviewPageProps) {
               <button
                 onClick={onOpenOnboarding}
                 className="w-full inline-flex items-center justify-center gap-1.5 px-[14px] py-[9px] rounded-[11px] text-[13px] font-bold border-0 cursor-pointer"
-                style={{ background: '#E8C375', color: '#5A3C08' }}
+                style={{ background: 'var(--amber-bright)', color: '#5A3C08' }}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
                 {uiLang === 'zh' ? '去贡献词条' : 'Contribute Now'}
@@ -206,8 +293,13 @@ export default function ReviewPage(props: ReviewPageProps) {
 
           {currentReviewWord ? (
           <>
-            {/* Card stage */}
-            <div className="glass-thick rounded-[28px] p-[36px_28px] sm:p-[56px_48px] max-w-[760px] mx-auto text-center flex flex-col justify-between" style={{ minHeight: 520 }}>
+            {/* Card stage —— ref + 3D 透视。perspective 让 rotationY 看起来
+                有近大远小的立体感，transformStyle 保 3D 不被压平。 */}
+            <div
+              ref={cardRef}
+              className="glass-thick rounded-[28px] p-[36px_28px] sm:p-[56px_48px] max-w-[760px] mx-auto text-center flex flex-col justify-between"
+              style={{ minHeight: 520, perspective: 1200, transformStyle: 'preserve-3d', willChange: 'transform' }}
+            >
               {/* Position + SM-2 LVL 难度标识 */}
               <div className="font-mono-meta text-[11px] tracking-[0.25em] text-[var(--ink-subtle)] uppercase">
                 CARD {String(reviewIndex + 1).padStart(2, '0')} / {dueWords.length}
@@ -277,12 +369,33 @@ export default function ReviewPage(props: ReviewPageProps) {
                       </div>
                       <div className="flex flex-col gap-[10px] mt-[10px]">
                         {(currentReviewWord.usages || []).map((usage: any, idx: number) => (
-                          <div key={idx} className="p-[12px_14px] rounded-[0_12px_12px_0] bg-[rgba(91,127,232,0.05)] border-l-[2.5px] border-l-[var(--blue-accent)]">
+                          <div key={idx} className="p-[12px_14px] rounded-[12px] bg-[rgba(91,127,232,0.06)]">
                             <div className="font-mono-meta text-[9.5px] font-bold tracking-[0.15em] uppercase text-[var(--blue-accent)] mb-1">
                               {uiLang === 'zh' ? usage.labelZh : usage.label}
                             </div>
-                            <p className="font-zh-serif text-[14px] text-[var(--ink)] font-medium m-0 mb-1">{usage.meaning}</p>
-                            <p className="font-zh-serif text-[14px] text-[var(--blue-accent)] font-semibold m-0 mb-1.5">{usage.meaningZh}</p>
+                            {/* Blur Text 入场：释义从模糊→清晰逐词浮现。
+                                key 绑定 卡片id + 用法idx + 翻答案状态 ——
+                                切下一张卡（id 变）或重新翻看答案时强制重挂载、
+                                重播模糊显影，契合"记忆显影"的复习仪式感。
+                                英文按词 / 中文按字，节奏更自然。 */}
+                            <BlurText
+                              key={`en-${currentReviewWord.id}-${idx}`}
+                              text={usage.meaning || ''}
+                              animateBy="words"
+                              direction="top"
+                              delay={60}
+                              stepDuration={0.3}
+                              className="font-zh-serif text-[14px] text-[var(--ink)] font-medium m-0 mb-1"
+                            />
+                            <BlurText
+                              key={`zh-${currentReviewWord.id}-${idx}`}
+                              text={usage.meaningZh || ''}
+                              animateBy="letters"
+                              direction="top"
+                              delay={28}
+                              stepDuration={0.3}
+                              className="font-zh-serif text-[14px] text-[var(--blue-accent)] font-semibold m-0 mb-1.5"
+                            />
                             {usage.examples && usage.examples.length > 0 && (
                               <p className="font-display italic text-[12.5px] text-[var(--ink-muted)] m-0">"{usage.examples[0].sentence}"</p>
                             )}
@@ -339,29 +452,19 @@ export default function ReviewPage(props: ReviewPageProps) {
                     {/* Quality buttons */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {[
-                        { q: 1, cls: 'again', en: 'Again', zh: uiLang === 'zh' ? '完全忘了' : 'Forgot',  next: uiLang === 'zh' ? '+ 10 分钟' : '+ 10 min', bg: '#FDECEA', bc: '#E89B94', tc: '#A23B30' },
-                        { q: 3, cls: 'hard',  en: 'Hard',  zh: uiLang === 'zh' ? '努力想起' : 'Hard',    next: uiLang === 'zh' ? '+ 1 天' : '+ 1 day',  bg: '#FFF3D9', bc: '#E8C375', tc: '#8A5D0E' },
-                        { q: 4, cls: 'good',  en: 'Good',  zh: uiLang === 'zh' ? '顺利想起' : 'Smooth',  next: uiLang === 'zh' ? '+ 3 天' : '+ 3 days', bg: '#E4EAFD', bc: '#5B7FE8', tc: '#1E3A8A' },
-                        { q: 5, cls: 'easy',  en: 'Easy',  zh: uiLang === 'zh' ? '非常容易' : 'Easy',    next: uiLang === 'zh' ? '+ 7 天' : '+ 7 days', bg: '#E4F4DC', bc: '#7DB96A', tc: '#2F6317' },
+                        { q: 1, cls: 'again', en: 'Again', zh: uiLang === 'zh' ? '完全忘了' : 'Forgot',  next: uiLang === 'zh' ? '+ 10 分钟' : '+ 10 min', bg: 'var(--quality-again-bg)', bc: 'var(--quality-again-border)', tc: 'var(--quality-again-text)' },
+                        { q: 3, cls: 'hard',  en: 'Hard',  zh: uiLang === 'zh' ? '努力想起' : 'Hard',    next: uiLang === 'zh' ? '+ 1 天' : '+ 1 day',  bg: 'var(--quality-hard-bg)', bc: 'var(--quality-hard-border)', tc: 'var(--quality-hard-text)' },
+                        { q: 4, cls: 'good',  en: 'Good',  zh: uiLang === 'zh' ? '顺利想起' : 'Smooth',  next: uiLang === 'zh' ? '+ 3 天' : '+ 3 days', bg: 'var(--quality-good-bg)', bc: 'var(--quality-good-border)', tc: 'var(--quality-good-text)' },
+                        { q: 5, cls: 'easy',  en: 'Easy',  zh: uiLang === 'zh' ? '非常容易' : 'Easy',    next: uiLang === 'zh' ? '+ 7 天' : '+ 7 days', bg: 'var(--quality-easy-bg)', bc: 'var(--quality-easy-border)', tc: 'var(--quality-easy-text)' },
                       ].map((btn, i) => (
                         <button
                           key={btn.q}
-                          onClick={() => {
-                            onReview(currentReviewWord.id, btn.q);
-                            setShowReviewAnswer(false);
-                            setReviewedCount(c => c + 1);
-                            setAiHint(null);
-                            if (reviewIndex < dueWords.length - 1) {
-                              onSetReviewIndex(reviewIndex + 1);
-                            } else {
-                              onSetReviewIndex(0);
-                            }
-                          }}
+                          onClick={() => answerQuality(btn.q)}
                           className="relative overflow-hidden rounded-[18px] p-[18px_14px_16px] border-2 cursor-pointer flex flex-col items-center gap-1 transition-[transform,box-shadow,filter] duration-150 hover:-translate-y-0.5 hover:brightness-105"
                           style={{ background: btn.bg, borderColor: btn.bc, color: btn.tc, boxShadow: '0 4px 14px rgba(10,14,26,0.06)' }}
                         >
                           <span className="absolute top-2 right-2.5 font-mono-meta text-[10px] font-bold rounded-[5px] px-1.5 py-0.5"
-                            style={{ color: 'rgba(10,14,26,0.5)', background: 'rgba(255,255,255,0.75)', border: '1px solid rgba(10,14,26,0.08)' }}>
+                            style={{ color: 'rgba(10,14,26,0.62)', background: 'rgba(255,255,255,0.75)', border: '1px solid rgba(10,14,26,0.08)' }}>
                             {i + 1}
                           </span>
                           <span className="font-display font-bold text-[18px] tracking-[-0.01em]">{btn.en}</span>
@@ -373,11 +476,16 @@ export default function ReviewPage(props: ReviewPageProps) {
                         </button>
                       ))}
                     </div>
+                    {/* 快捷键提示 —— 卡片本来就绑了空格翻卡/1-4 评分，但 UI 没说，
+                        加一行低调小字让快捷键可被发现。 */}
+                    <div className="font-mono-meta text-[10.5px] tracking-[0.06em] text-[var(--ink-subtle)] text-center mt-3">
+                      {uiLang === 'zh' ? '快捷键：空格翻卡 · 1-4 评分' : 'Keys: Space to flip · 1-4 to rate'}
+                    </div>
                   </motion.div>
                 ) : (
                   <motion.div key="question" className="py-10">
                     <button
-                      onClick={() => setShowReviewAnswer(true)}
+                      onClick={() => triggerFlip(true)}
                       className="rounded-[16px] px-10 py-3.5 font-display italic text-[16px] cursor-pointer transition-[border-color,color,background] duration-150"
                       style={{ background: 'transparent', border: '1.5px dashed rgba(10,14,26,0.25)', color: 'rgba(10,14,26,0.7)' }}
                       onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--blue-accent)'; e.currentTarget.style.color = 'var(--blue-accent)'; e.currentTarget.style.background = 'rgba(91,127,232,0.04)'; }}
@@ -394,7 +502,7 @@ export default function ReviewPage(props: ReviewPageProps) {
           ) : reviewedCount > 0 ? (
             /* ======================== COMPLETED STATE ======================== */
             <div className="surface !rounded-[18px] p-[36px_40px] text-center space-y-4 max-w-[600px] mx-auto">
-              <div className="w-[60px] h-[60px] rounded-[18px] inline-flex items-center justify-center mb-[18px] bg-[rgba(76,143,59,0.15)] text-[#2F6317]">
+              <div className="w-[60px] h-[60px] rounded-[18px] inline-flex items-center justify-center mb-[18px] bg-[rgba(76,143,59,0.15)] text-[var(--green-ok)]">
                 <CheckCircle className="w-[26px] h-[26px]" />
               </div>
               <h3 className="font-display font-semibold text-[22px] tracking-[-0.02em] text-[var(--ink)] m-0 mb-[10px]">
@@ -415,7 +523,7 @@ export default function ReviewPage(props: ReviewPageProps) {
           ) : (
             /* ======================== EMPTY STATE ======================== */
             <div className="surface !rounded-[18px] p-[36px_40px] text-center max-w-[600px] mx-auto">
-              <div className="w-[60px] h-[60px] rounded-[18px] inline-flex items-center justify-center mb-[18px] bg-[rgba(76,143,59,0.15)] text-[#2F6317]">
+              <div className="w-[60px] h-[60px] rounded-[18px] inline-flex items-center justify-center mb-[18px] bg-[rgba(76,143,59,0.15)] text-[var(--green-ok)]">
                 <CheckCircle className="w-[26px] h-[26px]" />
               </div>
               <h3 className="font-display font-semibold text-[22px] tracking-[-0.02em] text-[var(--ink)] m-0 mb-[10px]">
@@ -609,6 +717,7 @@ export default function ReviewPage(props: ReviewPageProps) {
                     <Sparkles className="w-3.5 h-3.5 text-[var(--blue-accent)] shrink-0" />
                     <input
                       type="text"
+                      aria-label={uiLang === 'zh' ? '问 AI 关于这个词' : 'Ask AI about this word'}
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleChatSend()}

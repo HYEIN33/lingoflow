@@ -26,7 +26,7 @@
  *     keep the session open for a full tutorial AND engage the chat? If
  *     yes → 3-4 week real MVP. If no → product direction was wrong.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as Sentry from '@sentry/react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
@@ -44,12 +44,23 @@ import {
   X,
   Zap,
   Headphones,
+  PictureInPicture2,
+  StickyNote,
+  MessageCircle,
 } from 'lucide-react';
 import { addDoc, collection, Timestamp, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { startLiveSession, LiveSessionHandle } from '../services/liveSession';
+import { startLiveSession, LiveSessionHandle, LiveSessionStats } from '../services/liveSession';
 import ClassNotesModal from '../components/ClassNotesModal';
 import LiveNotesPanel from '../components/LiveNotesPanel';
+import CourseSlides, { type CourseSlide } from '../components/CourseSlides';
+import MessageLoading from '../components/ui/message-loading';
+import { Checkbox } from '../components/ui/checkbox';
+import { ToggleGroup, ToggleGroupItem } from '../components/ui/toggle-group';
+import {
+  useFloatingSubtitle,
+  pickLatestSubtitles,
+} from '../components/FloatingSubtitle';
 import { generateLiveNotes, type LiveNotes } from '../services/ai';
 import { aiChat, translateSimple } from '../services/ai';
 import { cn } from '../lib/utils';
@@ -191,6 +202,68 @@ function friendlyStartError(e: any, source: 'tab' | 'mic', lang: 'en' | 'zh'): s
     : `Start failed: ${msg || 'unknown error'}`;
 }
 
+// LiveActionToolbar — compact one-row control group for the two live-only
+// utility actions (2026-06-16). Replaces the two separate full-width
+// buttons (立即翻译 + 悬浮字幕) that were stacked and bulky.
+//
+//   - 立即翻译 (Flush now): point-press action — short-circuits the 8s
+//     idle / 5s delayed-flush wait so the speaker's last paragraph is
+//     translated immediately.
+//   - 悬浮字幕 (Floating subtitle): a real TOGGLE — on/off, highlighted
+//     when active. Wraps the existing useFloatingSubtitle open/close so
+//     the PiP + fallback logic in FloatingSubtitle.tsx is untouched; we
+//     only restyle + group the trigger.
+//
+// Rendered in two mirrored slots (inside the expanded config card;
+// mirrored when the card is collapsed) so it stays one tap away.
+function LiveActionToolbar({
+  uiLang,
+  onFlush,
+  floatingActive,
+  onToggleFloating,
+}: {
+  uiLang: 'zh' | 'en';
+  onFlush: () => void;
+  floatingActive: boolean;
+  onToggleFloating: () => void;
+}) {
+  const zh = uiLang === 'zh';
+  return (
+    <div className="mt-2 flex items-center gap-1.5">
+      <button
+        type="button"
+        onClick={onFlush}
+        className="flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-[10px] bg-white text-[var(--blue-accent-text)] border border-[rgba(91,127,232,0.3)] font-zh-sans text-[12.5px] font-bold hover:bg-[rgba(91,127,232,0.06)] transition-colors"
+        title={zh ? '不等了，立刻把已经听到的句子翻译出来' : 'Translate what you have so far, now'}
+      >
+        <Zap className="w-3.5 h-3.5" fill="currentColor" strokeWidth={0} />
+        {zh ? '立即翻译' : 'Flush now'}
+      </button>
+      <button
+        type="button"
+        onClick={onToggleFloating}
+        aria-pressed={floatingActive}
+        className={cn(
+          'flex-1 inline-flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-[10px] font-zh-sans text-[12.5px] font-bold transition-colors border',
+          floatingActive
+            ? 'bg-[var(--blue-accent)] text-white border-[var(--blue-accent)] hover:bg-[var(--blue-accent-deep)]'
+            : 'bg-white text-[var(--blue-accent-text)] border-[rgba(91,127,232,0.3)] hover:bg-[rgba(91,127,232,0.06)]'
+        )}
+        title={
+          zh
+            ? '把最新双语字幕弹成一个浮在所有窗口之上的小窗，边看 PPT 边看翻译（开关）'
+            : 'Toggle a small subtitle window that floats above everything'
+        }
+      >
+        <PictureInPicture2 className="w-3.5 h-3.5" />
+        {floatingActive
+          ? (zh ? '悬浮字幕 · 开' : 'Floating · on')
+          : (zh ? '悬浮字幕' : 'Floating')}
+      </button>
+    </div>
+  );
+}
+
 export default function ClassroomTab({
   uiLang,
   isPro = false,
@@ -266,6 +339,18 @@ export default function ClassroomTab({
   });
   const [courseExpanded, setCourseExpanded] = useState(false);
 
+  // 课件导入（2026-06-16）。课件可能在「上课前 / 上课中」就导入，但会话
+  // 文档 classSessions 要到 handleStop 才写入；所以上传产物先存为本地
+  // state（courseSlides），handleStop 时再随会话一起写进 courseSlides 字段。
+  // slideSessionId 是这次组件挂载期间稳定的临时 id，用作 Storage 路径
+  // /classSlides/{uid}/{slideSessionId}/ —— 跟最终的 classSessions 文档 id
+  // 解耦（文档 id 是 addDoc 自动生成的，上传时还拿不到）。用 ref 保证整个
+  // 生命周期不变，不会因重渲染换路径。
+  const slideSessionIdRef = useRef<string>(
+    `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  );
+  const [courseSlides, setCourseSlides] = useState<CourseSlide[]>([]);
+
   // UI state for startup friction + live focus:
   //   - `isConfigExpanded`: full config card vs. one-line summary. Starts
   //     true (idle) so new users see the options; auto-collapses when the
@@ -291,10 +376,21 @@ export default function ClassroomTab({
   // enough new transcript has accumulated, so we don't hammer gemini-
   // 3-pro on a quiet room. The refs track "last run wall clock" and
   // "last transcript length" to make that decision cheap.
-  const LIVE_NOTES_MIN_INTERVAL_MS = 45000;
-  const LIVE_NOTES_MIN_NEW_CHARS = 200;
+  //
+  // 2026-06-16 调参 45s→25s / 200→120：让笔记滚动成形更快、更接近"实时"。
+  // 没有更激进的原因：gemini-3-pro 单次调用慢（一大段转写要 20-40s）且
+  // 有 token 成本，课堂代理还套了限流桶；25s + 120 字是"足够实时但不会
+  // 在安静的房间空转、也不会撞限流"的平衡点。两个门槛是 AND 关系
+  // （间隔够 && 新内容够），所以低门槛只在老师持续讲课时才会触发更频繁，
+  // 短暂停顿不会浪费调用。
+  const LIVE_NOTES_MIN_INTERVAL_MS = 25000;
+  const LIVE_NOTES_MIN_NEW_CHARS = 120;
   const [liveNotes, setLiveNotes] = useState<LiveNotes | null>(null);
   const [liveNotesLoading, setLiveNotesLoading] = useState(false);
+  // 笔记生成失败的可见错误态（2026-06-16）。之前 generateLiveNotes 失败只
+  // console.warn + Sentry，UI 没有任何反馈，用户只看到笔记区空着不知道为
+  // 什么坏了。现在把失败暴露成面板里的错误条 + 「重试」按钮，用户能主动重发。
+  const [liveNotesError, setLiveNotesError] = useState<string | null>(null);
   // `notesLastUpdatedAt` is the wall-clock ms at which the panel last
   // received a fresh Gemini summary. Drives the "updated Xs ago" chip.
   // `isSavingLiveNotes` gates the save button while we write to Firestore.
@@ -307,6 +403,10 @@ export default function ClassroomTab({
   // stream is hoisted to App.tsx — see component signature.
   const [question, setQuestion] = useState('');
   const [isAsking, setIsAsking] = useState(false);
+  // Right-sidebar tab (2026-06-16): 笔记 / 问AI live in the same right
+  // column now (left = subtitles, right = notes + chat). Defaults to
+  // 'notes' so "看笔记" is the resting state; one tap switches to chat.
+  const [sidebarTab, setSidebarTab] = useState<'notes' | 'chat'>('notes');
 
   // Translation mode is fixed at 'paragraph' since 2026-04-27 evening
   // (realtime mode retired — produced disjointed Chinese without
@@ -344,6 +444,10 @@ export default function ClassroomTab({
   // onStatusChange handler to ignore stop()'s tail 'stopped' event so
   // the red error banner doesn't get overwritten with "Stopped".
   const cleanupAfterErrorRef = useRef(false);
+  // Stashed by liveSession's onSessionStats (fires inside stop()) so handleStop
+  // can persist the ASR quality metrics alongside the transcript. Cleared after
+  // each write so a session without stats doesn't inherit the previous one's.
+  const sessionStatsRef = useRef<LiveSessionStats | null>(null);
   const itemCounter = useRef(0);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
 
@@ -391,6 +495,17 @@ export default function ClassroomTab({
     sessionRef.current?.forceReconnect();
     setShowManualReconnect(false);
     toast.info(uiLang === 'zh' ? '正在重新连接识别引擎…' : 'Reconnecting ASR…');
+  };
+
+  // Manual flush — distinct from reconnect. Reconnect is "stream is dead,
+  // start over"; flush is "stream is alive but I want my last sentence
+  // translated NOW instead of waiting for the 8s idle / 5s delayed-flush
+  // timers to fire". Triggered by the「立即翻译」button on the live page.
+  const handleManualFlush = () => {
+    const handle = sessionRef.current;
+    if (!handle) return;
+    handle.forceFlush();
+    toast.info(uiLang === 'zh' ? '正在立即翻译当前内容…' : 'Flushing pending text…');
   };
   // Mirror of `stream` kept in a ref so async handlers (e.g. handleAsk's
   // buildTranscriptContext) read the latest value, not a stale closure.
@@ -732,22 +847,37 @@ ${englishParagraph}`;
   const [unseenCount, setUnseenCount] = useState(0);
   const lastSeenStreamLenRef = useRef(0);
 
+  // 内容签名：不只看 stream.length，还把每条的转写+译文长度算进去。
+  // 修复（2026-06-16）"翻译出来不自动到最新"：译文是异步填进【已存在】的
+  // line（applyTranslationBatch），stream.length 不变 → 旧 effect 只依赖
+  // [stream] 数组引用变化，但更要命的是它在 React 重绘【之前】同步读
+  // scrollHeight，量到的是【加译文变高之前】的旧高度，于是滚到旧底部，
+  // 新译文又被推到屏幕外。两个修法：① 依赖加内容签名，译文变长也触发；
+  // ② 用 requestAnimationFrame 把滚动推迟到重绘后，读到的是新高度。
+  const streamContentSig = stream.reduce((n, it: any) =>
+    n + (it.transcription?.length || 0) + (it.translation?.length || 0) + (it.answer?.length || 0), 0);
+
   // Auto-scroll on stream change — only when user is at bottom.
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
-    if (distanceFromBottom <= STICK_THRESHOLD_PX) {
-      el.scrollTop = el.scrollHeight;
+    // 重绘前先判断用户是否在底部（基于当前可见高度），避免新内容撑高后误判。
+    const wasAtBottom =
+      el.scrollHeight - el.clientHeight - el.scrollTop <= STICK_THRESHOLD_PX;
+    if (wasAtBottom) {
+      // 推迟到下一帧：此时新译文已渲染、scrollHeight 是最新的，贴底才贴得准。
+      const raf = requestAnimationFrame(() => {
+        const e2 = scrollerRef.current;
+        if (e2) e2.scrollTop = e2.scrollHeight;
+      });
       lastSeenStreamLenRef.current = stream.length;
       setUnseenCount(0);
+      return () => cancelAnimationFrame(raf);
     } else {
-      // User has scrolled away — count new items they haven't seen.
-      // We approximate "new" by stream length growth since last bottom-stick.
       const delta = stream.length - lastSeenStreamLenRef.current;
       if (delta > 0) setUnseenCount(delta);
     }
-  }, [stream]);
+  }, [streamContentSig, stream.length]);
 
   // Track scroll position so the "↓ N new" pill knows when to hide.
   useEffect(() => {
@@ -774,59 +904,91 @@ ${englishParagraph}`;
     setUnseenCount(0);
   };
 
-  // Live Notes refresh trigger. Runs on every stream change, guarded by
-  // min-interval and min-new-chars. The async work happens in the
-  // background; liveNotesInFlightRef prevents overlapping refreshes
-  // (pro can take 20-40s on a big transcript).
-  useEffect(() => {
-    if (status !== 'live') return;
-    if (liveNotesInFlightRef.current) return;
+  // Resolve the course display name the same way several callsites need
+  // it (live-notes job, save-to-notes). Centralised so all paths label
+  // the notes with the course the user actually sees on screen.
+  const resolveCourseLabel = (): string | undefined => {
+    if (selectedCourse === '__custom__') return customCourse.trim() || undefined;
+    if (!selectedCourse) return undefined;
+    const preset = COURSE_PRESETS.find((p) => p.zh === selectedCourse || p.en === selectedCourse);
+    if (preset) return uiLang === 'zh' ? preset.zh : preset.en;
+    return selectedCourse;
+  };
 
-    // Concatenate all finalized English segments from the stream — this
-    // is what the teacher has actually said so far. We deliberately
-    // skip interim text so mid-word guesses don't poison the notes.
-    const englishSoFar = stream
+  // Collect all finalized English the teacher has said so far. We skip
+  // interim text so mid-word guesses don't poison the notes. Used by both
+  // the auto-refresh effect and the manual retry button.
+  const collectFinalizedEnglish = (): string =>
+    streamRef.current
       .filter((item) => item.kind === 'line' && item.finalized && item.transcription)
       .map((item) => (item as any).transcription as string)
       .join(' ');
 
-    const now = Date.now();
-    const sinceLast = now - liveNotesLastRunRef.current;
-    const newChars = englishSoFar.length - liveNotesLastLenRef.current;
+  // Core notes generation, shared by the auto-refresh effect and the
+  // manual「重试」button on the panel's error state. `force=true` skips
+  // the throttle gates so a user-initiated retry runs immediately even if
+  // we just failed seconds ago. On failure we surface a visible error
+  // state (panel shows an error row + Retry) instead of the old silent
+  // console.warn — a blank panel with no explanation read as "broken".
+  const runLiveNotesGeneration = async (force = false) => {
+    if (liveNotesInFlightRef.current) return;
 
+    const englishSoFar = collectFinalizedEnglish();
     if (englishSoFar.length < LIVE_NOTES_MIN_NEW_CHARS) return; // not enough yet
-    if (sinceLast < LIVE_NOTES_MIN_INTERVAL_MS) return;
-    if (newChars < LIVE_NOTES_MIN_NEW_CHARS) return;
+
+    if (!force) {
+      const now = Date.now();
+      const sinceLast = now - liveNotesLastRunRef.current;
+      const newChars = englishSoFar.length - liveNotesLastLenRef.current;
+      if (sinceLast < LIVE_NOTES_MIN_INTERVAL_MS) return;
+      if (newChars < LIVE_NOTES_MIN_NEW_CHARS) return;
+    }
 
     liveNotesInFlightRef.current = true;
-    liveNotesLastRunRef.current = now;
+    liveNotesLastRunRef.current = Date.now();
     liveNotesLastLenRef.current = englishSoFar.length;
+    setLiveNotesError(null);
     setLiveNotesLoading(true);
 
-    const courseName =
-      selectedCourse === '__custom__'
-        ? customCourse.trim() || undefined
-        : selectedCourse
-          ? (COURSE_PRESETS.find((p) => p.zh === selectedCourse || p.en === selectedCourse)
-              ? (uiLang === 'zh'
-                  ? COURSE_PRESETS.find((p) => p.zh === selectedCourse || p.en === selectedCourse)!.zh
-                  : COURSE_PRESETS.find((p) => p.zh === selectedCourse || p.en === selectedCourse)!.en)
-              : selectedCourse)
-          : undefined;
+    try {
+      const notes = await generateLiveNotes(englishSoFar, { course: resolveCourseLabel() });
+      setLiveNotes(notes);
+      setNotesLastUpdatedAt(Date.now());
+      setLiveNotesError(null);
+    } catch (err: any) {
+      // Surface the failure — a blank panel with no reason looks broken.
+      const msg = err?.message || String(err);
+      console.warn('[classroom] live notes generation failed:', err);
+      Sentry.captureException(err, { tags: { component: 'ClassroomTab', op: 'generateLiveNotes' } });
+      setLiveNotesError(
+        uiLang === 'zh'
+          ? '笔记生成失败，点击重试'
+          : 'Notes failed, tap to retry'
+      );
+      // Roll the "last len" pointer back so the next auto-refresh tick is
+      // free to retry on its own as more transcript arrives, instead of
+      // being blocked by the min-new-chars gate against this failed run.
+      liveNotesLastLenRef.current = Math.max(0, englishSoFar.length - LIVE_NOTES_MIN_NEW_CHARS);
+      if (msg) { /* msg retained for Sentry; user copy stays generic */ }
+    } finally {
+      liveNotesInFlightRef.current = false;
+      setLiveNotesLoading(false);
+    }
+  };
 
-    generateLiveNotes(englishSoFar, { course: courseName })
-      .then((notes) => {
-        setLiveNotes(notes);
-        setNotesLastUpdatedAt(Date.now());
-      })
-      .catch((err) => {
-        console.warn('[classroom] live notes generation failed:', err);
-        Sentry.captureException(err, { tags: { component: 'ClassroomTab', op: 'generateLiveNotes' } });
-      })
-      .finally(() => {
-        liveNotesInFlightRef.current = false;
-        setLiveNotesLoading(false);
-      });
+  // Manual retry from the panel's error row. Forces an immediate run.
+  const handleRetryLiveNotes = () => {
+    void runLiveNotesGeneration(true);
+  };
+
+  // Live Notes refresh trigger. Runs on every stream change, guarded by
+  // min-interval and min-new-chars inside runLiveNotesGeneration. The
+  // async work happens in the background; liveNotesInFlightRef prevents
+  // overlapping refreshes (pro can take 20-40s on a big transcript).
+  useEffect(() => {
+    if (status !== 'live') return;
+    void runLiveNotesGeneration(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream, status, selectedCourse, customCourse, uiLang]);
 
   const acknowledgeCompliance = () => {
@@ -844,10 +1006,15 @@ ${englishParagraph}`;
    *
    * Write failures surface as a toast AND a Sentry event — silent fails
    * would make the button look broken.
+   *
+   * `edited` is the panel's effective notes (manual edits when present,
+   * else the AI version). We persist that so what the user saves matches
+   * what they see; fall back to `liveNotes` if the panel passed nothing.
    */
-  const handleSaveLiveNotesToClassNotes = async () => {
+  const handleSaveLiveNotesToClassNotes = async (edited?: LiveNotes) => {
     const zh = uiLang === 'zh';
-    if (!liveNotes) {
+    const notesToSave = edited ?? liveNotes;
+    if (!notesToSave) {
       toast.error(zh ? '还没有可保存的笔记' : 'No notes to save yet');
       return;
     }
@@ -857,24 +1024,16 @@ ${englishParagraph}`;
       return;
     }
     // Resolve the course display name the same way the live-notes
-    // refresh job does, so saved notes carry the course label the user
-    // was actually seeing on screen.
-    let courseLabel: string | undefined;
-    if (selectedCourse === '__custom__') {
-      const t = customCourse.trim();
-      if (t) courseLabel = t;
-    } else if (selectedCourse) {
-      const preset = COURSE_PRESETS.find((p) => p.zh === selectedCourse || p.en === selectedCourse);
-      if (preset) courseLabel = uiLang === 'zh' ? preset.zh : preset.en;
-      else courseLabel = selectedCourse;
-    }
+    // refresh job does (shared helper), so saved notes carry the course
+    // label the user was actually seeing on screen.
+    const courseLabel = resolveCourseLabel();
     setIsSavingLiveNotes(true);
     try {
       await addDoc(collection(db, 'classNotes'), {
         uid: user.uid,
-        title: liveNotes.title ?? '',
-        overview: liveNotes.overview ?? [],
-        keyPoints: liveNotes.keyPoints ?? [],
+        title: notesToSave.title ?? '',
+        overview: notesToSave.overview ?? [],
+        keyPoints: notesToSave.keyPoints ?? [],
         course: courseLabel ?? null,
         mode: translationMode,
         savedAt: serverTimestamp(),
@@ -897,9 +1056,10 @@ ${englishParagraph}`;
    * meaningful) then trigger window.print. The toast tells the user
    * what to do in the print dialog.
    */
-  const handleExportLiveNotesPdf = async () => {
+  const handleExportLiveNotesPdf = async (edited?: LiveNotes) => {
     const zh = uiLang === 'zh';
-    if (!liveNotes) {
+    const notesToExport = edited ?? liveNotes;
+    if (!notesToExport) {
       toast.error(zh ? '还没有可导出的笔记' : 'No notes to export yet');
       return;
     }
@@ -914,7 +1074,7 @@ ${englishParagraph}`;
       // Title
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(18);
-      const title = liveNotes.title || (zh ? 'MemeFlow 实时笔记' : 'MemeFlow Live Notes');
+      const title = notesToExport.title || (zh ? 'MemeFlow 实时笔记' : 'MemeFlow Live Notes');
       doc.text(title, margin, y);
       y += 28;
 
@@ -949,15 +1109,15 @@ ${englishParagraph}`;
         y += 10;
       };
 
-      writeSection(zh ? '概述 Overview' : 'Overview', liveNotes.overview || []);
-      writeSection(zh ? '重点 Key Points' : 'Key Points', liveNotes.keyPoints || []);
+      writeSection(zh ? '概述 Overview' : 'Overview', notesToExport.overview || []);
+      writeSection(zh ? '重点 Key Points' : 'Key Points', notesToExport.keyPoints || []);
 
       // Footer
       doc.setFontSize(9);
       doc.setTextColor(150);
-      doc.text('Generated by MemeFlow · memeflow-16ecf.web.app', margin, 820);
+      doc.text('Generated by MemeFlow · memeflow.cn', margin, 820);
 
-      const safeTitle = (liveNotes.title || 'memeflow-notes')
+      const safeTitle = (notesToExport.title || 'memeflow-notes')
         .replace(/[^a-z0-9\u4e00-\u9fa5\s-]/gi, '')
         .slice(0, 48)
         .trim();
@@ -977,6 +1137,7 @@ ${englishParagraph}`;
     // class's summary while the new class is warming up.
     setLiveNotes(null);
     setLiveNotesLoading(false);
+    setLiveNotesError(null);
     setNotesLastUpdatedAt(0);
     liveNotesLastRunRef.current = 0;
     liveNotesLastLenRef.current = 0;
@@ -1054,6 +1215,9 @@ ${englishParagraph}`;
               return next;
             });
           },
+          // Stash the ASR quality stats stop() computes so handleStop can
+          // persist them with the transcript (see classSessions write below).
+          onSessionStats: (stats) => { sessionStatsRef.current = stats; },
         }
       );
       sessionRef.current = handle;
@@ -1114,6 +1278,11 @@ ${englishParagraph}`;
     // the live subtitles on screen.
     const user = auth.currentUser;
     if (user && transcript.trim().length > 0) {
+      // onSessionStats fired inside handle.stop() above (already awaited), so
+      // these are populated by now. Spread only when present so an early
+      // teardown (no stats) still writes a valid doc — admin aggregation
+      // treats missing fields as "untagged" rather than crashing.
+      const stats = sessionStatsRef.current;
       try {
         await addDoc(collection(db, 'classSessions'), {
           uid: user.uid,
@@ -1123,13 +1292,28 @@ ${englishParagraph}`;
           endedAt: Timestamp.now(),
           transcript,
           createdAt: serverTimestamp(),
+          // 课件导入（2026-06-16）：把本次会话期间上传的课件一并写进会话
+          // 文档，方便日后在笔记/会话详情里回看。courseSlides 里的 uploadedAt
+          // 是 epoch ms（number），Firestore 直接存数字即可，不必转 Timestamp。
+          ...(courseSlides.length > 0 && { courseSlides }),
+          ...(stats && {
+            durationSec: stats.durationSec,
+            finalEventCount: stats.finalEventCount,
+            emptyFinalCount: stats.emptyFinalCount,
+            emptyFinalRatio: stats.emptyFinalRatio,
+            rescuedCount: stats.rescuedCount,
+          }),
         });
         toast.success(uiLang === 'zh' ? '笔记已保存' : 'Notes saved');
       } catch (e: any) {
         console.warn('Save class session failed:', e);
         Sentry.captureException(e, { tags: { component: 'ClassroomTab', op: 'firestore.write', collection: 'classSessions' } });
         toast.error(uiLang === 'zh' ? '保存笔记失败' : 'Could not save notes');
+      } finally {
+        sessionStatsRef.current = null;
       }
+    } else {
+      sessionStatsRef.current = null;
     }
   };
 
@@ -1200,6 +1384,23 @@ ${englishParagraph}`;
 
   const isLive = status === 'live';
   const isBusy = status === 'connecting' || status === 'requesting-token';
+
+  // 悬浮字幕窗（Document Picture-in-Picture）：把最近 2 条【已翻译完成】的
+  // 双语字幕弹成一个浮在所有窗口之上的小窗，用户可边看 PPT 边看翻译。
+  // latestSubtitles 随 stream 实时更新 → hook 内部把它渲染进 PiP 窗。
+  const latestSubtitles = useMemo(() => pickLatestSubtitles(stream, 2), [stream]);
+  const floatingSubtitle = useFloatingSubtitle(latestSubtitles, uiLang);
+
+  // How much finalized English we've accumulated — feeds the LiveNotesPanel
+  // "正在收集课堂内容…" guidance state so it can distinguish "waiting for
+  // enough speech" from "loading" and "error".
+  const collectedEnglishChars = useMemo(
+    () =>
+      stream
+        .filter((item) => item.kind === 'line' && item.finalized && item.transcription)
+        .reduce((sum, item) => sum + ((item as any).transcription as string).length, 0),
+    [stream]
+  );
 
   // Session timer (seconds) — shown mono-spaced in the live bar so users
   // can glance at elapsed time without checking system clock. Only counts
@@ -1380,17 +1581,20 @@ ${englishParagraph}`;
                 <li>每个会话的字幕都会写到 <code className="font-mono-meta text-[12px] bg-[rgba(10,14,26,0.04)] px-1 py-0.5 rounded">classSessions/{'{sessionId}'}</code> 集合下，只有你自己能看。</li>
               </ul>
 
-              <label className="flex items-start gap-2 cursor-pointer select-none mb-4">
-                <input
-                  type="checkbox"
+              <div className="flex items-start gap-2.5 select-none mb-4">
+                <Checkbox
+                  id="classroom-compliance-agree"
                   checked={agreed}
-                  onChange={(e) => setAgreed(e.target.checked)}
-                  className="mt-1 accent-[var(--blue-accent)]"
+                  onCheckedChange={(v) => setAgreed(v === true)}
+                  className="mt-0.5"
                 />
-                <span className="font-zh-serif text-[13px] text-[var(--ink-body)]">
+                <label
+                  htmlFor="classroom-compliance-agree"
+                  className="font-zh-serif text-[13px] text-[var(--ink-body)] cursor-pointer"
+                >
                   我已阅读并理解上述内容，确认使用本功能所产生的责任由我自己承担。
-                </span>
-              </label>
+                </label>
+              </div>
 
               <div className="flex gap-2.5 pt-4 border-t border-[rgba(229,56,43,0.15)]">
                 <button
@@ -1615,34 +1819,36 @@ ${englishParagraph}`;
               {uiLang === 'zh' ? '声音来源' : 'source'}
             </div>
           </div>
-          <div className="flex-1 flex flex-wrap gap-1.5">
-            <button
-              onClick={() => setAudioSource('mic')}
-              disabled={isLive || isBusy}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-display italic text-[13px] tracking-[-0.01em] border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-                audioSource === 'mic'
-                  ? "bg-[var(--ink)] text-white border-[var(--ink)] shadow-[0_3px_8px_rgba(10,14,26,0.22)]"
-                  : "bg-white/55 border-white/75 text-[rgba(10,14,26,0.7)] hover:text-[var(--ink)]"
-              )}
+          {/* 音源分区切换 —— 改用共享 ToggleGroup（type=single）。
+              现状：原来是两个自定义 <button>，靠 className 三元手动画选中态。
+              修后：复用 src/components/ui/toggle-group.tsx，选中态自动是品牌蓝底
+                    白字；onValueChange 复用原来的 setAudioSource，业务逻辑不变。
+              注意：单选 ToggleGroup 允许"再点一下取消选中"会回传空串 ''，那样
+                    会让音源变成未选状态，所以 v==='' 时忽略，保持二选一互斥。 */}
+          <ToggleGroup
+            type="single"
+            value={audioSource}
+            onValueChange={(v) => {
+              if (v === 'tab' || v === 'mic') setAudioSource(v);
+            }}
+            disabled={isLive || isBusy}
+            className="flex-1 flex flex-wrap justify-start gap-1.5"
+          >
+            <ToggleGroupItem
+              value="mic"
+              aria-label={uiLang === 'zh' ? '麦克风 / 线下课' : 'microphone'}
+              className="gap-1.5 rounded-full font-display italic text-[13px] tracking-[-0.01em]"
             >
-              {audioSource === 'mic' && <span className="w-1 h-1 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />}
               <Mic className="w-3 h-3" /> mic · {uiLang === 'zh' ? '麦克风' : 'mic'}
-            </button>
-            <button
-              onClick={() => setAudioSource('tab')}
-              disabled={isLive || isBusy}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-display italic text-[13px] tracking-[-0.01em] border transition-colors disabled:opacity-50 disabled:cursor-not-allowed",
-                audioSource === 'tab'
-                  ? "bg-[var(--ink)] text-white border-[var(--ink)] shadow-[0_3px_8px_rgba(10,14,26,0.22)]"
-                  : "bg-white/55 border-white/75 text-[rgba(10,14,26,0.7)] hover:text-[var(--ink)]"
-              )}
+            </ToggleGroupItem>
+            <ToggleGroupItem
+              value="tab"
+              aria-label={uiLang === 'zh' ? '浏览器标签音频 / 在线课' : 'browser tab audio'}
+              className="gap-1.5 rounded-full font-display italic text-[13px] tracking-[-0.01em]"
             >
-              {audioSource === 'tab' && <span className="w-1 h-1 rounded-full bg-white shadow-[0_0_6px_rgba(255,255,255,0.8)]" />}
               <Monitor className="w-3 h-3" /> tab audio · {uiLang === 'zh' ? '浏览器标签' : 'browser tab'}
-            </button>
-          </div>
+            </ToggleGroupItem>
+          </ToggleGroup>
         </div>
 
         {/* Row 2 was the realtime/paragraph toggle — removed 2026-04-27
@@ -1778,6 +1984,19 @@ ${englishParagraph}`;
           </div>
         )}
 
+        {/* Row 5: 课件导入 — 上传 PDF/PPT/图片课件，同页展示。上传产物存进
+            courseSlides 本地 state，handleStop 时随 classSessions 一起写库。
+            课堂同传整体是 Pro 专享（非 Pro 在组件顶部就被 paywall 拦截，走不
+            到这里），所以这里无需再加 Pro 门槛。 */}
+        <div className="pt-[14px] mt-2 border-t border-[var(--ink-hairline)]">
+          <CourseSlides
+            uiLang={uiLang}
+            sessionId={slideSessionIdRef.current}
+            slides={courseSlides}
+            onChange={setCourseSlides}
+          />
+        </div>
+
         {/* Action buttons row — Start / Stop */}
         {!isLive && (
           <div className="flex items-center gap-2 pt-[14px] mt-2 border-t border-[var(--ink-hairline)]">
@@ -1856,6 +2075,17 @@ ${englishParagraph}`;
             {uiLang === 'zh' ? '线路卡住？点这里重连' : 'Stuck? Reconnect'}
           </button>
         )}
+
+        {/* Live action toolbar — 立即翻译（点按）+ 悬浮字幕（开关）紧凑成
+            一行小控件，体积比之前两个全宽按钮小很多，且放在一起。 */}
+        {status === 'live' && (
+          <LiveActionToolbar
+            uiLang={uiLang}
+            onFlush={handleManualFlush}
+            floatingActive={floatingSubtitle.active}
+            onToggleFloating={floatingSubtitle.active ? floatingSubtitle.close : floatingSubtitle.open}
+          />
+        )}
       </div>
       </motion.div>
       )}
@@ -1875,29 +2105,51 @@ ${englishParagraph}`;
         </button>
       )}
 
-      {/* TRANSCRIPT STREAM — widened visual focus. min-height bumped so
-          subtitles occupy the visual center of the classroom page; bottom
-          radius flattens to 0 so the Ask-AI dock reads as one continuous
-          surface with the stream (see task D "合流"). */}
+      {/* Mirror for collapsed-config view — same compact toolbar. */}
+      {!isConfigExpanded && status === 'live' && (
+        <LiveActionToolbar
+          uiLang={uiLang}
+          onFlush={handleManualFlush}
+          floatingActive={floatingSubtitle.active}
+          onToggleFloating={floatingSubtitle.active ? floatingSubtitle.close : floatingSubtitle.open}
+        />
+      )}
+
+      {/* 悬浮字幕降级条 — 不支持 Document PiP 的浏览器（Safari/Firefox）点
+          按钮时，这里渲染一个 fixed、底部居中、可拖拽的字幕条；支持 PiP 时
+          为 null（字幕渲染在独立窗里）。 */}
+      {floatingSubtitle.fallbackNode}
+
+      {/* CLASSROOM WORKSPACE — 左右分栏（2026-06-16 修 iPad 适配）。
+          断点从 lg(1024) 提到 xl(1280)：iPad 横屏(~1024-1180) 实测分栏后
+          字幕被挤到一列窄字、右侧笔记又撑不满留大片空白。改成只有真正宽
+          的桌面(≥1280) 才左右分栏，iPad/平板一律单列上下堆叠 —— 字幕全宽
+          可读性好得多，笔记排在字幕下方。侧栏宽 380→340 收一点。
+          两栏各自独立滚动，scrollerRef 贴底/↓N new 逻辑不动。 */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_340px] gap-4 items-start">
+      {/* LEFT — TRANSCRIPT STREAM. min-height bumped so subtitles occupy
+          the visual center of the classroom page. */}
       <div className="relative">
-        {/* stream-fade — 底部白色渐隐层，让焊接下来的 ask-bar 有"从字幕里浮出来"的视觉。
-            对齐 classroom.html 原型 .stream-fade；绝对定位盖在 scroller 底部，
-            pointer-events-none 避免拦截滚动或点击。 */}
+        {/* stream-fade — 底部白色渐隐层，让长字幕有"渐隐出底"的视觉。
+            绝对定位盖在 scroller 底部，pointer-events-none 不拦滚动/点击。 */}
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute left-0 right-0 bottom-0 h-20 z-[1] rounded-b-none"
+          className="pointer-events-none absolute left-0 right-0 bottom-0 h-20 z-[1] rounded-b-[28px]"
           style={{
             background: 'linear-gradient(to bottom, rgba(244,247,255,0) 0%, #F4F7FF 100%)',
           }}
         />
         <div
           ref={scrollerRef}
-          className="glass-thick rounded-t-[28px] rounded-b-none p-[26px_28px_120px_40px] min-h-[440px] max-h-[62vh] overflow-y-auto relative"
+          className="glass-thick rounded-[28px] p-[26px_28px_64px_40px] min-h-[440px] max-h-[72vh] overflow-y-auto relative"
         >
-          {/* Floating notes-chip — scrolls the LiveNotesPanel into view. */}
+          {/* Floating notes-chip — switches the sidebar to the notes tab and
+              scrolls the panel into view (the scrollIntoView matters on the
+              <lg stacked layout where the sidebar sits below the stream). */}
           <button
             type="button"
             onClick={() => {
+              setSidebarTab('notes');
               const panel = document.getElementById('classroom-live-notes-panel');
               if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }}
@@ -1942,19 +2194,16 @@ ${englishParagraph}`;
               single entry per finalized paragraph. */}
           {(() => {
             type LineItem = Extract<typeof stream[number], { kind: 'line' }>;
-            type QaItem = Extract<typeof stream[number], { kind: 'qa' }>;
             type Group =
               | { kind: 'pending-group'; items: LineItem[] }       // still accumulating, no batch yet
               | { kind: 'sealed-group'; batchId: string; items: LineItem[] }  // batch flushed, awaiting zh
-              | { kind: 'translated-line'; item: LineItem }
-              | { kind: 'qa'; item: QaItem };
+              | { kind: 'translated-line'; item: LineItem };
 
             const groups: Group[] = [];
             for (const item of stream) {
-              if (item.kind === 'qa') {
-                groups.push({ kind: 'qa', item });
-                continue;
-              }
+              // QA exchanges now live in the right sidebar's「问 AI」tab
+              // (2026-06-16) — skip them here so they don't render twice.
+              if (item.kind === 'qa') continue;
               if (item.translation) {
                 groups.push({ kind: 'translated-line', item });
                 continue;
@@ -1984,34 +2233,6 @@ ${englishParagraph}`;
             }
 
             return groups.map((group, idx) => {
-              if (group.kind === 'qa') {
-                const item = group.item;
-                return (
-                  <div key={`q-${item.id}`} className="my-[18px] -mx-1.5 p-[16px_18px] border border-[rgba(91,127,232,0.2)] rounded-[18px]"
-                    style={{ background: 'linear-gradient(135deg, rgba(91,127,232,0.12), rgba(137,163,240,0.06))' }}
-                  >
-                    <div className="flex gap-3 items-start">
-                      <span className="shrink-0 px-[9px] py-[3px] rounded-[7px] font-mono-meta text-[10px] font-bold tracking-[0.08em] bg-[var(--ink)] text-white mt-0.5">
-                        YOU
-                      </span>
-                      <p className="flex-1 min-w-0 font-zh-serif text-[14.5px] leading-[1.85] text-[var(--ink)] m-0">
-                        {item.question}
-                      </p>
-                    </div>
-                    <div className="flex gap-3 items-start mt-2.5 pt-3 border-t border-dashed border-[rgba(91,127,232,0.22)]">
-                      <span className="shrink-0 px-[9px] py-[3px] rounded-[7px] font-mono-meta text-[10px] font-bold tracking-[0.08em] bg-white text-[var(--blue-accent)] border border-[rgba(91,127,232,0.3)] inline-flex items-center gap-1 mt-0.5">
-                        <Sparkles className="w-2.5 h-2.5" /> AI
-                      </span>
-                      <p className="flex-1 min-w-0 font-zh-serif text-[14.5px] leading-[1.85] text-[var(--ink)] m-0 whitespace-pre-wrap [&_strong]:text-[var(--blue-accent)] [&_strong]:font-semibold">
-                        {item.pending
-                          ? <Loader2 className="w-4 h-4 animate-spin text-[rgba(91,127,232,0.6)] inline" />
-                          : item.answer}
-                      </p>
-                    </div>
-                  </div>
-                );
-              }
-
               if (group.kind === 'translated-line') {
                 const item = group.item;
                 const isFailed = !!item.failed;
@@ -2139,52 +2360,134 @@ ${englishParagraph}`;
             </span>
           </button>
         )}
-      </div>
+      </div>{/* /LEFT column (relative wrapper) */}
 
-      {/* Ask-AI dock — visually welded to the subtitle stream above.
-          `rounded-t-none -mt-px` makes the two surfaces read as one
-          continuous "classroom" block (task D 合流), rather than three
-          disconnected islands. No longer sticky — it rides with the
-          content so users don't lose the physical link to the subtitles. */}
-      <div className="glass-thick rounded-b-[28px] rounded-t-none -mt-px p-[10px_12px_10px_16px] flex items-center gap-2.5 border-t border-[rgba(91,127,232,0.18)]">
-        <Sparkles className="w-[18px] h-[18px] text-[var(--blue-accent)] shrink-0" />
-        <input
-          type="text"
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAsk(); } }}
-          placeholder={uiLang === 'zh' ? '问 AI 任何问题…（如：CAPM 为啥实务里经常不准？）' : 'Ask AI anything…'}
-          disabled={isAsking}
-          className="flex-1 bg-transparent border-0 outline-none font-zh-serif text-[14px] text-[var(--ink)] placeholder:font-display placeholder:italic placeholder:text-[rgba(10,14,26,0.45)] py-1.5 disabled:opacity-50"
-        />
-        <button
-          onClick={handleAsk}
-          disabled={isAsking || question.trim().length === 0}
-          className="bg-[var(--ink)] text-white border-0 px-[18px] py-2.5 rounded-[14px] font-bold text-[13px] tracking-[-0.005em] cursor-pointer inline-flex gap-1.5 items-center shadow-[0_4px_12px_rgba(10,14,26,0.25)] disabled:opacity-40 hover:bg-[#1a2440]"
-          aria-label={uiLang === 'zh' ? '发送' : 'Send'}
-        >
-          {isAsking ? <Loader2 className="w-4 h-4 animate-spin" /> : (
-            <>
-              ask AI
-              <Send className="w-3 h-3" />
-            </>
-          )}
-        </button>
-      </div>
+      {/* RIGHT — 笔记 / 问AI 侧栏（2026-06-16）。
+          桌面/iPad 横屏：sticky 固定在右侧，跟着字幕一起看；
+          窄屏（<lg）：自然落到字幕下方，单列堆叠。
+          两个 Tab 在同一个右侧栏：默认「笔记」，点一下切到「问 AI」，
+          这样"看笔记"和"问 AI"集中在一处，不用到处找。 */}
+      <div className="xl:sticky xl:top-4 flex flex-col gap-3 min-w-0">
+        {/* Tab 切换条 */}
+        <div className="surface !rounded-[14px] p-1 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setSidebarTab('notes')}
+            aria-pressed={sidebarTab === 'notes'}
+            className={cn(
+              'flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-[10px] font-zh-sans font-bold text-[13px] transition-colors border-0 cursor-pointer',
+              sidebarTab === 'notes'
+                ? 'bg-[var(--ink)] text-white shadow-[0_3px_8px_rgba(10,14,26,0.18)]'
+                : 'bg-transparent text-[var(--ink-muted)] hover:text-[var(--ink-body)]'
+            )}
+          >
+            <StickyNote className="w-3.5 h-3.5" />
+            {uiLang === 'zh' ? '笔记' : 'Notes'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setSidebarTab('chat')}
+            aria-pressed={sidebarTab === 'chat'}
+            className={cn(
+              'flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-[10px] font-zh-sans font-bold text-[13px] transition-colors border-0 cursor-pointer relative',
+              sidebarTab === 'chat'
+                ? 'bg-[var(--ink)] text-white shadow-[0_3px_8px_rgba(10,14,26,0.18)]'
+                : 'bg-transparent text-[var(--ink-muted)] hover:text-[var(--ink-body)]'
+            )}
+          >
+            <MessageCircle className="w-3.5 h-3.5" />
+            {uiLang === 'zh' ? '问 AI' : 'Ask AI'}
+          </button>
+        </div>
 
-      {/* Live structured notes — moved BELOW the ask-AI dock so the
-          subtitle stream + Q&A form one tight "classroom" group, with
-          notes as an attached sidenote. */}
-      <LiveNotesPanel
-        notes={liveNotes}
-        loading={liveNotesLoading}
-        uiLang={uiLang}
-        lastUpdatedAt={notesLastUpdatedAt || undefined}
-        onSaveToNotes={handleSaveLiveNotesToClassNotes}
-        onExportPdf={handleExportLiveNotesPdf}
-        isSaving={isSavingLiveNotes}
-        isLive={isLive}
-      />
+        {/* NOTES TAB */}
+        {sidebarTab === 'notes' && (
+          <LiveNotesPanel
+            notes={liveNotes}
+            loading={liveNotesLoading}
+            uiLang={uiLang}
+            lastUpdatedAt={notesLastUpdatedAt || undefined}
+            onSaveToNotes={handleSaveLiveNotesToClassNotes}
+            onExportPdf={handleExportLiveNotesPdf}
+            isSaving={isSavingLiveNotes}
+            isLive={isLive}
+            errorMessage={liveNotesError}
+            onRetry={handleRetryLiveNotes}
+            collectedChars={collectedEnglishChars}
+            minCharsForNotes={LIVE_NOTES_MIN_NEW_CHARS}
+          />
+        )}
+
+        {/* CHAT TAB — reuses the existing chat state (question / isAsking /
+            handleAsk) and the qa items already in `stream`. We just render
+            a dedicated message list + input here instead of inline in the
+            subtitle column, so "看笔记" and "问 AI" share one sidebar. */}
+        {sidebarTab === 'chat' && (
+          <div className="surface !rounded-[14px] flex flex-col overflow-hidden max-h-[72vh]">
+            {/* messages */}
+            <div className="flex-1 overflow-y-auto p-[18px_18px_12px] min-h-[200px]">
+              {(() => {
+                const qaItems = stream.filter((it): it is Extract<StreamItem, { kind: 'qa' }> => it.kind === 'qa');
+                if (qaItems.length === 0) {
+                  return (
+                    <div className="font-zh-serif text-[13px] text-[var(--ink-muted)] leading-[1.85] py-2">
+                      {uiLang === 'zh' ? (
+                        <>上课没听懂？在下面输入你的问题 — 比如「老师刚才说的 CAPM 是啥？」AI 会根据已经讲过的内容用中文回答。</>
+                      ) : (
+                        <>Missed something? Type your question below — e.g. "what did the prof mean by CAPM?" AI replies using what's been said so far.</>
+                      )}
+                    </div>
+                  );
+                }
+                return (
+                  <div className="space-y-3">
+                    {qaItems.map((item) => (
+                      <div key={`chat-${item.id}`} className="space-y-1.5">
+                        {/* user */}
+                        <div className="flex justify-end">
+                          <div className="max-w-[88%] px-3 py-2 rounded-[14px] rounded-tr-[4px] bg-[var(--ink)] text-white font-zh-serif text-[13.5px] leading-[1.7]">
+                            {item.question}
+                          </div>
+                        </div>
+                        {/* ai */}
+                        <div className="flex justify-start">
+                          <div className="max-w-[92%] px-3 py-2 rounded-[14px] rounded-tl-[4px] bg-[rgba(91,127,232,0.08)] border border-[rgba(91,127,232,0.18)] font-zh-serif text-[13.5px] leading-[1.75] text-[var(--ink)] whitespace-pre-wrap [&_strong]:text-[var(--blue-accent)] [&_strong]:font-semibold">
+                            {item.pending
+                              ? <MessageLoading className="w-6 h-5" />
+                              : item.answer}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+            {/* input */}
+            <div className="p-[10px_12px] flex items-center gap-2 border-t border-[rgba(91,127,232,0.18)]">
+              <Sparkles className="w-[18px] h-[18px] text-[var(--blue-accent)] shrink-0" />
+              <input
+                type="text"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAsk(); } }}
+                placeholder={uiLang === 'zh' ? '问 AI 任何问题…' : 'Ask AI anything…'}
+                disabled={isAsking}
+                className="flex-1 min-w-0 bg-transparent border-0 outline-none font-zh-serif text-[14px] text-[var(--ink)] placeholder:font-display placeholder:italic placeholder:text-[rgba(10,14,26,0.45)] py-1.5 disabled:opacity-50"
+              />
+              <button
+                onClick={handleAsk}
+                disabled={isAsking || question.trim().length === 0}
+                className="bg-[var(--ink)] text-white border-0 px-3.5 py-2 rounded-[12px] font-bold text-[13px] cursor-pointer inline-flex gap-1.5 items-center shadow-[0_4px_12px_rgba(10,14,26,0.25)] disabled:opacity-40 hover:bg-[#1a2440] shrink-0"
+                aria-label={uiLang === 'zh' ? '发送' : 'Send'}
+              >
+                {isAsking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>{/* /RIGHT sidebar */}
+      </div>{/* /CLASSROOM WORKSPACE grid */}
 
       {/* Save indicator */}
       {status === 'stopped' && stream.length > 0 && (

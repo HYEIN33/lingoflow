@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
-import { generateSpeech } from '../services/ai';
+import { generateSpeech, type TtsLang } from '../services/ai';
+import { hasChinese, SPEECH_SYNTHESIS_LOCALE } from '../lib/lang';
 
 export function useAudio() {
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -22,7 +23,7 @@ export function useAudio() {
     }
   };
 
-  const speak = async (text: string) => {
+  const speak = async (text: string, lang?: TtsLang) => {
     const requestId = ++lastRequestIdRef.current;
     setLoadingAudioText(text);
 
@@ -30,7 +31,7 @@ export function useAudio() {
     stopAllAudio();
 
     try {
-      const base64Audio = await generateSpeech(text);
+      const base64Audio = await generateSpeech(text, { lang });
 
       // If a newer request has started, ignore this one
       if (requestId !== lastRequestIdRef.current) return;
@@ -99,8 +100,9 @@ export function useAudio() {
         setLoadingAudioText(null);
         stopAllAudio();
         const utterance = new SpeechSynthesisUtterance(text);
-        const hasChinese = /[\u4e00-\u9fa5]/.test(text);
-        utterance.lang = hasChinese ? 'zh-CN' : 'en-US';
+        utterance.lang = lang
+          ? SPEECH_SYNTHESIS_LOCALE[lang]
+          : (hasChinese(text) ? 'zh-CN' : 'en-US');
         window.speechSynthesis.speak(utterance);
       }
     }

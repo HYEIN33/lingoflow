@@ -33,7 +33,23 @@
   --red-deep: #B81F14;                    /* hover/active */
   --red-soft: rgba(229, 56, 43, 0.08);
   --green-ok: #2F6317;
-  --amber: #8A5D0E;
+  --amber: #8A5D0E;                        /* 深琥珀 —— 文字色（达 AA） */
+  --amber-bright: #E8C375;                 /* 亮琥珀 —— 背景/边框/CTA 用，非文字 */
+
+  /* 复习质量按钮四档配色（2026-06-16 审计 S3：从 ReviewPage 内联提取）。
+     bg=底色 / border=边框 / text=主文字。色值保持原样不变。 */
+  --quality-again-bg: #FDECEA;
+  --quality-again-border: #E89B94;
+  --quality-again-text: #A23B30;
+  --quality-hard-bg: #FFF3D9;
+  --quality-hard-border: #E8C375;
+  --quality-hard-text: #8A5D0E;
+  --quality-good-bg: #E4EAFD;
+  --quality-good-border: #5B7FE8;
+  --quality-good-text: #1E3A8A;
+  --quality-easy-bg: #E4F4DC;
+  --quality-easy-border: #7DB96A;
+  --quality-easy-text: #2F6317;
 
   /* Surface tokens — solid white cards for data/lists/admin (opposite of
      glass which is for hero/main cards). */
@@ -41,6 +57,19 @@
   --surface-solid-hover: rgba(255, 255, 255, 1);
   --border-solid: rgba(10, 14, 26, 0.10);
   --border-solid-strong: rgba(10, 14, 26, 0.14);
+
+  /* 文字蓝（2026-06-11 审计修复 S2）：品牌蓝 #5B7FE8 在白底只有 3.7:1，
+     小号文字不达 WCAG AA(4.5:1)。小字/正文场景一律用这个深一档别名
+     （#3E5FBF ≈ 6.6:1）；大标题/粗体大字/装饰仍可用 --blue-accent。 */
+  --blue-accent-text: #3E5FBF;
+
+  /* 语义化 z-index 标尺（2026-06-11 审计修复 S6）：之前 z-10/20/30/50
+     任意散落，联想下拉(30) 能盖住举报弹窗(10)。统一标尺，组件按角色取值。 */
+  --z-dropdown: 30;
+  --z-sticky: 35;
+  --z-backdrop: 40;
+  --z-modal: 50;
+  --z-toast: 60;
 }
 
 /* Font utility classes — applied via className, not global body override.
@@ -379,4 +408,60 @@
 .toast-glass-close:hover {
   background: rgba(10, 14, 26, 0.08);
   color: var(--ink);
+}
+
+/* Standard Translation card — tier change cross-fade. The <p> inside the
+   card is keyed by formalityTier so React remounts on tier change; this
+   keyframe runs on every remount, producing a soft 200ms fade-in. Avoids
+   the jarring instant-swap when dragging the formality slider across a
+   bucket boundary. */
+@keyframes tier-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-tier-fade { animation: tier-fade-in 200ms ease-out; }
+
+/* ============================================================
+   工业级交互基线（2026-06-07）
+   现状：时长/缓动散落各处、键盘焦点不可见、按钮无按压反馈、
+   不尊重系统"减少动态"。以下四段一次补齐。
+   ============================================================ */
+
+/* --- 动效令牌：全站动画只用这套度量衡。
+       TSX 里用 src/lib/motionTokens.ts 的同名常量。 --- */
+:root {
+  --dur-fast: 150ms;   /* 颜色/透明度等微反馈 */
+  --dur-base: 250ms;   /* 常规过渡 */
+  --dur-emph: 350ms;   /* 页面切换/内容入场等强调动作 */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* --- 键盘焦点环：Tab 键导航时落点清晰可见。
+       只在键盘聚焦时出现（:focus-visible），鼠标点击不冒环。 --- */
+:focus-visible {
+  outline: 2px solid #5b7fe8;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* --- 全站按压反馈：按钮按下轻微缩小，手机上"点到了"的确认感。
+       禁用态豁免；系统开了减少动态也豁免。 --- */
+@media (prefers-reduced-motion: no-preference) {
+  button:not(:disabled):active {
+    transform: scale(0.97);
+    transition: transform var(--dur-fast) var(--ease-out-soft);
+  }
+}
+
+/* --- 减少动态：系统开了"减少动态效果"时，杀掉所有 CSS 动画与过渡
+       （motion 由 MotionConfig reducedMotion 管，GSAP 由 JS 守卫管）。 --- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

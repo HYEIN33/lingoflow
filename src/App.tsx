@@ -41,6 +41,9 @@ import {
   Gauge,
 } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'motion/react';
+import gsap from 'gsap';
+import { useGSAP } from '@gsap/react';
+import { DUR, EASE_OUT, GSAP_EASE_BACK, prefersReducedMotion } from './lib/motionTokens';
 import { doc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db, signIn, logOut, emailSignUp, emailSignIn, resetPassword } from './firebase';
 import {
@@ -48,6 +51,7 @@ import {
   checkGrammar,
   GrammarCheckResult,
   extractTextFromImage,
+  extractTextFromFile,
   translateSimple,
   aiChat,
   getReviewHint
@@ -185,6 +189,8 @@ export interface UserProfile {
 import PaymentScreen from './components/PaymentScreen';
 import { OnboardingChecklist } from './components/OnboardingChecklist';
 import TranslateTab from './pages/TranslateTab';
+import AnimatedLoginPage from './components/AnimatedLoginPage';
+import HoverBorderGradientDemo from './components/ui/hover-border-gradient-demo';
 
 // Sortable tab — Pro users can long-press + drag to reorder. Non-Pro
 // users get a normal button (no drag listeners attached). Listeners are
@@ -277,255 +283,20 @@ const WordbookPage = lazy(() => import('./pages/WordbookPage'));
 const ClassroomTab = lazy(() => import('./pages/ClassroomTab'));
 const UsagePage = lazy(() => import('./pages/UsagePage'));
 
+// 切 Tab 懒加载时显示"内容的轮廓"骨架而不是转圈 —— 转圈传达"在等"，
+// 骨架传达"马上来"，感知速度差一截。形状对齐各页通用结构：
+// eyebrow 短条 + 两张玻璃卡（标题条 + 两行正文条）。
 function LazyFallback() {
   return (
-    <div className="flex items-center justify-center py-20">
-      <Loader2 className="w-8 h-8 animate-spin text-[#5B7FE8]" />
-    </div>
-  );
-}
-
-function LoginPage({ uiLang, t }: { uiLang: Language; t: any }) {
-  const [mode, setMode] = useState<'main' | 'email' | 'guest'>('main');
-  const [isSignUp, setIsSignUp] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [guestCode, setGuestCode] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [resetSent, setResetSent] = useState(false);
-
-  const handleEmailAuth = async () => {
-    setError('');
-    if (!email || !password) {
-      setError(uiLang === 'zh' ? '请输入邮箱和密码' : 'Please enter email and password');
-      return;
-    }
-    if (password.length < 6) {
-      setError(uiLang === 'zh' ? '密码至少 6 位' : 'Password must be at least 6 characters');
-      return;
-    }
-    setLoading(true);
-    setError('');
-    try {
-      if (isSignUp) {
-        await emailSignUp(email, password);
-      } else {
-        await emailSignIn(email, password);
-      }
-    } catch (e: any) {
-      const code = e.code || '';
-      if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
-        setError(uiLang === 'zh' ? '账号不存在或密码错误' : 'Account not found or wrong password');
-      } else if (code === 'auth/email-already-in-use') {
-        setError(uiLang === 'zh' ? '该邮箱已注册，请直接登录' : 'Email already registered, please sign in');
-      } else if (code === 'auth/invalid-email') {
-        setError(uiLang === 'zh' ? '邮箱格式不正确' : 'Invalid email format');
-      } else if (code === 'auth/weak-password') {
-        setError(uiLang === 'zh' ? '密码太弱，至少 6 位' : 'Password too weak, at least 6 characters');
-      } else if (code === 'auth/too-many-requests') {
-        setError(uiLang === 'zh' ? '操作太频繁，请稍后重试' : 'Too many attempts, please try later');
-      } else if (code === 'auth/network-request-failed') {
-        setError(uiLang === 'zh' ? '网络连接失败，请检查网络' : 'Network error, please check connection');
-      } else {
-        setError(uiLang === 'zh' ? '登录失败，请重试' : 'Authentication failed, please try again');
-      }
-      setLoading(false);
-    }
-  };
-
-  const handleGuestLogin = async () => {
-    setError('');
-    // Trim whitespace — previously "8888 " failed silently.
-    if (guestCode.trim() !== '8888') {
-      setError(uiLang === 'zh' ? '邀请码错误' : 'Invalid invite code');
-      return;
-    }
-    setLoading(true);
-    try {
-      const { signInAnonymously } = await import('firebase/auth');
-      const { auth } = await import('./firebase');
-      await signInAnonymously(auth);
-    } catch (e: any) {
-      // Give the user an actionable message rather than raw Firebase codes.
-      const code = e?.code || '';
-      const msg = e?.message || 'Login failed';
-      let friendly: string;
-      if (code === 'auth/operation-not-allowed' || msg.includes('operation-not-allowed')) {
-        friendly = uiLang === 'zh'
-          ? '内测登录未启用,请联系管理员在 Firebase Console 开启 Anonymous provider'
-          : 'Anonymous sign-in is disabled. Ask the admin to enable it in Firebase Console.';
-      } else if (code === 'auth/admin-restricted-operation') {
-        friendly = uiLang === 'zh' ? '内测登录被管理员限制' : 'Sign-in restricted by admin';
-      } else if (code === 'auth/network-request-failed') {
-        friendly = uiLang === 'zh' ? '网络连接失败,请检查网络' : 'Network error, check connection';
-      } else {
-        friendly = uiLang === 'zh' ? `登录失败: ${msg}` : `Login failed: ${msg}`;
-      }
-      setError(friendly);
-    }
-    setLoading(false);
-  };
-
-  const handleReset = async () => {
-    if (!email) {
-      setError(uiLang === 'zh' ? '请先输入邮箱' : 'Please enter your email first');
-      return;
-    }
-    try {
-      await resetPassword(email);
-      setResetSent(true);
-      setError('');
-    } catch (e: any) {
-      setError(uiLang === 'zh' ? '发送失败，请检查邮箱' : 'Failed to send reset email');
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-white sm:bg-[#F8F9FA] flex flex-col items-center justify-center p-4 sm:p-6 text-center">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full bg-white rounded-3xl shadow-none sm:shadow-xl p-6 sm:p-10 border-0 sm:border sm:border-gray-100"
-      >
-        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-[rgba(91,127,232,0.08)] rounded-2xl flex items-center justify-center mx-auto mb-6 sm:mb-8">
-          <Languages className="w-8 h-8 sm:w-10 sm:h-10 text-[#5B7FE8]" />
+    <div className="space-y-4" aria-busy="true" aria-label="loading">
+      <div className="h-3.5 w-28 rounded-md bg-[rgba(10,14,26,0.07)] animate-pulse ml-1" />
+      {[0, 1].map(i => (
+        <div key={i} className="surface !rounded-[18px] p-6 space-y-3">
+          <div className="h-4 rounded-md bg-[rgba(10,14,26,0.08)] animate-pulse w-1/3" />
+          <div className="h-3 rounded-md bg-[rgba(10,14,26,0.06)] animate-pulse w-[82%]" />
+          <div className="h-3 rounded-md bg-[rgba(10,14,26,0.06)] animate-pulse w-[58%]" />
         </div>
-        <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-1 tracking-tight">
-          {t.appName}
-          {IS_STAGING && (
-            <span className="ml-2 align-middle px-2 py-0.5 bg-yellow-400 text-yellow-900 text-xs font-black rounded tracking-wider">
-              STAGING
-            </span>
-          )}
-        </h1>
-        <div className="text-[11px] text-gray-400 font-mono mb-3 sm:mb-4 tabular-nums">v{APP_VERSION} · {APP_ENV}</div>
-        <p className="text-gray-600 mb-8 sm:mb-10 text-base sm:text-lg leading-relaxed">{t.tagline}</p>
-
-        {mode === 'main' ? (
-          <div className="space-y-3">
-            <button
-              onClick={signIn}
-              className="w-full bg-[#0A0E1A] hover:bg-[#1a2440] text-white font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3 shadow-lg shadow-[rgba(91,127,232,0.2)]"
-            >
-              <LogIn className="w-5 h-5" />
-              {uiLang === 'zh' ? 'Google 账号登录' : 'Sign in with Google'}
-            </button>
-            <button
-              onClick={() => setMode('email')}
-              className="w-full bg-white hover:bg-[rgba(91,127,232,0.08)] text-[#5B7FE8] border-2 border-[rgba(91,127,232,0.3)] hover:border-[#5B7FE8] font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3"
-            >
-              <LogIn className="w-5 h-5" />
-              {uiLang === 'zh' ? '邮箱登录 / 注册' : 'Sign in with Email'}
-            </button>
-            <div className="relative flex items-center my-2">
-              <div className="flex-1 border-t border-gray-200" />
-              <span className="px-3 text-xs text-gray-400">{uiLang === 'zh' ? '或' : 'or'}</span>
-              <div className="flex-1 border-t border-gray-200" />
-            </div>
-            <button
-              onClick={() => setMode('guest')}
-              className="w-full border-2 border-gray-200 hover:border-gray-300 text-gray-700 font-semibold py-4 rounded-2xl transition-all flex items-center justify-center gap-3"
-            >
-              {uiLang === 'zh' ? '内测体验（邀请码）' : 'Beta Access (Invite Code)'}
-            </button>
-          </div>
-        ) : mode === 'email' ? (
-          <div className="space-y-4 text-left">
-            <button onClick={() => { setMode('main'); setError(''); setResetSent(false); }} className="text-sm text-[#5B7FE8] hover:text-[#5B7FE8] font-medium">
-              ← {uiLang === 'zh' ? '返回' : 'Back'}
-            </button>
-
-            <h3 className="text-lg font-bold text-gray-900">
-              {isSignUp ? (uiLang === 'zh' ? '注册新账号' : 'Create Account') : (uiLang === 'zh' ? '邮箱登录' : 'Sign In')}
-            </h3>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{uiLang === 'zh' ? '邮箱' : 'Email'}</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#5B7FE8] focus:ring-2 focus:ring-[rgba(91,127,232,0.2)] outline-none"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{uiLang === 'zh' ? '密码' : 'Password'}</label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder={isSignUp ? (uiLang === 'zh' ? '至少 6 位' : 'At least 6 characters') : '••••••'}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#5B7FE8] focus:ring-2 focus:ring-[rgba(91,127,232,0.2)] outline-none"
-                onKeyDown={(e) => e.key === 'Enter' && handleEmailAuth()}
-              />
-            </div>
-
-            <button
-              onClick={handleEmailAuth}
-              disabled={loading}
-              className="w-full bg-gray-800 hover:bg-gray-900 disabled:bg-gray-400 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
-            >
-              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {isSignUp ? (uiLang === 'zh' ? '注册' : 'Sign Up') : (uiLang === 'zh' ? '登录' : 'Sign In')}
-            </button>
-
-            <div className="flex items-center justify-between text-sm">
-              <button onClick={() => { setIsSignUp(!isSignUp); setError(''); }} className="text-[#5B7FE8] hover:text-[#5B7FE8] font-medium">
-                {isSignUp ? (uiLang === 'zh' ? '已有账号？登录' : 'Have an account? Sign in') : (uiLang === 'zh' ? '没有账号？注册' : 'No account? Sign up')}
-              </button>
-              {!isSignUp && (
-                <button onClick={handleReset} className="text-gray-500 hover:text-gray-700">
-                  {uiLang === 'zh' ? '忘记密码' : 'Forgot password'}
-                </button>
-              )}
-            </div>
-
-            {resetSent && (
-              <p className="text-sm text-green-600 bg-green-50 rounded-xl px-4 py-2">
-                {uiLang === 'zh' ? '重置邮件已发送，请查收' : 'Reset email sent, please check your inbox'}
-              </p>
-            )}
-
-            {error && (
-              <p className="text-sm text-red-500 bg-red-50 rounded-xl px-4 py-2">{error}</p>
-            )}
-          </div>
-        ) : mode === 'guest' ? (
-          <div className="space-y-4 text-left">
-            <button onClick={() => { setMode('main'); setError(''); setGuestCode(''); }} className="text-sm text-[#5B7FE8] hover:text-[#5B7FE8] font-medium">
-              ← {uiLang === 'zh' ? '返回' : 'Back'}
-            </button>
-            <h3 className="text-lg font-bold text-gray-900">
-              {uiLang === 'zh' ? '内测体验' : 'Beta Access'}
-            </h3>
-            <p className="text-sm text-gray-500">
-              {uiLang === 'zh' ? '输入邀请码即可体验全部功能' : 'Enter invite code to access all features'}
-            </p>
-            <input
-              type="text"
-              value={guestCode}
-              onChange={(e) => setGuestCode(e.target.value)}
-              placeholder={uiLang === 'zh' ? '请输入邀请码' : 'Enter invite code'}
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-[#5B7FE8] focus:ring-2 focus:ring-[rgba(91,127,232,0.2)] outline-none text-center text-lg tracking-widest"
-              maxLength={10}
-              onKeyDown={(e) => e.key === 'Enter' && handleGuestLogin()}
-            />
-            <button
-              onClick={handleGuestLogin}
-              disabled={loading || !guestCode}
-              className="w-full bg-[#0A0E1A] hover:bg-[#1a2440] disabled:bg-gray-300 text-white font-semibold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
-            >
-              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {uiLang === 'zh' ? '进入体验' : 'Enter'}
-            </button>
-            {error && (
-              <p className="text-sm text-red-500 bg-red-50 rounded-xl px-4 py-2">{error}</p>
-            )}
-          </div>
-        ) : null}
-      </motion.div>
+      ))}
     </div>
   );
 }
@@ -587,6 +358,44 @@ export default function App() {
   const [grammarResult, setGrammarResult] = useState<GrammarCheckResult | null>(null);
   const [isExtractingPhoto, setIsExtractingPhoto] = useState(false);
   const photoInputRef = React.useRef<HTMLInputElement>(null);
+  // 语法检查·文档上传（2026-06-16）：Pro 专享。图片/PDF 走 Gemini 抽文字
+  // （extractTextFromFile）→ 填进语法检查输入框。Free 点了走付费墙（在
+  // GrammarPage 里拦，这里 handler 仍二次防御 isPro）。
+  const [isExtractingDoc, setIsExtractingDoc] = useState(false);
+
+  const handleGrammarDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    // 二次防御：非 Pro 不该走到这（按钮已拦），万一走到也弹付费墙。
+    if (!userProfile?.isPro) {
+      setPaymentTrigger('grammar_doc_upload');
+      setShowPayment(true);
+      return;
+    }
+    setIsExtractingDoc(true);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(',')[1]);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      const text = await extractTextFromFile(base64, file.type);
+      if (text && text !== 'NO_TEXT') {
+        setGrammarInput(text.slice(0, 2000));
+        toast.success(uiLang === 'zh' ? '已识别文档内容，可直接检查语法' : 'Document text extracted — ready to check');
+      } else {
+        toast.error(uiLang === 'zh' ? '文档里没识别到文字' : 'No text found in the document');
+      }
+    } catch (err: any) {
+      console.error('Grammar doc extraction failed:', err);
+      Sentry.captureException(err, { tags: { component: 'App', op: 'grammarDocUpload' } });
+      toast.error(uiLang === 'zh' ? '文档识别失败，请重试或换一个文件' : 'Failed to read document, try again');
+    } finally {
+      setIsExtractingDoc(false);
+    }
+  };
 
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -797,7 +606,13 @@ export default function App() {
     } catch (error: any) {
       console.error(error);
       const message = error.message || (uiLang === 'zh' ? '语法检查失败，请重试' : 'Grammar check failed. Please try again.');
-      toast.error(message);
+      // 错误 toast 带「重试」—— 出错后一键恢复，不让用户自己重新操作。
+      toast.error(message, {
+        action: {
+          label: uiLang === 'zh' ? '重试' : 'Retry',
+          onClick: () => { void handleCheckGrammar(); },
+        },
+      });
     } finally {
       setIsCheckingGrammar(false);
     }
@@ -884,6 +699,41 @@ export default function App() {
     }
   });
 
+  // === Tab 栏入场动画（复刻 React Bits Pill Nav 的 Initial Load Animation）===
+  // app 打开 / 登录后，整条液态玻璃 Tab 栏从上方 + 缩小 + 透明，
+  // 用 back.out 回弹弹入归位。为什么动整条 shell 而不是每个 Tab：
+  // 单个 Tab 是 dnd-kit 的 SortableTab，自己管着拖拽 transform，
+  // 直接给它们加 GSAP transform 会和拖拽打架。动外层 shell 容器最安全。
+  // useGSAP 自动在卸载时 revert，零泄漏。
+  gsap.registerPlugin(useGSAP);
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  useGSAP(() => {
+    if (!tabBarRef.current) return;
+    // 系统开了"减少动态"就不播入场（GSAP 不认 MotionConfig，手动守卫）。
+    if (prefersReducedMotion()) return;
+    gsap.from(tabBarRef.current, {
+      y: -28,
+      opacity: 0,
+      scale: 0.92,
+      duration: DUR.hero,
+      ease: GSAP_EASE_BACK,
+    });
+    // 依赖 user：登录后 Tab 栏才挂载，user 变化时重放一次入场。
+  }, { dependencies: [!!user], scope: tabBarRef });
+
+  // 切 Tab 统一回到页面顶部。之前滚到页面中部再切 Tab，新页面从中部
+  // 开始显示很迷惑。瞬时跳转（不用 smooth）—— 平滑滚动会跟切页入场
+  // 动画抢戏，工业级 app（Linear/Notion）切页都是瞬时回顶。
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [activeTab]);
+
+  // 临时预览入口：?hbg-demo 直接渲染 HoverBorderGradient 预览页（绕过 auth）。
+  // 仅用于本地看效果，确认后删除这段即可。
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('hbg-demo')) {
+    return <HoverBorderGradientDemo />;
+  }
+
   if (!isAuthReady) {
     return (
       <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center">
@@ -893,7 +743,7 @@ export default function App() {
   }
 
   if (!user) {
-    return <LoginPage uiLang={uiLang} t={t} />;
+    return <AnimatedLoginPage uiLang={uiLang} t={t} />;
   }
 
   return (
@@ -959,7 +809,7 @@ export default function App() {
               aria-label={uiLang === 'zh' ? '排行榜' : 'Leaderboard'}
               className={cn(
                 "p-1.5 sm:p-2 rounded-full transition-colors",
-                activeTab === 'leaderboard' ? "bg-amber-100 text-amber-600" : "hover:bg-gray-50 text-gray-400 hover:text-amber-500"
+                activeTab === 'leaderboard' ? "bg-[rgba(232,180,60,0.18)] text-[var(--amber)]" : "hover:bg-[rgba(10,14,26,0.04)] text-[var(--ink-subtle)] hover:text-[var(--amber)]"
               )}
               title={uiLang === 'zh' ? '排行榜' : 'Leaderboard'}
             >
@@ -1010,7 +860,7 @@ export default function App() {
               aria-label={uiLang === 'zh' ? '我的' : 'Profile'}
               className={cn(
                 "p-1.5 sm:p-2 rounded-full transition-colors",
-                activeTab === 'profile' ? "bg-[rgba(91,127,232,0.1)] text-[#5B7FE8]" : "hover:bg-gray-50 text-gray-400 hover:text-[#5B7FE8]"
+                activeTab === 'profile' ? "bg-[rgba(91,127,232,0.1)] text-[var(--blue-accent-text)]" : "hover:bg-[rgba(10,14,26,0.04)] text-[var(--ink-subtle)] hover:text-[var(--blue-accent-text)]"
               )}
               title={uiLang === 'zh' ? '我的' : 'Profile'}
             >
@@ -1043,7 +893,7 @@ export default function App() {
             {/* Tab 栏跟内容一起滚动（不 sticky）—— sticky 多次尝试都被
                 用户反馈"盖住组件 / 出白框 / 漂在 logo"，最简单的版本反而
                 最稳：跟着内容滚走，header 在顶部不透明能挡住其他内容。 */}
-            <div translate="no" className="notranslate relative mb-6 sm:mb-8">
+            <div ref={tabBarRef} translate="no" className="notranslate relative mb-6 sm:mb-8">
               {/* Thick liquid-glass shell; active tab elevates on top of it
                   via .glass-pill-active (see src/index.css). The shell is
                   deliberately thinner/lighter than the active pill to push
@@ -1067,6 +917,20 @@ export default function App() {
         </DndContext>
 
         <Suspense fallback={<LazyFallback />}>
+          {/* 切 Tab 过渡：用 motion 给整块内容做"淡入 + 上滑 + 轻微放大"。
+              key 绑定 activeTab —— 每次切 Tab 触发一次进场动画。
+              为什么不用 mode="wait"：页面是懒加载，旧页瞬间被 Suspense 切掉，
+              退场动画会被吃掉，结果几乎看不见。改成纯进场（每次新页面从
+              下方淡入+轻微放大），幅度调大到肉眼明显。
+              现状：之前点 Tab 是硬切，画面瞬间换掉很生硬。
+              修后：每次切页新内容从下方明显地浮上来，0.35s，像原生 app。 */}
+          <AnimatePresence>
+            <motion.div
+              key={activeTab}
+              initial={{ opacity: 0, y: 24, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ duration: DUR.emph, ease: EASE_OUT }}
+            >
           {activeTab === 'translate' ? (
             <TranslateTab
               inputText={inputText}
@@ -1119,6 +983,8 @@ export default function App() {
                 onToggleListening={toggleListening}
                 userProfile={userProfile}
                 onOpenPaywall={(trigger) => { setPaymentTrigger(trigger); setShowPayment(true); }}
+                isExtractingDoc={isExtractingDoc}
+                onDocUpload={handleGrammarDocUpload}
               />
             </div>
           ) : activeTab === 'review' ? (
@@ -1250,6 +1116,8 @@ export default function App() {
               onUpgrade={() => onPaymentNeeded('usage_page_upgrade')}
             />
           ) : null}
+            </motion.div>
+          </AnimatePresence>
         </Suspense>
 
         {/* Rate Limit Modal — global, fires on any 429 from /api/generate */}
