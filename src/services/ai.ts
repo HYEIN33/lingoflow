@@ -947,12 +947,14 @@ export async function generateLiveNotes(
   transcript: string,
   opts?: { course?: string }
 ): Promise<LiveNotes> {
-  // 2026-06-16：从 gemini-3-pro-preview 切到 GA 版 gemini-2.5-pro。preview 版
-  // 高峰期静默 503（实测："字幕和翻译都出来了但笔记一直不出"的根因——翻译走
-  // 的 gemini-3.5-flash 已是 GA 所以正常，笔记的 pro-preview 没换所以挂）。
-  // 2.5-pro 是 GA 正式 SLA、推理质量接近，笔记不要求低延迟（45s 才刷一次）。
-  // 仍有下方 15s 慢尾保险 → gemini-2.5-flash 兜底。
-  const model = 'gemini-2.5-pro';
+  // 2026-06-16 笔记 bug 终修：用 GA 版 gemini-2.5-flash。
+  // 踩坑记录：先从 pro-preview(静默503) 换到 gemini-2.5-pro，结果仍失败——
+  // 真因是 thinkingConfig 用了 Gemini 3 的语法 `thinkingLevel`，而 2.5 系列
+  // 只认 `thinkingBudget`（数字），API 直接 400「Thinking level is not
+  // supported for this model」。2.5-pro 还又慢又超时。改用 2.5-flash：快、
+  // GA、结构化摘要质量足够（实测秒回正确 JSON），thinking 用下方正确的
+  // thinkingBudget 语法。15s 慢尾保险仍在。
+  const model = 'gemini-2.5-flash';
   const courseLine = opts?.course
     ? `The class subject is: ${opts.course}. Use that subject's terminology and register.\n`
     : '';
@@ -991,13 +993,11 @@ ${transcript}`;
       },
       required: ['title', 'overview', 'keyPoints'],
     },
-    // 思考强度调到 low —— livenote 是结构化摘要任务，pro 模型 full
-    // thinking 在长 transcript 上会跑 60s+ 触发 Cloud Functions 502
-    // 超时。之前用 'off' 是错的——Gemini 3 系列只接受 low/medium/high/
-    // dynamic 这几个值，传 'off' 会被 API 直接 400 拒收（"Invalid value
-    // at generation_config.thinking_config.thinking"），导致 livenote
-    // 永远生成失败。low 给最少的思考预算 + 仍能产出像样的笔记结构。
-    thinkingConfig: { thinkingLevel: 'low' },
+    // 关思考（2026-06-16）：模型已是 gemini-2.5-flash（2.5 系列），thinking
+    // 必须用 `thinkingBudget`（数字）语法，不能用 Gemini 3 的 `thinkingLevel`
+    // ——后者会被 2.5 模型 400「Thinking level is not supported」直接拒收，
+    // 这正是上一版笔记一直失败的根因。0 = 关思考：结构化摘要不吃推理，省延迟。
+    thinkingConfig: { thinkingBudget: 0 },
   };
 
   // JSON 解析容错：pro 偶尔会无视 responseMimeType 把 JSON 包进 markdown
