@@ -809,14 +809,22 @@ export async function checkGrammar(text: string): Promise<GrammarCheckResult> {
   return JSON.parse(text_);
 }
 
-export async function extractTextFromImage(base64Image: string, mimeType: string): Promise<string> {
+// 从图片或 PDF 抽取全部文字（Gemini 视觉/文档理解）。inlineData 原生支持
+// image/* 和 application/pdf —— PDF 实测可直接抽（含手写/扫描件），无需
+// pdfjs 等解析库。.docx 等二进制 Office 格式 Gemini 不认，调用方需先转换。
+export async function extractTextFromFile(base64Data: string, mimeType: string): Promise<string> {
   const { model } = getEffectiveConfig();
+
+  const isPdf = mimeType === 'application/pdf';
+  const prompt = isPdf
+    ? 'Extract ALL text from this document, preserving the original wording exactly (including any errors — do not correct them). Return only the extracted text, nothing else. Include all languages present. If no text, return "NO_TEXT".'
+    : 'Extract ALL text from this image. Return only the extracted text, nothing else. If multiple languages are present, include all of them. If no text is found, return "NO_TEXT".';
 
   const contents = [
     {
       parts: [
-        { text: 'Extract ALL text from this image. Return only the extracted text, nothing else. If multiple languages are present, include all of them. If no text is found, return "NO_TEXT".' },
-        { inlineData: { mimeType, data: base64Image } }
+        { text: prompt },
+        { inlineData: { mimeType, data: base64Data } }
       ]
     }
   ];
@@ -833,6 +841,9 @@ export async function extractTextFromImage(base64Image: string, mimeType: string
   });
   return response.text?.trim() || '';
 }
+
+// 向后兼容别名：旧调用方（TranslateTab 拍照 OCR）继续用这个名字。
+export const extractTextFromImage = extractTextFromFile;
 
 export async function translateSimple(
   text: string,

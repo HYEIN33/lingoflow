@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Loader2, ChevronRight, CheckCircle, AlertCircle, Mic, MicOff } from 'lucide-react';
+import { Loader2, ChevronRight, CheckCircle, AlertCircle, Mic, MicOff, FileUp } from 'lucide-react';
 import { motion } from 'motion/react';
 import { GrammarCheckResult } from '../services/ai';
 import { cn } from '../lib/utils';
@@ -17,16 +17,21 @@ interface GrammarPageProps {
   onToggleListening: () => void;
   userProfile?: UserProfile | null;
   onOpenPaywall?: (trigger: string) => void;
+  // 文档上传（2026-06-16）：Pro 专享。Free 点了走 onOpenPaywall。
+  isExtractingDoc?: boolean;
+  onDocUpload?: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
 export default function GrammarPage(props: GrammarPageProps) {
   const {
     grammarInput, setGrammarInput, isCheckingGrammar, grammarResult,
     isListening, uiLang, onCheckGrammar, onToggleListening,
-    userProfile, onOpenPaywall
+    userProfile, onOpenPaywall, isExtractingDoc, onDocUpload
   } = props;
 
   const t = translations[uiLang];
+  const docInputRef = useRef<HTMLInputElement>(null);
+  const isPro = !!userProfile?.isPro;
 
   // Verdict card ref — scroll the result card into view the moment a check
   // lands (and the moment the loader appears). On phones the verdict sat
@@ -85,6 +90,34 @@ export default function GrammarPage(props: GrammarPageProps) {
             {grammarInput.length} / 2000
           </div>
           <div className="flex items-center gap-2">
+            {/* 隐藏的文件选择器（仅 Pro 触发）。图片 + PDF。 */}
+            <input
+              ref={docInputRef}
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              onChange={onDocUpload}
+            />
+            {/* 文档上传按钮 —— Free 显示带 PRO 标，点了弹付费墙；Pro 触发选文件。 */}
+            <button
+              type="button"
+              onClick={() => {
+                if (!isPro) { onOpenPaywall?.('grammar_doc_upload'); return; }
+                docInputRef.current?.click();
+              }}
+              disabled={isExtractingDoc}
+              title={uiLang === 'zh' ? '上传作业（图片 / PDF）检查语法' : 'Upload homework (image / PDF) to check'}
+              className={cn(
+                "relative inline-flex items-center gap-[6px] px-[16px] py-[10px] rounded-[16px] transition-all cursor-pointer font-zh-sans font-semibold text-[13px] bg-white border border-[var(--border-solid)] text-[var(--ink-body)] hover:text-[var(--ink)] disabled:opacity-50",
+                !isPro && "opacity-90"
+              )}
+            >
+              {isExtractingDoc ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileUp className="w-4 h-4" />}
+              {uiLang === 'zh' ? '传文档' : 'upload'}
+              {!isPro && (
+                <span className="ml-0.5 font-mono-meta text-[9px] bg-[rgba(10,14,26,0.06)] text-[var(--ink-muted)] px-1.5 py-0.5 rounded tracking-wider not-italic leading-none">PRO</span>
+              )}
+            </button>
             <button
               type="button"
               onClick={onToggleListening}

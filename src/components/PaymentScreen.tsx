@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Check, X, CreditCard, ShieldCheck, Zap, Loader2 } from 'lucide-react';
+import confetti from 'canvas-confetti';
+import { Switch } from './ui/switch';
 
 export default function PaymentScreen({
   triggerSource = 'default',
@@ -16,6 +18,35 @@ export default function PaymentScreen({
   currentPlan?: 'free' | 'pro'
 }) {
   const [isYearly, setIsYearly] = useState(true);
+  const billingSwitchRef = useRef<HTMLDivElement>(null);
+
+  // 切到年付（false→true）撒一次品牌蓝碎纸；切回月付不触发
+  const handleToggleBilling = () => {
+    setIsYearly(prev => {
+      const next = !prev;
+      if (next) {
+        const el = billingSwitchRef.current;
+        const origin = el
+          ? (() => {
+              const r = el.getBoundingClientRect();
+              return {
+                x: (r.left + r.width / 2) / window.innerWidth,
+                y: (r.top + r.height / 2) / window.innerHeight,
+              };
+            })()
+          : { x: 0.5, y: 0.5 };
+        confetti({
+          particleCount: 50,
+          spread: 60,
+          startVelocity: 32,
+          origin,
+          colors: ['#5B7FE8', '#3E5FBF', '#89A3F0', '#E8C375'],
+        });
+      }
+      return next;
+    });
+  };
+
   const [selectedPlan, setSelectedPlan] = useState<'free' | 'pro'>('pro');
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'alipay' | 'wechat' | 'apple' | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -27,6 +58,7 @@ export default function PaymentScreen({
       case 'translation_limit': return uiLang === 'zh' ? '今日翻译次数已用完，升级 Pro 解锁无限畅译' : 'Daily translation limit reached. Upgrade to Pro for unlimited translations.';
       case 'slider': return uiLang === 'zh' ? '语气滑块是 Pro 专属功能，升级以精准控制表达' : 'Formality slider is a Pro feature.';
       case 'review_system': return uiLang === 'zh' ? '升级 Pro，解锁基于 SM-2 算法的艾宾浩斯复习系统' : 'Upgrade to unlock spaced repetition review.';
+      case 'grammar_doc_upload': return uiLang === 'zh' ? '上传作业（图片 / PDF）自动查语法是 Pro 功能，升级即可无限使用' : 'Uploading homework (image / PDF) for grammar check is a Pro feature.';
       default: return uiLang === 'zh' ? '升级 Pro，解锁 MemeFlow 全部潜能' : 'Upgrade to Pro, unlock MemeFlow\'s full potential.';
     }
   };
@@ -97,12 +129,7 @@ export default function PaymentScreen({
 
           <div className="flex items-center justify-center gap-4 mt-8">
             <span className={`font-zh-serif text-[13px] font-bold ${!isYearly ? 'text-[var(--ink)]' : 'text-[var(--ink-muted)]'}`}>{uiLang === 'zh' ? '月付 · Monthly' : 'Monthly'}</span>
-            <button
-              onClick={() => setIsYearly(!isYearly)}
-              className="w-14 h-8 bg-gray-200 rounded-full p-1 relative transition-colors hover:bg-gray-300"
-            >
-              <motion.div animate={{ x: isYearly ? 24 : 0 }} className="w-6 h-6 bg-[#0A0E1A] rounded-full shadow-lg" />
-            </button>
+            <Switch ref={billingSwitchRef} checked={isYearly} onToggle={handleToggleBilling} />
             <span className={`font-zh-serif text-[13px] font-bold flex items-center gap-2 ${isYearly ? 'text-[var(--ink)]' : 'text-[var(--ink-muted)]'}`}>
               {uiLang === 'zh' ? '年付 · Yearly' : 'Yearly'} <span className="bg-[#FFE0B2] text-[#9B5400] font-mono-meta text-[10px] px-2 py-[3px] rounded-full font-extrabold tracking-[0.1em]">{uiLang === 'zh' ? '省 40%' : 'SAVE 40%'}</span>
             </span>

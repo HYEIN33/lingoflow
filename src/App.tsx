@@ -51,6 +51,7 @@ import {
   checkGrammar,
   GrammarCheckResult,
   extractTextFromImage,
+  extractTextFromFile,
   translateSimple,
   aiChat,
   getReviewHint
@@ -189,6 +190,7 @@ import PaymentScreen from './components/PaymentScreen';
 import { OnboardingChecklist } from './components/OnboardingChecklist';
 import TranslateTab from './pages/TranslateTab';
 import AnimatedLoginPage from './components/AnimatedLoginPage';
+import HoverBorderGradientDemo from './components/ui/hover-border-gradient-demo';
 
 // Sortable tab — Pro users can long-press + drag to reorder. Non-Pro
 // users get a normal button (no drag listeners attached). Listeners are
@@ -356,6 +358,44 @@ export default function App() {
   const [grammarResult, setGrammarResult] = useState<GrammarCheckResult | null>(null);
   const [isExtractingPhoto, setIsExtractingPhoto] = useState(false);
   const photoInputRef = React.useRef<HTMLInputElement>(null);
+  // 语法检查·文档上传（2026-06-16）：Pro 专享。图片/PDF 走 Gemini 抽文字
+  // （extractTextFromFile）→ 填进语法检查输入框。Free 点了走付费墙（在
+  // GrammarPage 里拦，这里 handler 仍二次防御 isPro）。
+  const [isExtractingDoc, setIsExtractingDoc] = useState(false);
+
+  const handleGrammarDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    // 二次防御：非 Pro 不该走到这（按钮已拦），万一走到也弹付费墙。
+    if (!userProfile?.isPro) {
+      setPaymentTrigger('grammar_doc_upload');
+      setShowPayment(true);
+      return;
+    }
+    setIsExtractingDoc(true);
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(',')[1]);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      const text = await extractTextFromFile(base64, file.type);
+      if (text && text !== 'NO_TEXT') {
+        setGrammarInput(text.slice(0, 2000));
+        toast.success(uiLang === 'zh' ? '已识别文档内容，可直接检查语法' : 'Document text extracted — ready to check');
+      } else {
+        toast.error(uiLang === 'zh' ? '文档里没识别到文字' : 'No text found in the document');
+      }
+    } catch (err: any) {
+      console.error('Grammar doc extraction failed:', err);
+      Sentry.captureException(err, { tags: { component: 'App', op: 'grammarDocUpload' } });
+      toast.error(uiLang === 'zh' ? '文档识别失败，请重试或换一个文件' : 'Failed to read document, try again');
+    } finally {
+      setIsExtractingDoc(false);
+    }
+  };
 
   const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -688,6 +728,12 @@ export default function App() {
     window.scrollTo(0, 0);
   }, [activeTab]);
 
+  // 临时预览入口：?hbg-demo 直接渲染 HoverBorderGradient 预览页（绕过 auth）。
+  // 仅用于本地看效果，确认后删除这段即可。
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has('hbg-demo')) {
+    return <HoverBorderGradientDemo />;
+  }
+
   if (!isAuthReady) {
     return (
       <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center">
@@ -937,6 +983,8 @@ export default function App() {
                 onToggleListening={toggleListening}
                 userProfile={userProfile}
                 onOpenPaywall={(trigger) => { setPaymentTrigger(trigger); setShowPayment(true); }}
+                isExtractingDoc={isExtractingDoc}
+                onDocUpload={handleGrammarDocUpload}
               />
             </div>
           ) : activeTab === 'review' ? (
